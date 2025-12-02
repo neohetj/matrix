@@ -1,0 +1,22 @@
+# Default configuration for the Matrix engine.
+
+Loader:
+  Providers:
+    # By default, load DSL files from the local filesystem.
+    # The path is relative to the application's working directory.
+    - Type: "file"
+      Args: ["components"]
+  
+  # Directory to scan for endpoint definition files.
+  EndpointsPath: "endpoints"
+
+Scheduler:
+  # Use the "ants" goroutine pool-based scheduler.
+  Type: "ants"
+  # Default number of worker goroutines.
+  PoolSize: 100
+
+Trace:
+  # Enable the trace aspect by default.
+  # This will automatically record execution snapshots for all rule chains.
+  EnableAop: true

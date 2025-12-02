@@ -1,0 +1,57 @@
+{
+  "ruleChain": {
+    "id": "base_cluster_topology",
+    "name": "Base Topology for Small Cluster Master Node",
+    "attrs": {
+      "executable": false,
+      "viewType": "static-topology"
+    }
+  },
+  "metadata": {
+    "nodes": [
+      {
+        "id": "master_node",
+        "type": "ops/machine",
+        "name": "Master Node",
+        "configuration": {
+          "address": "192.168.1.100"
+        }
+      },
+      {
+        "id": "idt_service",
+        "type": "ops/service",
+        "name": "Identity Service (IDT)",
+        "configuration": {}
+      },
+      {
+        "id": "usm_service",
+        "type": "ops/service",
+        "name": "Universal Stream Manager (USM)",
+        "configuration": {}
+      },
+      {
+        "id": "mysql_db",
+        "type": "ops/service",
+        "name": "MySQL Database",
+        "configuration": {
+          "engine": "MySQL"
+        }
+      },
+      {
+        "id": "redis_service",
+        "type": "ops/service",
+        "name": "Redis Service",
+        "configuration": {}
+      }
+    ],
+    "relations": [
+      { "source": "idt_service", "target": "master_node", "label": "deployedOn" },
+      { "source": "usm_service", "target": "master_node", "label": "deployedOn" },
+      { "source": "mysql_db", "target": "master_node", "label": "deployedOn" },
+      { "source": "redis_service", "target": "master_node", "label": "deployedOn" },
+      { "source": "idt_service", "target": "mysql_db", "label": "connectsTo" },
+      { "source": "usm_service", "target": "mysql_db", "label": "connectsTo" },
+      { "source": "usm_service", "target": "redis_service", "label": "connectsTo" }
+    ]
+  }
+}
