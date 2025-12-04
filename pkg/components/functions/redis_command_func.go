@@ -98,7 +98,7 @@ func parseCommand(cmdStr string) []string {
 func RedisCommandFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 	bizConfig, ok := helper.GetBusinessConfig(ctx)
 	if !ok {
-		ctx.HandleError(msg, types.ErrInvalidParams.Wrap(fmt.Errorf("business config not found")))
+		ctx.HandleError(msg, types.DefInvalidParams.Wrap(fmt.Errorf("business config not found")))
 		return
 	}
 
@@ -183,7 +183,7 @@ func RedisCommandFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 		err := client.Do(ctx.GetContext(), args...).Err()
 		if err != nil {
 			ctx.Error("Redis command execution failed", "error", err, "args", args)
-			ctx.HandleError(msg, types.ErrInternal.Wrap(fmt.Errorf("redis command failed: %w", err)))
+			ctx.HandleError(msg, types.DefInternalError.Wrap(fmt.Errorf("redis command failed: %w", err)))
 			return
 		}
 		ctx.Debug("Successfully executed Redis command", "command", parts[0])

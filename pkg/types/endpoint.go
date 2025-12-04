@@ -8,6 +8,12 @@ type MappingInfo struct {
 	DefineSID string `json:"defineSid,omitempty"`
 }
 
+// ErrorMapping defines a map from an external protocol code/status (string)
+// to a list of internal Fault codes (string).
+// Key: Protocol-specific error code (e.g., "404", "500" for HTTP; "RETRY", "DLQ" for Streams).
+// Value: A list of internal Fault.Code values that map to this protocol code.
+type ErrorMapping map[string][]string
+
 // HttpParam combines the definition and mapping logic for a single HTTP parameter.
 type HttpParam struct {
 	Name         string `json:"name"`
@@ -19,14 +25,14 @@ type HttpParam struct {
 	Mapping MappingInfo `json:"mapping"`
 }
 
-// EndpointDefinitionObj defines the structure of an HTTP endpoint using the new V2 structures.
-type EndpointDefinitionObj struct {
-	Request  ApiRequestDefinitionObj  `json:"request"`
-	Response ApiResponseDefinitionObj `json:"response"`
+// HttpEndpointDef defines the structure of an HTTP endpoint using the new V2 structures.
+type HttpEndpointDef struct {
+	Request  HttpRequestDef  `json:"request"`
+	Response HttpResponseDef `json:"response"`
 }
 
-// ApiRequestDefinitionObj defines the structure of an HTTP request.
-type ApiRequestDefinitionObj struct {
+// HttpRequestDef defines the structure of an HTTP request.
+type HttpRequestDef struct {
 	DTOName     string      `json:"dtoName"`
 	PathParams  []HttpParam `json:"pathParams,omitempty"`
 	QueryParams []HttpParam `json:"queryParams,omitempty"`
@@ -35,8 +41,8 @@ type ApiRequestDefinitionObj struct {
 	BodyFields []HttpParam `json:"bodyFields,omitempty"`
 }
 
-// ApiResponseDefinitionObj defines the structure of an HTTP response.
-type ApiResponseDefinitionObj struct {
+// HttpResponseDef defines the structure of an HTTP response.
+type HttpResponseDef struct {
 	DTOName         string `json:"dtoName"`
 	SuccessCode     int    `json:"successCode,omitempty"`
 	ErrorStatusCode int    `json:"errorStatusCode,omitempty"`

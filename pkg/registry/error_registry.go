@@ -23,19 +23,19 @@ import (
 	"gitlab.com/neohet/matrix/pkg/types"
 )
 
-// DefaultErrorRegistry is the default thread-safe implementation of the ErrorRegistry interface.
-type DefaultErrorRegistry struct {
+// DefaultFaultRegistry is the default thread-safe implementation of the FaultRegistry interface.
+type DefaultFaultRegistry struct {
 	errors sync.Map
 }
 
-// NewErrorRegistry creates a new instance of DefaultErrorRegistry.
-func NewErrorRegistry() *DefaultErrorRegistry {
-	return &DefaultErrorRegistry{}
+// NewFaultRegistry creates a new instance of DefaultFaultRegistry.
+func NewFaultRegistry() *DefaultFaultRegistry {
+	return &DefaultFaultRegistry{}
 }
 
 // Register adds new error definitions to the registry.
 // It panics if an error with the same code is already registered.
-func (r *DefaultErrorRegistry) Register(errs ...*types.ErrorObj) {
+func (r *DefaultFaultRegistry) Register(errs ...*types.Fault) {
 	for _, err := range errs {
 		if err != nil {
 			if _, loaded := r.errors.LoadOrStore(err.Code, err); loaded {
@@ -46,11 +46,11 @@ func (r *DefaultErrorRegistry) Register(errs ...*types.ErrorObj) {
 }
 
 // Get retrieves an error definition by its code.
-func (r *DefaultErrorRegistry) Get(code int32) (*types.ErrorObj, bool) {
+func (r *DefaultFaultRegistry) Get(code int32) (*types.Fault, bool) {
 	value, ok := r.errors.Load(code)
 	if !ok {
 		return nil, false
 	}
-	err, ok := value.(*types.ErrorObj)
+	err, ok := value.(*types.Fault)
 	return err, ok
 }

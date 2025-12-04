@@ -11,21 +11,21 @@ func NewTestRuleMsg() types.RuleMsg {
 	return types.NewMsg("test", "", nil, nil)
 }
 
-// GetRootError traverses the error chain and returns the root ErrorObj.
-func GetRootError(err error) *types.ErrorObj {
-	var errObj *types.ErrorObj
-	if errors.As(err, &errObj) {
+// GetRootError traverses the error chain and returns the root Fault.
+func GetRootError(err error) *types.Fault {
+	var fault *types.Fault
+	if errors.As(err, &fault) {
 		for {
-			unwrapped := errors.Unwrap(errObj)
+			unwrapped := errors.Unwrap(fault)
 			if unwrapped == nil {
-				return errObj
+				return fault
 			}
-			if nextErrObj, ok := unwrapped.(*types.ErrorObj); ok {
-				errObj = nextErrObj
+			if nextFault, ok := unwrapped.(*types.Fault); ok {
+				fault = nextFault
 			} else {
 				break
 			}
 		}
 	}
-	return errObj
+	return fault
 }

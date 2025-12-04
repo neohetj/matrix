@@ -307,15 +307,8 @@ func TestConvertRequestToRuleMsg_RequiredFieldMissing(t *testing.T) {
 		t.Fatalf("Expected an error but got nil")
 	}
 
-	if !errors.Is(err, ErrRequiredFieldMissing) {
-		var errObj *types.ErrorObj
-		if errors.As(err, &errObj) {
-			if errObj.Code != int32(types.CodeRequiredFieldMissing) {
-				t.Errorf("Expected error code %d, but got %d", types.CodeRequiredFieldMissing, errObj.Code)
-			}
-		} else {
-			t.Errorf("Expected error to be of type *types.ErrorObj, but got %T", err)
-		}
+	if !errors.Is(err, DefRequiredFieldMissing) {
+		t.Errorf("Expected error to be %v, but got %v", DefRequiredFieldMissing, err)
 	}
 
 	t.Log("Successfully verified that a missing required field returns the correct error.")
@@ -356,13 +349,8 @@ func TestConvertRequestToRuleMsg_FieldConversionFailed(t *testing.T) {
 		t.Fatalf("Expected an error but got nil")
 	}
 
-	var errObj *types.ErrorObj
-	if errors.As(err, &errObj) {
-		if errObj.Code != int32(types.CodeFieldConversionFailed) {
-			t.Errorf("Expected error code %d, but got %d", types.CodeFieldConversionFailed, errObj.Code)
-		}
-	} else {
-		t.Errorf("Expected error to be of type *types.ErrorObj, but got %T", err)
+	if !strings.Contains(err.Error(), DefFieldConversionFailed.Message) {
+		t.Errorf("Expected error message to contain '%s', but got '%s'", DefFieldConversionFailed.Message, err.Error())
 	}
 
 	t.Log("Successfully verified that a field conversion failure returns the correct error.")
@@ -376,17 +364,17 @@ func TestConvertRequestToRuleMsg_InvalidMappingFormat(t *testing.T) {
 	testCases := []struct {
 		name        string
 		mappingTo   string
-		expectedErr *types.ErrorObj
+		expectedErr *types.Fault
 	}{
 		{
 			name:        "Invalid metadata format",
 			mappingTo:   "metadata", // Missing key
-			expectedErr: ErrInvalidMappingFormat,
+			expectedErr: DefInvalidMappingFormat,
 		},
 		{
 			name:        "Invalid dataT format",
 			mappingTo:   "dataT.myObj", // Missing field path
-			expectedErr: ErrInvalidMappingFormat,
+			expectedErr: DefInvalidMappingFormat,
 		},
 	}
 
@@ -422,13 +410,8 @@ func TestConvertRequestToRuleMsg_InvalidMappingFormat(t *testing.T) {
 				t.Fatalf("Expected an error but got nil")
 			}
 
-			var errObj *types.ErrorObj
-			if errors.As(err, &errObj) {
-				if errObj.Code != int32(tc.expectedErr.Code) {
-					t.Errorf("Expected error code %d, but got %d", tc.expectedErr.Code, errObj.Code)
-				}
-			} else {
-				t.Errorf("Expected error to be of type *types.ErrorObj, but got %T", err)
+			if !strings.Contains(err.Error(), tc.expectedErr.Message) {
+				t.Errorf("Expected error message to contain '%s', but got '%s'", tc.expectedErr.Message, err.Error())
 			}
 		})
 	}
@@ -567,13 +550,8 @@ func TestConvertRequestToRuleMsg_MissingDefineSID(t *testing.T) {
 		t.Fatalf("Expected an error but got nil")
 	}
 
-	var errObj *types.ErrorObj
-	if errors.As(err, &errObj) {
-		if errObj.Code != int32(types.CodeInvalidConfiguration) {
-			t.Errorf("Expected error code %d, but got %d", types.CodeInvalidConfiguration, errObj.Code)
-		}
-	} else {
-		t.Errorf("Expected error to be of type *types.ErrorObj, but got %T", err)
+	if !strings.Contains(err.Error(), types.DefInvalidConfiguration.Message) {
+		t.Errorf("Expected error message to contain '%s', but got '%s'", types.DefInvalidConfiguration.Message, err.Error())
 	}
 
 	t.Log("Successfully verified that a missing defineSid for a DataT object returns a configuration error.")
@@ -629,13 +607,8 @@ func TestConvertRequestToRuleMsg_EmptyOrInvalidBody(t *testing.T) {
 			t.Fatal("Expected an error for invalid JSON body, but got nil")
 		}
 
-		var errObj *types.ErrorObj
-		if errors.As(err, &errObj) {
-			if errObj.Code != int32(types.CodeRequestDecodingFailed) {
-				t.Errorf("Expected error code %d, but got %d", types.CodeRequestDecodingFailed, errObj.Code)
-			}
-		} else {
-			t.Errorf("Expected error to be of type *types.ErrorObj, but got %T", err)
+		if !strings.Contains(err.Error(), DefRequestDecodingFailed.Message) {
+			t.Errorf("Expected error message to contain '%s', but got '%s'", DefRequestDecodingFailed.Message, err.Error())
 		}
 	})
 }
@@ -678,13 +651,8 @@ func TestConvertRequestToRuleMsg_DataTDecodeFailure(t *testing.T) {
 		t.Fatalf("Expected an error but got nil")
 	}
 
-	var errObj *types.ErrorObj
-	if errors.As(err, &errObj) {
-		if errObj.Code != int32(types.CodeInvalidParams) {
-			t.Errorf("Expected error code %d, but got %d", types.CodeInvalidParams, errObj.Code)
-		}
-	} else {
-		t.Errorf("Expected error to be of type *types.ErrorObj, but got %T", err)
+	if !strings.Contains(err.Error(), types.DefInvalidParams.Message) {
+		t.Errorf("Expected error message to contain '%s', but got '%s'", types.DefInvalidParams.Message, err.Error())
 	}
 
 	t.Log("Successfully verified that a DataT item decode failure returns the correct error.")
@@ -815,7 +783,7 @@ func TestHttpEndpointNode_Init_ErrorHandling(t *testing.T) {
 				"httpMethod": "GET",
 				"httpPath":   "/test",
 			},
-			expectedErr: "invalid configuration: config 'ruleChainId' is required",
+			expectedErr: types.DefInvalidConfiguration.Error(),
 		},
 		{
 			name: "Missing httpMethod",
@@ -823,7 +791,7 @@ func TestHttpEndpointNode_Init_ErrorHandling(t *testing.T) {
 				"ruleChainId": "chain123",
 				"httpPath":    "/test",
 			},
-			expectedErr: "invalid configuration: config 'httpMethod' and 'httpPath' are required",
+			expectedErr: types.DefInvalidConfiguration.Error(),
 		},
 		{
 			name: "Missing httpPath",
@@ -831,7 +799,7 @@ func TestHttpEndpointNode_Init_ErrorHandling(t *testing.T) {
 				"ruleChainId": "chain123",
 				"httpMethod":  "GET",
 			},
-			expectedErr: "invalid configuration: config 'httpMethod' and 'httpPath' are required",
+			expectedErr: types.DefInvalidConfiguration.Error(),
 		},
 	}
 

@@ -71,10 +71,10 @@ func (n *FunctionsNode) Type() types.NodeType {
 // Init initializes the node instance with its specific configuration from the DSL.
 func (n *FunctionsNode) Init(configuration types.Config) error {
 	if err := utils.Decode(configuration, &n.nodeConfig); err != nil {
-		return types.ErrInvalidConfiguration.Wrap(fmt.Errorf("failed to decode functions node config: %w", err))
+		return types.DefInvalidConfiguration.Wrap(fmt.Errorf("failed to decode functions node config: %w", err))
 	}
 	if n.nodeConfig.FunctionName == "" {
-		return types.ErrInvalidConfiguration.Wrap(fmt.Errorf("'%s' is not specified in configuration for node %s", FunctionNameKey, n.ID()))
+		return types.DefInvalidConfiguration.Wrap(fmt.Errorf("'%s' is not specified in configuration for node %s", FunctionNameKey, n.ID()))
 	}
 	return nil
 }
@@ -83,7 +83,7 @@ func (n *FunctionsNode) Init(configuration types.Config) error {
 func (n *FunctionsNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 	f, ok := registry.Default.NodeFuncManager.Get(n.nodeConfig.FunctionName)
 	if !ok {
-		err := types.ErrFuncNotFound.Wrap(fmt.Errorf("function name: '%s' not found in registry", n.nodeConfig.FunctionName))
+		err := types.DefFuncNotFound.Wrap(fmt.Errorf("function name: '%s' not found in registry", n.nodeConfig.FunctionName))
 		ctx.HandleError(msg, err)
 		return
 	}

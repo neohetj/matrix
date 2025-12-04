@@ -103,12 +103,12 @@ package functions
 // 	// 1. Get input object from DataT
 // 	reqUntyped, err := msg.DataT().GetByParam(ctx, ParamNameHttpRequest)
 // 	if err != nil {
-// 		ctx.TellFailure(msg, types.ErrInvalidParams.Wrap(fmt.Errorf("input object '%s' not found", ParamNameHttpRequest)))
+// 		ctx.TellFailure(msg, types.DefInvalidParams.Wrap(fmt.Errorf("input object '%s' not found", ParamNameHttpRequest)))
 // 		return
 // 	}
 // 	reqData, ok := reqUntyped.Body().(*HttpRequest)
 // 	if !ok {
-// 		ctx.TellFailure(msg, types.ErrInvalidParams.Wrap(fmt.Errorf("failed to cast input to *HttpRequest")))
+// 		ctx.TellFailure(msg, types.DefInvalidParams.Wrap(fmt.Errorf("failed to cast input to *HttpRequest")))
 // 		return
 // 	}
 
@@ -185,7 +185,7 @@ package functions
 // 	// 8. Create and populate output object
 // 	respObj, err := msg.DataT().NewItemByParam(ctx, ParamNameHttpResponse)
 // 	if err != nil {
-// 		ctx.TellFailure(msg, types.ErrInternal.Wrap(fmt.Errorf("failed to create output object: %w", err)))
+// 		ctx.TellFailure(msg, types.DefInternalError.Wrap(fmt.Errorf("failed to create output object: %w", err)))
 // 		return
 // 	}
 // 	httpResponse := respObj.Body().(*HttpResponse)

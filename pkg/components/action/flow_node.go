@@ -54,10 +54,10 @@ func (n *FlowNode) Type() types.NodeType {
 // Init initializes the node instance with its specific configuration.
 func (n *FlowNode) Init(configuration types.Config) error {
 	if err := utils.Decode(configuration, &n.nodeConfig); err != nil {
-		return types.ErrInvalidConfiguration.Wrap(fmt.Errorf("failed to decode flow node config: %w", err))
+		return types.DefInvalidConfiguration.Wrap(fmt.Errorf("failed to decode flow node config: %w", err))
 	}
 	if n.nodeConfig.ChainId == "" {
-		return types.ErrInvalidConfiguration.Wrap(fmt.Errorf("'chainId' is not specified for node %s", n.ID()))
+		return types.DefInvalidConfiguration.Wrap(fmt.Errorf("'chainId' is not specified for node %s", n.ID()))
 	}
 	return nil
 }
@@ -67,7 +67,7 @@ func (n *FlowNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 	// 1. Look up the target runtime from the global default runtime pool.
 	targetRuntime, ok := registry.Default.RuntimePool.Get(n.nodeConfig.ChainId)
 	if !ok {
-		ctx.TellFailure(msg, types.ErrNodeNotFound.Wrap(fmt.Errorf("target chain with id '%s' not found in default runtime pool", n.nodeConfig.ChainId)))
+		ctx.TellFailure(msg, types.DefNodeNotFound.Wrap(fmt.Errorf("target chain with id '%s' not found in default runtime pool", n.nodeConfig.ChainId)))
 		return
 	}
 

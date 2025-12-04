@@ -115,6 +115,9 @@ func (m *MockNodeCtx) TellFailure(msg types.RuleMsg, err error) {
 	m.FailureMsg = msg
 	m.FailureErr = err
 }
+func (m *MockNodeCtx) HandleError(msg types.RuleMsg, err error) {
+	m.TellFailure(msg, err)
+}
 func (m *MockNodeCtx) SelfDef() *types.NodeDef { return &m.NodeDef }
 func (m *MockNodeCtx) Config() types.Config    { return m.NodeDef.Configuration }
 func (m *MockNodeCtx) Logger() types.Logger {

@@ -259,7 +259,7 @@ func TestHttpClientNode_OnMsg(t *testing.T) {
 		node.OnMsg(ctx, test_utils.NewTestRuleMsg())
 
 		assert.NotNil(t, ctx.FailureErr)
-		assert.Equal(t, ErrHttpSendFailed.Message, test_utils.GetRootError(ctx.FailureErr).Message)
+		assert.Equal(t, FaultHttpSendFailed.Message, test_utils.GetRootError(ctx.FailureErr).Message)
 		assert.Contains(t, ctx.FailureMsg.Metadata()["http.error"], "simulated connection refused")
 	})
 }

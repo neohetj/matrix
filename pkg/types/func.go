@@ -35,7 +35,7 @@ type FuncObjConfiguration struct {
 	Business []DynamicConfigField `json:"business"`
 	Inputs   []IOObject           `json:"inputs"`
 	Outputs  []IOObject           `json:"outputs"`
-	Errors   []*ErrorObj          `json:"errors"`
+	Errors   []*ServiceError      `json:"errors"`
 
 	// ReadsData (可选) 声明函数从原始 RuleMsg.Data 中读取的字段路径列表。
 	ReadsData []string `json:"readsData,omitempty"`

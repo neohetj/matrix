@@ -40,7 +40,7 @@ func init() {
 func ParseValidateFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 	bizConfig, ok := helper.GetBusinessConfig(ctx)
 	if !ok {
-		ctx.HandleError(msg, types.ErrInvalidParams.Wrap(fmt.Errorf("business config not found")))
+		ctx.HandleError(msg, types.DefInvalidParams.Wrap(fmt.Errorf("business config not found")))
 		return
 	}
 
@@ -48,7 +48,7 @@ func ParseValidateFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 	key, _ := bizConfig["targetObjId"].(string)
 
 	if sid == "" || key == "" {
-		ctx.HandleError(msg, types.ErrInvalidParams.Wrap(fmt.Errorf("targetCoreObjSid and targetObjId are required")))
+		ctx.HandleError(msg, types.DefInvalidParams.Wrap(fmt.Errorf("targetCoreObjSid and targetObjId are required")))
 		return
 	}
 
@@ -56,13 +56,13 @@ func ParseValidateFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 	// This is the standard way to create and register a new data object in the message.
 	coreObjInstance, err := msg.DataT().NewItem(sid, key)
 	if err != nil {
-		ctx.HandleError(msg, types.ErrInvalidParams.Wrap(fmt.Errorf("failed to create new CoreObj with SID %s and key %s: %w", sid, key, err)))
+		ctx.HandleError(msg, types.DefInvalidParams.Wrap(fmt.Errorf("failed to create new CoreObj with SID %s and key %s: %w", sid, key, err)))
 		return
 	}
 
 	// Unmarshal the JSON string from msg.Data into the newly created CoreObj's body.
 	if err := json.Unmarshal([]byte(msg.Data()), coreObjInstance.Body()); err != nil {
-		ctx.HandleError(msg, types.ErrInvalidParams.Wrap(fmt.Errorf("failed to unmarshal JSON to CoreObj body: %w", err)))
+		ctx.HandleError(msg, types.DefInvalidParams.Wrap(fmt.Errorf("failed to unmarshal JSON to CoreObj body: %w", err)))
 		return
 	}
 

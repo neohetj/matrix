@@ -22,10 +22,11 @@ import (
 	"gitlab.com/neohet/matrix/pkg/types"
 )
 
+// TODO：将registry移动到internal中，只需要通过Matrix暴露实现的Default即可
 // Registry holds references to all specialized registries and managers.
 type Registry struct {
 	NodeManager     types.NodeManager
-	ErrorRegistry   types.ErrorRegistry
+	FaultRegistry   types.FaultRegistry
 	CoreObjRegistry types.CoreObjRegistry
 	NodeFuncManager types.NodeFuncManager
 	RuntimePool     types.RuntimePool
@@ -39,7 +40,7 @@ var Default = NewRegistry()
 func NewRegistry() *Registry {
 	return &Registry{
 		NodeManager:     NewNodeManager(),
-		ErrorRegistry:   NewErrorRegistry(),
+		FaultRegistry:   NewFaultRegistry(),
 		CoreObjRegistry: NewCoreObjRegistry(),
 		NodeFuncManager: NewNodeFuncManager(),
 		RuntimePool:     NewRuntimePool(),
@@ -72,9 +73,9 @@ func (r *Registry) GetCoreObjRegistry() types.CoreObjRegistry {
 	return r.CoreObjRegistry
 }
 
-// GetErrorRegistry implements the types.RegistryProvider interface.
-func (r *Registry) GetErrorRegistry() types.ErrorRegistry {
-	return r.ErrorRegistry
+// GetFaultRegistry implements the types.RegistryProvider interface.
+func (r *Registry) GetFaultRegistry() types.FaultRegistry {
+	return r.FaultRegistry
 }
 
 func init() {
@@ -83,12 +84,12 @@ func init() {
 	types.DefaultRegistry = Default
 
 	// Register all predefined errors from the core package.
-	Default.ErrorRegistry.Register(
-		types.ErrInternal,
-		types.ErrInvalidParams,
-		types.ErrInvalidConfiguration,
-		types.ErrNodeNotFound,
-		types.ErrFuncNotFound,
+	Default.FaultRegistry.Register(
+		types.DefInternalError,
+		types.DefInvalidParams,
+		types.DefInvalidConfiguration,
+		types.DefNodeNotFound,
+		types.DefFuncNotFound,
 	)
 
 	Default.CoreObjRegistry.Register(

@@ -193,9 +193,9 @@ func (ctx *DefaultNodeCtx) HandleError(msg types.RuleMsg, err error) {
 	}
 	metadata[types.MetaErrorTimestamp] = time.Now().UTC().Format(time.RFC3339)
 
-	var matrixErr *types.ErrorObj
-	if errors.As(err, &matrixErr) {
-		metadata[types.MetaErrorCode] = fmt.Sprintf("%d", matrixErr.Code)
+	var fault *types.Fault
+	if errors.As(err, &fault) {
+		metadata[types.MetaErrorCode] = fmt.Sprintf("%d", fault.Code)
 	}
 
 	// 3. Route the message to the failure path.

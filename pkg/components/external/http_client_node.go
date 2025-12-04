@@ -33,7 +33,7 @@ const (
 )
 
 var (
-	ErrHttpSendFailed = &types.ErrorObj{Code: 202503002, Message: "HTTP request sending failed"}
+	FaultHttpSendFailed = &types.Fault{Code: 202503002, Message: "HTTP request sending failed"}
 )
 
 var httpClientNodePrototype = &HttpClientNode{
@@ -48,6 +48,7 @@ var httpClientNodePrototype = &HttpClientNode{
 
 func init() {
 	registry.Default.NodeManager.Register(httpClientNodePrototype)
+	registry.Default.FaultRegistry.Register(FaultHttpSendFailed)
 }
 
 // HttpClientNodeConfiguration holds the configuration for the HttpClientNode.
@@ -145,7 +146,7 @@ func (n *HttpClientNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 	// 1. Build Http Request from RuleMsg using the shared helper
 	httpReq, err := helper.MapRuleMsgToHttpRequest(ctx, msg, n.nodeConfig.Request, n.nodeConfig.DefaultTimeout)
 	if err != nil {
-		ctx.TellFailure(msg, types.ErrInvalidParams.Wrap(fmt.Errorf("failed to build http request: %w", err)))
+		ctx.HandleError(msg, fmt.Errorf("%w: failed to build http request: %w", types.DefInvalidParams, err))
 		return
 	}
 
@@ -161,7 +162,7 @@ func (n *HttpClientNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 	if n.nodeConfig.ProxyURL != "" {
 		proxyUrl, err := url.Parse(n.nodeConfig.ProxyURL)
 		if err != nil {
-			ctx.TellFailure(msg, types.ErrInvalidParams.Wrap(fmt.Errorf("invalid proxy url: %w", err)))
+			ctx.HandleError(msg, fmt.Errorf("%w: invalid proxy url: %w", types.DefInvalidParams, err))
 			return
 		}
 		transport.Proxy = http.ProxyURL(proxyUrl)
@@ -192,13 +193,13 @@ func (n *HttpClientNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 
 	// 4. Map Response back to the new Message using the shared helper
 	if mapErr := helper.MapHttpResponseToRuleMsg(ctx, resp, outMsg, n.nodeConfig.Response, startTime, endTime, err); mapErr != nil {
-		ctx.TellFailure(msg, types.ErrInternal.Wrap(fmt.Errorf("failed to map response to message: %w", mapErr)))
+		ctx.HandleError(msg, fmt.Errorf("%w: failed to map response to message: %w", types.DefInternalError, mapErr))
 		return
 	}
 
 	// 5. Now, after mapping the error (if any), we can fail the message.
 	if err != nil {
-		ctx.TellFailure(outMsg, ErrHttpSendFailed.Wrap(err))
+		ctx.HandleError(outMsg, fmt.Errorf("%w: %w", FaultHttpSendFailed, err))
 		return
 	}
 

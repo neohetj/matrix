@@ -165,17 +165,6 @@ func (i *Instance) SetName(name string) {
 	i.name = name
 }
 
-// Endpoint is a special type of Node that acts as an entry point to a rule chain.
-// By design, Endpoints are also considered SharedNodes, as they are typically instantiated
-// once at the application level and their lifecycle is not tied to a single rule chain execution.
-type Endpoint interface {
-	Node
-	SharedNode // Endpoints must be shareable.
-	// SetRuntimePool allows an external manager to inject the runtime pool dependency.
-	// The pool instance is passed as an any to avoid import cycles.
-	SetRuntimePool(pool any) error
-}
-
 // PassiveEndpoint is a marker interface for Endpoints that are triggered by external services.
 type PassiveEndpoint interface {
 	Endpoint
@@ -186,6 +175,17 @@ type ActiveEndpoint interface {
 	Endpoint
 	Start(ctx context.Context) error
 	Stop() error
+}
+
+// Endpoint is a special type of Node that acts as an entry point to a rule chain.
+// By design, Endpoints are also considered SharedNodes, as they are typically instantiated
+// once at the application level and their lifecycle is not tied to a single rule chain execution.
+type Endpoint interface {
+	Node
+	SharedNode // Endpoints must be shareable.
+	// SetRuntimePool allows an external manager to inject the runtime pool dependency.
+	// The pool instance is passed as an any to avoid import cycles.
+	SetRuntimePool(pool any) error
 }
 
 // SharedNode represents a node component that manages a shareable resource.

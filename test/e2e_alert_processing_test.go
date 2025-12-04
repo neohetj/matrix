@@ -133,7 +133,7 @@ func TestHttpEndpointTrigger(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// 6. Handle Request
-	_, err = epNode.HandleHttpRequest(w, req, "", nil)
+	err = epNode.HandleHttpRequest(w, req)
 	assert.NoError(t, err)
 
 	// 7. Verify Response
@@ -192,7 +192,7 @@ func TestHttpEndpointTriggerError(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// 5. Handle Request
-	_, err = epNode.HandleHttpRequest(w, req, "", nil)
+	err = epNode.HandleHttpRequest(w, req)
 
 	// 6. Verify Error
 	// HandleHttpRequest returns error for parameter validation failure

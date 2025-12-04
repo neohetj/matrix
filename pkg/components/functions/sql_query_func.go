@@ -64,7 +64,7 @@ func init() {
 func SQLQueryFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 	bizConfig, ok := helper.GetBusinessConfig(ctx)
 	if !ok {
-		ctx.HandleError(msg, types.ErrInvalidParams.Wrap(fmt.Errorf("business config not found")))
+		ctx.HandleError(msg, types.DefInvalidParams.Wrap(fmt.Errorf("business config not found")))
 		return
 	}
 
@@ -75,7 +75,7 @@ func SQLQueryFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 	isDynamicSql, _ := bizConfig["isDynamicSql"].(bool)
 
 	if query == "" {
-		ctx.HandleError(msg, types.ErrInvalidParams.Wrap(fmt.Errorf("query is not configured")))
+		ctx.HandleError(msg, types.DefInvalidParams.Wrap(fmt.Errorf("query is not configured")))
 		return
 	}
 
@@ -137,11 +137,11 @@ func SQLQueryFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 					// Use the robust ExtractFromMsgByPath helper to preserve type information.
 					val, found, err := helper.ExtractFromMsgByPath(msg, path)
 					if err != nil {
-						ctx.HandleError(msg, types.ErrInvalidParams.Wrap(fmt.Errorf("error extracting param for path '%s': %w", path, err)))
+						ctx.HandleError(msg, types.DefInvalidParams.Wrap(fmt.Errorf("error extracting param for path '%s': %w", path, err)))
 						return
 					}
 					if !found {
-						ctx.HandleError(msg, types.ErrInvalidParams.Wrap(fmt.Errorf("param for path '%s' not found in message", path)))
+						ctx.HandleError(msg, types.DefInvalidParams.Wrap(fmt.Errorf("param for path '%s' not found in message", path)))
 						return
 					}
 
@@ -151,7 +151,7 @@ func SQLQueryFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 					case []interface{}, map[string]interface{}, []string, []int, []float64, []bool:
 						jsonVal, err := json.Marshal(v)
 						if err != nil {
-							ctx.HandleError(msg, types.ErrInternal.Wrap(fmt.Errorf("failed to marshal param for path '%s': %w", path, err)))
+							ctx.HandleError(msg, types.DefInternalError.Wrap(fmt.Errorf("failed to marshal param for path '%s': %w", path, err)))
 							return
 						}
 						args[i] = string(jsonVal)
@@ -171,7 +171,7 @@ func SQLQueryFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(finalQuery)), "select") {
 		rows, err := executor.QueryxContext(goCtx, finalQuery, args...)
 		if err != nil {
-			ctx.HandleError(msg, types.ErrInternal.Wrap(fmt.Errorf("sql query execution failed: %w", err)))
+			ctx.HandleError(msg, types.DefInternalError.Wrap(fmt.Errorf("sql query execution failed: %w", err)))
 			return
 		}
 		defer rows.Close()
@@ -180,7 +180,7 @@ func SQLQueryFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 		for rows.Next() {
 			rowMap := make(map[string]interface{})
 			if err := rows.MapScan(rowMap); err != nil {
-				ctx.HandleError(msg, types.ErrInternal.Wrap(fmt.Errorf("sql row scan failed: %w", err)))
+				ctx.HandleError(msg, types.DefInternalError.Wrap(fmt.Errorf("sql row scan failed: %w", err)))
 				return
 			}
 			// sqlx may scan TEXT/BLOB as []byte, convert to string for JSON serialization.
@@ -193,7 +193,7 @@ func SQLQueryFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 		}
 
 		if err := rows.Err(); err != nil {
-			ctx.HandleError(msg, types.ErrInternal.Wrap(fmt.Errorf("sql rows iteration error: %w", err)))
+			ctx.HandleError(msg, types.DefInternalError.Wrap(fmt.Errorf("sql rows iteration error: %w", err)))
 			return
 		}
 
@@ -203,7 +203,7 @@ func SQLQueryFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 		ctx.Debug("Executing SQL exec.", "query", finalQuery, "args", args)
 		_, err := executor.ExecContext(goCtx, finalQuery, args...)
 		if err != nil {
-			ctx.HandleError(msg, types.ErrInternal.Wrap(fmt.Errorf("sql exec execution failed: %w", err)))
+			ctx.HandleError(msg, types.DefInternalError.Wrap(fmt.Errorf("sql exec execution failed: %w", err)))
 			return
 		}
 	}

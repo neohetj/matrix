@@ -198,7 +198,7 @@ func EnrichUserProfile(ctx types.NodeCtx, msg types.RuleMsg) {
 
 # 6. 错误处理 (ErrorHandling)
 
-*   **函数未找到 (`ErrFuncNotFound`)**: 这是最常见的错误。如果配置的 `functionName` 在 `NodeFuncManager` 中不存在，节点会立即失败，并将消息路由到 `Failure` 链路。
+*   **函数未找到 (`DefFuncNotFound`)**: 这是最常见的错误。如果配置的 `functionName` 在 `NodeFuncManager` 中不存在，节点会立即失败，并将消息路由到 `Failure` 链路。
 *   **函数执行错误**: 被调用的函数在执行过程中遇到的任何错误，应由函数自身通过 `ctx.HandleError()` 或 `ctx.TellFailure()` 来处理。这些错误会正常地在规则链中传播。
 
 <!-- 链接定义区域 -->

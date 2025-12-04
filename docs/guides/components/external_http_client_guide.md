@@ -276,9 +276,9 @@ relations:
 
 | 错误对象名 | 错误码 | 描述 |
 | :--- | :--- | :--- |
-| `ErrInvalidParams` | (N/A) | 构建请求时发生错误（如URL占位符无法替换、代理URL格式错误）。 |
+| `DefInvalidParams` | (N/A) | 构建请求时发生错误（如URL占位符无法替换、代理URL格式错误）。 |
 | `ErrHttpSendFailed` | `202503002` | 发生网络层错误（如DNS解析失败、连接被拒）。错误详情会被记录在 `response.errorTarget` 指定的 `metadata` 字段中。 |
-| `ErrInternal` | (N/A) | 映射响应回 `RuleMsg` 时发生严重错误。 |
+| `DefInternalError` | (N/A) | 映射响应回 `RuleMsg` 时发生严重错误。 |
 
 **注意**: 即使HTTP响应状态码是 `4xx` 或 `5xx`，只要请求成功发出并收到响应，节点也会走向 `Success` 链路。状态码会记录在 `response.statusCodeTarget` 指定的 `metadata` 字段中，由后续节点判断和处理。
 

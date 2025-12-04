@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/julienschmidt/httprouter"
@@ -20,11 +21,11 @@ const (
 )
 
 var (
-	ErrRequestDecodingFailed   = &types.ErrorObj{Code: int32(types.CodeRequestDecodingFailed), Message: "failed to decode request body"}
-	ErrRequiredFieldMissing    = &types.ErrorObj{Code: int32(types.CodeRequiredFieldMissing), Message: "required field not found in http request"}
-	ErrFieldConversionFailed   = &types.ErrorObj{Code: int32(types.CodeFieldConversionFailed), Message: "failed to convert field"}
-	ErrInvalidMappingFormat    = &types.ErrorObj{Code: int32(types.CodeInvalidMappingFormat), Message: "invalid mapping format"}
-	ErrDataTItemCreationFailed = &types.ErrorObj{Code: int32(types.CodeDataTItemCreationFailed), Message: "failed to create new DataT item"}
+	DefRequestDecodingFailed   = &types.Fault{Code: int32(types.CodeRequestDecodingFailed), Message: "failed to decode request body"}
+	DefRequiredFieldMissing    = &types.Fault{Code: int32(types.CodeRequiredFieldMissing), Message: "required field not found in http request"}
+	DefFieldConversionFailed   = &types.Fault{Code: int32(types.CodeFieldConversionFailed), Message: "failed to convert field"}
+	DefInvalidMappingFormat    = &types.Fault{Code: int32(types.CodeInvalidMappingFormat), Message: "invalid mapping format"}
+	DefDataTItemCreationFailed = &types.Fault{Code: int32(types.CodeDataTItemCreationFailed), Message: "failed to create new DataT item"}
 )
 
 // HttpEndpoint is a specific type of PassiveEndpoint for handling HTTP requests.
@@ -33,16 +34,39 @@ type HttpEndpoint interface {
 	// HandleHttpRequest handles the incoming HTTP request.
 	// The implementation should write the response to the http.ResponseWriter.
 	// It should return an error if any issue occurs that needs to be handled by the adapter.
-	HandleHttpRequest(w http.ResponseWriter, r *http.Request, executionID string, finalizer types.SnapshotFinalizer) (types.ChainError, error)
+	HandleHttpRequest(w http.ResponseWriter, r *http.Request, opts ...HandleOption) error
 	GetHttpPath() string
 	GetHttpMethod() string
 	Configuration() HttpEndpointNodeConfiguration
 }
 
+// HandleOptions holds the optional parameters for handling an HTTP request.
+type HandleOptions struct {
+	ExecutionID string
+	Finalizer   types.SnapshotFinalizer
+}
+
+// HandleOption is a function that configures HandleOptions.
+type HandleOption func(*HandleOptions)
+
+// WithExecutionID sets the execution ID for the request.
+func WithExecutionID(id string) HandleOption {
+	return func(o *HandleOptions) {
+		o.ExecutionID = id
+	}
+}
+
+// WithFinalizer sets the snapshot finalizer for the request.
+func WithFinalizer(f types.SnapshotFinalizer) HandleOption {
+	return func(o *HandleOptions) {
+		o.Finalizer = f
+	}
+}
+
 // ErrorConverter defines a contract for converting Matrix's internal errors
 // into application-specific error formats.
 type ErrorConverter interface {
-	Convert(ep HttpEndpoint, chainErr types.ChainError, originalErr error) error
+	Convert(ep HttpEndpoint, chainErr types.FailureInfo, originalErr error) error
 }
 
 // httpEndpointNodePrototype is the shared prototype instance used for registration.
@@ -63,20 +87,23 @@ func init() {
 
 // HttpEndpointNodeConfiguration holds the V2 configuration for the HttpEndpointNode.
 type HttpEndpointNodeConfiguration struct {
-	RuleChainID        string                      `json:"ruleChainId"`
-	StartNodeID        string                      `json:"startNodeId,omitempty"`
-	HttpMethod         string                      `json:"httpMethod"`
-	HttpPath           string                      `json:"httpPath"`
-	Description        string                      `json:"description"`
-	EndpointDefinition types.EndpointDefinitionObj `json:"endpointDefinition"`
+	RuleChainID        string                `json:"ruleChainId"`
+	StartNodeID        string                `json:"startNodeId,omitempty"`
+	HttpMethod         string                `json:"httpMethod"`
+	HttpPath           string                `json:"httpPath"`
+	Description        string                `json:"description"`
+	EndpointDefinition types.HttpEndpointDef `json:"endpointDefinition"`
+	ErrorMappings      types.ErrorMapping    `json:"errorMappings,omitempty"`
 }
 
 // HttpEndpointNode is a component that acts as an entry point for HTTP requests.
 type HttpEndpointNode struct {
 	types.BaseNode
 	types.Instance
-	nodeConfig  HttpEndpointNodeConfiguration
-	runtimePool types.RuntimePool
+	nodeConfig       HttpEndpointNodeConfiguration
+	runtimePool      types.RuntimePool
+	faultCodeMap     map[string]int32
+	defaultErrorCode int32
 }
 
 // New creates a new instance of the node.
@@ -87,14 +114,31 @@ func (n *HttpEndpointNode) New() types.Node {
 // Init initializes the node with its static configuration.
 func (n *HttpEndpointNode) Init(config types.Config) error {
 	if err := utils.Decode(config, &n.nodeConfig); err != nil {
-		return types.ErrInvalidConfiguration.Wrap(fmt.Errorf("failed to decode http endpoint v2 config: %w", err))
+		return fmt.Errorf("%s: %w", types.DefInvalidConfiguration.Message, err)
 	}
 	if n.nodeConfig.RuleChainID == "" {
-		return types.ErrInvalidConfiguration.Wrap(errors.New("config 'ruleChainId' is required"))
+		return types.DefInvalidConfiguration
 	}
 	if n.nodeConfig.HttpMethod == "" || n.nodeConfig.HttpPath == "" {
-		return types.ErrInvalidConfiguration.Wrap(errors.New("config 'httpMethod' and 'httpPath' are required"))
+		return types.DefInvalidConfiguration
 	}
+
+	n.faultCodeMap = make(map[string]int32)
+	for respCodeStr, faultCodes := range n.nodeConfig.ErrorMappings {
+		code, err := strconv.Atoi(respCodeStr)
+		if err != nil {
+			return fmt.Errorf("invalid response code in mapping: %s", respCodeStr)
+		}
+		for _, fc := range faultCodes {
+			n.faultCodeMap[fc] = int32(code)
+		}
+	}
+
+	n.defaultErrorCode = int32(http.StatusInternalServerError)
+	if n.nodeConfig.EndpointDefinition.Response.ErrorStatusCode != 0 {
+		n.defaultErrorCode = int32(n.nodeConfig.EndpointDefinition.Response.ErrorStatusCode)
+	}
+
 	return nil
 }
 
@@ -104,7 +148,7 @@ func (n *HttpEndpointNode) SetRuntimePool(pool any) error {
 		n.runtimePool = p
 		return nil
 	}
-	return types.ErrInvalidConfiguration.Wrap(errors.New("provided pool is not of type types.RuntimePool"))
+	return types.DefInvalidConfiguration
 }
 
 // GetHttpPath returns the configured HTTP path for routing.
@@ -149,14 +193,23 @@ func writeJsonError(w http.ResponseWriter, code int, message string, details err
 }
 
 // HandleHttpRequest is the core method that processes the incoming HTTP request.
-func (n *HttpEndpointNode) HandleHttpRequest(w http.ResponseWriter, r *http.Request, executionID string, finalizer types.SnapshotFinalizer) (types.ChainError, error) {
-	initialMsg, err := n.convertRequestToRuleMsg(r)
-	if err != nil {
-		return nil, types.ErrInvalidParams.Wrap(err)
+func (n *HttpEndpointNode) HandleHttpRequest(w http.ResponseWriter, r *http.Request, opts ...HandleOption) error {
+	options := &HandleOptions{}
+	for _, opt := range opts {
+		opt(options)
 	}
 
-	if executionID != "" {
-		initialMsg.Metadata()[types.ExecutionIDKey] = executionID
+	initialMsg, err := n.convertRequestToRuleMsg(r)
+	if err != nil {
+		return &types.ServiceError{
+			ResponseCode: http.StatusBadRequest,
+			UserMessage:  err.Error(),
+			Cause:        err,
+		}
+	}
+
+	if options.ExecutionID != "" {
+		initialMsg.Metadata()[types.ExecutionIDKey] = options.ExecutionID
 	}
 
 	var rt types.Runtime
@@ -168,52 +221,71 @@ func (n *HttpEndpointNode) HandleHttpRequest(w http.ResponseWriter, r *http.Requ
 	}
 
 	if !ok {
-		return nil, types.ErrInternal.Wrap(fmt.Errorf("runtime not found for rule chain: %s", n.nodeConfig.RuleChainID))
+		return &types.ServiceError{
+			ResponseCode: n.defaultErrorCode,
+			UserMessage:  fmt.Sprintf("runtime not found for rule chain: %s", n.nodeConfig.RuleChainID),
+		}
 	}
 
 	onEnd := func(msg types.RuleMsg, err error) {
-		if executionID != "" && finalizer != nil {
-			finalizer.FinalizeSnapshot(executionID)
+		if options.ExecutionID != "" && options.Finalizer != nil {
+			options.Finalizer.FinalizeSnapshot(options.ExecutionID)
 		}
 	}
 
 	finalMsg, execErr := rt.ExecuteAndWait(r.Context(), n.nodeConfig.StartNodeID, initialMsg, onEnd)
 
 	if execErr != nil {
-		var matrixErr *types.ErrorObj
-		if errors.As(execErr, &matrixErr) {
-			return nil, matrixErr
+		var serviceErr *types.ServiceError
+		if errors.As(execErr, &serviceErr) {
+			return serviceErr
 		}
-		return nil, types.ErrInternal.Wrap(execErr)
+		return &types.ServiceError{ResponseCode: int32(types.CodeInternalError), UserMessage: "internal server error", Cause: execErr}
 	}
 
 	if finalMsg != nil {
 		if errStr, ok := finalMsg.Metadata()[types.MetaError]; ok {
-			chainErr := make(types.ChainError)
-			chainErr[types.MetaError] = errStr
+			failureInfo := &types.FailureInfo{
+				Error: errStr,
+			}
 
 			if val, ok := finalMsg.Metadata()[types.MetaErrorNodeID]; ok {
-				chainErr[types.MetaErrorNodeID] = val
+				failureInfo.NodeID = val
 			}
 			if val, ok := finalMsg.Metadata()[types.MetaErrorNodeName]; ok {
-				chainErr[types.MetaErrorNodeName] = val
+				failureInfo.NodeName = val
 			}
 			if val, ok := finalMsg.Metadata()[types.MetaErrorTimestamp]; ok {
-				chainErr[types.MetaErrorTimestamp] = val
+				failureInfo.Timestamp = val
 			}
 			if val, ok := finalMsg.Metadata()[types.MetaErrorCode]; ok {
-				chainErr[types.MetaErrorCode] = val
+				failureInfo.Code = val
 			}
 
-			// The original error is now the string from metadata, not from execErr.
-			// The adapter layer will decide if it needs to be parsed further.
-			return chainErr, nil
+			// Determine response code based on mapping or default
+			responseCode := n.defaultErrorCode
+			// Override with specific mapping if found
+			if n.faultCodeMap != nil {
+				if code, ok := n.faultCodeMap[failureInfo.Code]; ok {
+					responseCode = code
+				}
+			}
+
+			return &types.ServiceError{
+				ResponseCode: responseCode,
+				UserMessage:  failureInfo.Error,
+				FailureInfo:  failureInfo,
+			}
 		}
 	}
 
 	responseBody, responseHeaders, statusCode, err := n.convertResponse(finalMsg)
 	if err != nil {
-		return nil, types.ErrInternal.Wrap(err)
+		return &types.ServiceError{
+			ResponseCode: n.defaultErrorCode,
+			UserMessage:  "failed to convert response",
+			Cause:        err,
+		}
 	}
 
 	for k, v := range responseHeaders {
@@ -223,7 +295,7 @@ func (n *HttpEndpointNode) HandleHttpRequest(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(responseBody)
 
-	return nil, nil
+	return nil
 }
 
 // manualExtractPathParams manually extracts path parameters by comparing the configured path pattern
@@ -266,7 +338,7 @@ func (n *HttpEndpointNode) convertRequestToRuleMsg(r *http.Request) (types.RuleM
 	var bodyData map[string]any
 	if r.Body != nil && r.ContentLength > 0 {
 		if err := json.NewDecoder(r.Body).Decode(&bodyData); err != nil && err.Error() != "EOF" {
-			return nil, ErrRequestDecodingFailed.Wrap(err)
+			return nil, fmt.Errorf("%s: %w", DefRequestDecodingFailed.Message, err)
 		}
 		defer r.Body.Close()
 	}
@@ -288,19 +360,19 @@ func (n *HttpEndpointNode) convertRequestToRuleMsg(r *http.Request) (types.RuleM
 		rawValue, found := valueProvider(param.Name)
 		if !found {
 			if param.Required {
-				return ErrRequiredFieldMissing.Wrap(fmt.Errorf("field: %s", param.Name))
+				return fmt.Errorf("%s: %s", DefRequiredFieldMissing.Message, param.Name)
 			}
 			return nil
 		}
 
 		convertedValue, err := utils.Convert(rawValue, param.Type)
 		if err != nil {
-			return ErrFieldConversionFailed.Wrap(fmt.Errorf("field: %s, error: %w", param.Name, err))
+			return fmt.Errorf("%s: %s, %w", DefFieldConversionFailed.Message, param.Name, err)
 		}
 
 		msgParts := strings.SplitN(param.Mapping.To, ".", 2)
 		if len(msgParts) < 2 {
-			return ErrInvalidMappingFormat.Wrap(fmt.Errorf("param: %s, format: %s", param.Name, param.Mapping.To))
+			return fmt.Errorf("%s: %s, %s", DefInvalidMappingFormat.Message, param.Name, param.Mapping.To)
 		}
 		msgType := msgParts[0]
 		msgKey := msgParts[1]
@@ -311,7 +383,7 @@ func (n *HttpEndpointNode) convertRequestToRuleMsg(r *http.Request) (types.RuleM
 		case "dataT":
 			objParts := strings.SplitN(msgKey, ".", 2)
 			if len(objParts) < 2 {
-				return ErrInvalidMappingFormat.Wrap(fmt.Errorf("param: %s, format: %s", param.Name, msgKey))
+				return fmt.Errorf("%s: %s, %s", DefInvalidMappingFormat.Message, param.Name, msgKey)
 			}
 			objID, fieldPath := objParts[0], objParts[1]
 
@@ -344,7 +416,7 @@ func (n *HttpEndpointNode) convertRequestToRuleMsg(r *http.Request) (types.RuleM
 					return nil, err
 				}
 			} else if p.Required {
-				return nil, ErrRequiredFieldMissing.Wrap(fmt.Errorf("field: %s", p.Name))
+				return nil, fmt.Errorf("%s: %s", DefRequiredFieldMissing.Message, p.Name)
 			}
 		} else {
 			// Otherwise, maintain the old behavior of getting the first value.
@@ -369,14 +441,14 @@ func (n *HttpEndpointNode) convertRequestToRuleMsg(r *http.Request) (types.RuleM
 	for objID, dataMap := range pendingDataT {
 		defineSid, ok := objDefineSids[objID]
 		if !ok {
-			return nil, types.ErrInvalidConfiguration.Wrap(fmt.Errorf("MsgDefineSid not found for DataT object with id: %s", objID))
+			return nil, fmt.Errorf("%s: %s", types.DefInvalidConfiguration.Message, objID)
 		}
 		newObj, err := dataT.NewItem(defineSid, objID)
 		if err != nil {
-			return nil, ErrDataTItemCreationFailed.Wrap(fmt.Errorf("objId: %s, sid: %s, error: %w", objID, defineSid, err))
+			return nil, fmt.Errorf("%s: %s, %s, %w", DefDataTItemCreationFailed.Message, objID, defineSid, err)
 		}
 		if err := utils.Decode(dataMap, newObj.Body()); err != nil {
-			return nil, types.ErrInvalidParams.Wrap(fmt.Errorf("failed to decode data into DataT item for %s: %w", objID, err))
+			return nil, fmt.Errorf("%s: %s, %w", types.DefInvalidParams.Message, objID, err)
 		}
 	}
 

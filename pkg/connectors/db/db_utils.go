@@ -40,23 +40,23 @@ func GetDBConnection(nodePool types.NodePool, dsn string) (*sqlx.DB, bool, error
 		nodeId := strings.TrimPrefix(dsn, "ref://")
 		sharedCtx, ok := nodePool.Get(nodeId)
 		if !ok {
-			return nil, false, types.ErrNodeNotFound.Wrap(fmt.Errorf("db client node not found by ref: %s", dsn))
+			return nil, false, types.DefNodeNotFound.Wrap(fmt.Errorf("db client node not found by ref: %s", dsn))
 		}
 
 		// The GetNode() method on SharedNodeCtx returns an interface{}, which is the node instance.
 		node := sharedCtx.GetNode()
 		dbClient, ok := node.(types.SharedNode)
 		if !ok {
-			return nil, false, types.ErrInternal.Wrap(fmt.Errorf("node %s is not a SharedNode", dsn))
+			return nil, false, types.DefInternalError.Wrap(fmt.Errorf("node %s is not a SharedNode", dsn))
 		}
 
 		dbInstance, err := dbClient.GetInstance()
 		if err != nil {
-			return nil, false, types.ErrInternal.Wrap(fmt.Errorf("failed to get db instance from %s: %w", dsn, err))
+			return nil, false, types.DefInternalError.Wrap(fmt.Errorf("failed to get db instance from %s: %w", dsn, err))
 		}
 		db, ok := dbInstance.(*sqlx.DB)
 		if !ok {
-			return nil, false, types.ErrInternal.Wrap(fmt.Errorf("shared instance from %s is not a *sqlx.DB", dsn))
+			return nil, false, types.DefInternalError.Wrap(fmt.Errorf("shared instance from %s is not a *sqlx.DB", dsn))
 		}
 		return db, false, nil // false indicates this is a shared connection and should not be closed.
 	} else {
@@ -64,7 +64,7 @@ func GetDBConnection(nodePool types.NodePool, dsn string) (*sqlx.DB, bool, error
 		// A real implementation should allow specifying the driverName.
 		db, err := sqlx.Connect("mysql", dsn)
 		if err != nil {
-			return nil, false, types.ErrInternal.Wrap(fmt.Errorf("failed to create temporary db connection: %w", err))
+			return nil, false, types.DefInternalError.Wrap(fmt.Errorf("failed to create temporary db connection: %w", err))
 		}
 		return db, true, nil // true indicates this is a temporary connection that the caller must close.
 	}

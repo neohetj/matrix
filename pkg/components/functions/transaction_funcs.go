@@ -93,7 +93,7 @@ func init() {
 func StartTransactionFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 	bizConfig, ok := helper.GetBusinessConfig(ctx)
 	if !ok {
-		ctx.HandleError(msg, types.ErrInvalidConfiguration.Wrap(fmt.Errorf("business config not found")))
+		ctx.HandleError(msg, types.DefInvalidConfiguration.Wrap(fmt.Errorf("business config not found")))
 		return
 	}
 
@@ -101,7 +101,7 @@ func StartTransactionFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 	txContextKey, _ := bizConfig["txContextKey"].(string)
 
 	if dsn == "" || txContextKey == "" {
-		ctx.HandleError(msg, types.ErrInvalidConfiguration.Wrap(fmt.Errorf("dsn and txContextKey are required")))
+		ctx.HandleError(msg, types.DefInvalidConfiguration.Wrap(fmt.Errorf("dsn and txContextKey are required")))
 		return
 	}
 
@@ -120,13 +120,13 @@ func StartTransactionFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 	if isTemp {
 		// It's important to close the temporary connection if we're not going to use it.
 		db.Close()
-		ctx.HandleError(msg, types.ErrInvalidConfiguration.Wrap(fmt.Errorf("transactions can only be used with shared connections (ref://)")))
+		ctx.HandleError(msg, types.DefInvalidConfiguration.Wrap(fmt.Errorf("transactions can only be used with shared connections (ref://)")))
 		return
 	}
 
 	tx, err := db.Beginx()
 	if err != nil {
-		ctx.HandleError(msg, types.ErrInternal.Wrap(fmt.Errorf("failed to begin transaction: %w", err)))
+		ctx.HandleError(msg, types.DefInternalError.Wrap(fmt.Errorf("failed to begin transaction: %w", err)))
 		return
 	}
 
@@ -141,23 +141,23 @@ func StartTransactionFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 func CommitTransactionFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 	bizConfig, ok := helper.GetBusinessConfig(ctx)
 	if !ok {
-		ctx.HandleError(msg, types.ErrInvalidConfiguration.Wrap(fmt.Errorf("business config not found")))
+		ctx.HandleError(msg, types.DefInvalidConfiguration.Wrap(fmt.Errorf("business config not found")))
 		return
 	}
 	txContextKey, _ := bizConfig["txContextKey"].(string)
 	if txContextKey == "" {
-		ctx.HandleError(msg, types.ErrInvalidConfiguration.Wrap(fmt.Errorf("txContextKey is required")))
+		ctx.HandleError(msg, types.DefInvalidConfiguration.Wrap(fmt.Errorf("txContextKey is required")))
 		return
 	}
 
 	tx, ok := ctx.GetContext().Value(txCtxKey(txContextKey)).(*sqlx.Tx)
 	if !ok {
-		ctx.HandleError(msg, types.ErrInternal.Wrap(fmt.Errorf("transaction not found in context with key: %s", txContextKey)))
+		ctx.HandleError(msg, types.DefInternalError.Wrap(fmt.Errorf("transaction not found in context with key: %s", txContextKey)))
 		return
 	}
 
 	if err := tx.Commit(); err != nil {
-		ctx.HandleError(msg, types.ErrInternal.Wrap(fmt.Errorf("failed to commit transaction: %w", err)))
+		ctx.HandleError(msg, types.DefInternalError.Wrap(fmt.Errorf("failed to commit transaction: %w", err)))
 		return
 	}
 	ctx.TellSuccess(msg)
@@ -167,12 +167,12 @@ func CommitTransactionFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 func RollbackTransactionFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 	bizConfig, ok := helper.GetBusinessConfig(ctx)
 	if !ok {
-		ctx.HandleError(msg, types.ErrInvalidConfiguration.Wrap(fmt.Errorf("business config not found")))
+		ctx.HandleError(msg, types.DefInvalidConfiguration.Wrap(fmt.Errorf("business config not found")))
 		return
 	}
 	txContextKey, _ := bizConfig["txContextKey"].(string)
 	if txContextKey == "" {
-		ctx.HandleError(msg, types.ErrInvalidConfiguration.Wrap(fmt.Errorf("txContextKey is required")))
+		ctx.HandleError(msg, types.DefInvalidConfiguration.Wrap(fmt.Errorf("txContextKey is required")))
 		return
 	}
 
@@ -189,7 +189,7 @@ func RollbackTransactionFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 	if err := tx.Rollback(); err != nil {
 		// A failed rollback is a more serious issue, unless the transaction is already done.
 		if err != sql.ErrTxDone {
-			ctx.HandleError(msg, types.ErrInternal.Wrap(fmt.Errorf("failed to rollback transaction: %w", err)))
+			ctx.HandleError(msg, types.DefInternalError.Wrap(fmt.Errorf("failed to rollback transaction: %w", err)))
 			return
 		}
 		// If the transaction is already done, we can consider the rollback successful for idempotency.

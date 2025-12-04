@@ -14,8 +14,8 @@ type RegistryProvider interface {
 	GetNodeFuncManager() NodeFuncManager
 	// GetCoreObjRegistry returns the registry for business object definitions.
 	GetCoreObjRegistry() CoreObjRegistry
-	// GetErrorRegistry returns the registry for predefined error objects.
-	GetErrorRegistry() ErrorRegistry
+	// GetFaultRegistry returns the registry for predefined error objects.
+	GetFaultRegistry() FaultRegistry
 }
 
 // DefaultRegistry is a global variable that holds the default registry provider.

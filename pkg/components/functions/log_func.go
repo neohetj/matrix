@@ -61,7 +61,7 @@ func LogFunc(ctx types.NodeCtx, msg types.RuleMsg) {
 
 		res, err := vm.RunString(script)
 		if err != nil {
-			ctx.TellFailure(msg, types.ErrInternal.Wrap(fmt.Errorf("script execution failed: %w", err)))
+			ctx.TellFailure(msg, types.DefInternalError.Wrap(fmt.Errorf("script execution failed: %w", err)))
 			return
 		}
 

@@ -1,7 +1,6 @@
 package action
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 
@@ -17,7 +16,9 @@ const (
 )
 
 var (
-	ErrNoMatchCase = errors.New("no match case for expr switch")
+	FaultExprCompilationFailed = &types.Fault{Code: 202501001, Message: "expression compilation failed"}
+	FaultExprEvaluationFailed  = &types.Fault{Code: 202501002, Message: "expression evaluation failed"}
+	FaultNoMatchCase           = &types.Fault{Code: 202501003, Message: "no case matched and no default relation configured"}
 )
 
 var exprSwitchNodePrototype = &ExprSwitchNode{
@@ -32,6 +33,11 @@ var exprSwitchNodePrototype = &ExprSwitchNode{
 
 func init() {
 	registry.Default.NodeManager.Register(exprSwitchNodePrototype)
+	registry.Default.FaultRegistry.Register(
+		FaultExprCompilationFailed,
+		FaultExprEvaluationFailed,
+		FaultNoMatchCase,
+	)
 }
 
 // ExprSwitchNodeConfiguration holds the instance-specific configuration.
@@ -62,10 +68,10 @@ func (n *ExprSwitchNode) Type() types.NodeType {
 // Init initializes the node instance with its specific configuration.
 func (n *ExprSwitchNode) Init(configuration types.Config) error {
 	if err := utils.Decode(configuration, &n.nodeConfig); err != nil {
-		return fmt.Errorf("failed to decode exprSwitch node config: %w", err)
+		return fmt.Errorf("%s: %w", types.DefInvalidConfiguration.Message, err)
 	}
 	if len(n.nodeConfig.Cases) == 0 {
-		return fmt.Errorf("'cases' is not specified or is empty for node %s", n.ID())
+		return fmt.Errorf("%s for node %s", types.DefInvalidConfiguration.Message, n.ID())
 	}
 	return nil
 }
@@ -109,13 +115,15 @@ func (n *ExprSwitchNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 
 		program, err := expr.Compile(expression, expr.Env(env), lenFunc)
 		if err != nil {
-			ctx.HandleError(msg, fmt.Errorf("expression compilation failed for '%s': %w", expression, err))
+			errInfo := fmt.Errorf("expression: '%s', details: %w", expression, err)
+			ctx.HandleError(msg, FaultExprCompilationFailed.Wrap(errInfo))
 			return
 		}
 
 		output, err := expr.Run(program, env)
 		if err != nil {
-			ctx.HandleError(msg, fmt.Errorf("expression evaluation failed for '%s': %w", expression, err))
+			errInfo := fmt.Errorf("expression: '%s', details: %w", expression, err)
+			ctx.HandleError(msg, FaultExprEvaluationFailed.Wrap(errInfo))
 			return
 		}
 
@@ -135,6 +143,6 @@ func (n *ExprSwitchNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 		ctx.TellNext(msg, n.nodeConfig.DefaultRelation)
 	} else {
 		ctx.Warn("No cases matched and no default relation configured")
-		ctx.TellFailure(msg, ErrNoMatchCase)
+		ctx.HandleError(msg, FaultNoMatchCase)
 	}
 }
