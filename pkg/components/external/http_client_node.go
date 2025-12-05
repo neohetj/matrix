@@ -22,10 +22,11 @@ import (
 	"net/url"
 	"time"
 
-	"gitlab.com/neohet/matrix/pkg/helper"
-	"gitlab.com/neohet/matrix/pkg/registry"
-	"gitlab.com/neohet/matrix/pkg/types"
-	"gitlab.com/neohet/matrix/pkg/utils"
+	"github.com/NeohetJ/Matrix/internal/registry"
+	"github.com/NeohetJ/Matrix/pkg/cnst"
+	"github.com/NeohetJ/Matrix/pkg/helper"
+	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/NeohetJ/Matrix/pkg/utils"
 )
 
 const (
@@ -33,30 +34,38 @@ const (
 )
 
 var (
-	FaultHttpSendFailed = &types.Fault{Code: 202503002, Message: "HTTP request sending failed"}
+	FaultHttpClientBuildRequestFailed = &types.Fault{Code: cnst.CodeHttpClientBuildRequestFailed, Message: "failed to build http request"}
+	FaultHttpSendFailed               = &types.Fault{Code: cnst.CodeHttpClientSendFailed, Message: "HTTP request sending failed"}
+	FaultHttpClientInvalidProxy       = &types.Fault{Code: cnst.CodeHttpClientInvalidProxy, Message: "invalid proxy url"}
+	FaultHttpClientMapResponseFailed  = &types.Fault{Code: cnst.CodeHttpClientMapResponseFailed, Message: "failed to map response to message"}
 )
 
 var httpClientNodePrototype = &HttpClientNode{
-	BaseNode: *types.NewBaseNode(HttpClientNodeType, types.NodeDefinition{
+	BaseNode: *types.NewBaseNode(HttpClientNodeType, types.NodeMetadata{
 		Name:        "HTTP Client",
 		Description: "Sends a highly configurable HTTP request based on declarative mappings.",
 		Dimension:   "External",
 		Tags:        []string{"external", "http", "rest", "api"},
-		Version:     "3.0.0",
+		Version:     "1.0.0",
 	}),
 }
 
 func init() {
-	registry.Default.NodeManager.Register(httpClientNodePrototype)
-	registry.Default.FaultRegistry.Register(FaultHttpSendFailed)
+	types.DefaultRegistry.GetNodeManager().Register(httpClientNodePrototype)
+	types.DefaultRegistry.GetFaultRegistry().Register(
+		FaultHttpClientBuildRequestFailed,
+		FaultHttpSendFailed,
+		FaultHttpClientInvalidProxy,
+		FaultHttpClientMapResponseFailed,
+	)
 }
 
 // HttpClientNodeConfiguration holds the configuration for the HttpClientNode.
 type HttpClientNodeConfiguration struct {
-	DefaultTimeout string                 `json:"defaultTimeout"`
-	ProxyURL       string                 `json:"proxyUrl"`
-	Request        helper.HttpRequestMap  `json:"request"`
-	Response       helper.HttpResponseMap `json:"response"`
+	DefaultTimeout string                `json:"defaultTimeout"`
+	ProxyURL       string                `json:"proxyUrl"`
+	Request        types.HttpRequestMap  `json:"request"`
+	Response       types.HttpResponseMap `json:"response"`
 }
 
 // httpDoer is an interface that wraps the Do method of an http.Client.
@@ -81,7 +90,7 @@ func (n *HttpClientNode) New() types.Node {
 	}
 }
 
-func (n *HttpClientNode) Init(cfg types.Config) error {
+func (n *HttpClientNode) Init(cfg types.ConfigMap) error {
 	if err := utils.Decode(cfg, &n.nodeConfig); err != nil {
 		return fmt.Errorf("failed to decode http client node config: %w", err)
 	}
@@ -96,8 +105,7 @@ func (n *HttpClientNode) Init(cfg types.Config) error {
 func (n *HttpClientNode) validateDefineSIDs() error {
 	registry := registry.Default.GetCoreObjRegistry()
 
-	var check func(sid string) error
-	check = func(sid string) error {
+	check := func(sid string) error {
 		if sid == "" {
 			return nil
 		}
@@ -107,32 +115,39 @@ func (n *HttpClientNode) validateDefineSIDs() error {
 		return nil
 	}
 
+	// Helper to check packet SIDs
+	checkPacket := func(packet types.EndpointIOPacket, context string) error {
+		if packet.MapAll != nil && *packet.MapAll != "" {
+			if u, err := url.Parse(*packet.MapAll); err == nil && u.Scheme == "rulemsg" {
+				if sid := u.Query().Get("sid"); sid != "" {
+					if err := check(sid); err != nil {
+						return fmt.Errorf("in %s MapAll: %w", context, err)
+					}
+				}
+			}
+		}
+		for _, field := range packet.Fields {
+			if field.BindPath != "" {
+				if u, err := url.Parse(field.BindPath); err == nil && u.Scheme == "rulemsg" {
+					if sid := u.Query().Get("sid"); sid != "" {
+						if err := check(sid); err != nil {
+							return fmt.Errorf("in %s field '%s': %w", context, field.Name, err)
+						}
+					}
+				}
+			}
+		}
+		return nil
+	}
+
 	// Check response body mappings
-	if respBody := n.nodeConfig.Response.Body; respBody != nil {
-		if respBody.From != nil {
-			if err := check(respBody.From.DefineSID); err != nil {
-				return err
-			}
-		}
-		for _, param := range respBody.Params {
-			if err := check(param.Mapping.DefineSID); err != nil {
-				return fmt.Errorf("in response body param '%s': %w", param.Name, err)
-			}
-		}
+	if err := checkPacket(n.nodeConfig.Response.Body, "response body"); err != nil {
+		return err
 	}
 
 	// Check response header mappings
-	if respHeaders := n.nodeConfig.Response.Headers; respHeaders != nil {
-		if respHeaders.From != nil {
-			if err := check(respHeaders.From.DefineSID); err != nil {
-				return err
-			}
-		}
-		for _, param := range respHeaders.Params {
-			if err := check(param.Mapping.DefineSID); err != nil {
-				return fmt.Errorf("in response header param '%s': %w", param.Name, err)
-			}
-		}
+	if err := checkPacket(n.nodeConfig.Response.Headers, "response headers"); err != nil {
+		return err
 	}
 
 	return nil
@@ -144,11 +159,12 @@ func (n *HttpClientNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 	// --- End Debug Logging ---
 
 	// 1. Build Http Request from RuleMsg using the shared helper
-	httpReq, err := helper.MapRuleMsgToHttpRequest(ctx, msg, n.nodeConfig.Request, n.nodeConfig.DefaultTimeout)
+	httpReq, cancel, err := helper.MapRuleMsgToHttpRequest(ctx, msg, n.nodeConfig.Request, n.nodeConfig.DefaultTimeout)
 	if err != nil {
-		ctx.HandleError(msg, fmt.Errorf("%w: failed to build http request: %w", types.DefInvalidParams, err))
+		ctx.HandleError(msg, FaultHttpClientBuildRequestFailed.Wrap(err))
 		return
 	}
+	defer cancel()
 
 	// --- Start Debug Logging ---
 	ctx.Info("HttpClientNode built request",
@@ -159,23 +175,36 @@ func (n *HttpClientNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 
 	// 2. Create a new client for each request to ensure thread safety and dynamic configuration.
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+	// Clone transport to avoid race conditions and side effects on global transport
 	if n.nodeConfig.ProxyURL != "" {
 		proxyUrl, err := url.Parse(n.nodeConfig.ProxyURL)
 		if err != nil {
-			ctx.HandleError(msg, fmt.Errorf("%w: invalid proxy url: %w", types.DefInvalidParams, err))
+			ctx.HandleError(msg, FaultHttpClientInvalidProxy.Wrap(err))
 			return
 		}
 		transport.Proxy = http.ProxyURL(proxyUrl)
 	}
-	// If the node's client is the default http.Client, update its transport.
-	// This allows the default client to be used while still supporting dynamic proxy settings.
+
+	// Create a new client instance for this request to use the configured transport.
+	// We check if n.client is a *http.Client to copy its other settings (like Timeout) if needed,
+	// but here we primarily need to ensure we use the potentially modified transport.
+	// Note: We are creating a NEW client instance here, not modifying the shared n.client.
+	// However, if n.client is a mock (does not implement *http.Client), we should use it directly
+	// (though mocks usually don't need proxy settings).
+	var requestClient httpDoer
 	if hc, ok := n.client.(*http.Client); ok {
-		hc.Transport = transport
+		// Create a shallow copy of the client to swap the transport
+		newClient := *hc
+		newClient.Transport = transport
+		requestClient = &newClient
+	} else {
+		// It's a mock or custom implementation, use as is
+		requestClient = n.client
 	}
 
 	// 3. Send Request and measure latency
 	startTime := time.Now()
-	resp, err := n.client.Do(httpReq)
+	resp, err := requestClient.Do(httpReq)
 	endTime := time.Now()
 
 	// We handle the error after mapping, so we can record it.
@@ -192,14 +221,17 @@ func (n *HttpClientNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 	outMsg := msg.Copy()
 
 	// 4. Map Response back to the new Message using the shared helper
+	// Pass requestErr (err) to MapHttpResponseToRuleMsg. If requestErr is not nil,
+	// MapHttpResponseToRuleMsg will map it to metadata and return nil (no mapping error).
+	// We check for requestErr later to decide whether to fail the node execution.
 	if mapErr := helper.MapHttpResponseToRuleMsg(ctx, resp, outMsg, n.nodeConfig.Response, startTime, endTime, err); mapErr != nil {
-		ctx.HandleError(msg, fmt.Errorf("%w: failed to map response to message: %w", types.DefInternalError, mapErr))
+		ctx.HandleError(msg, FaultHttpClientMapResponseFailed.Wrap(mapErr))
 		return
 	}
 
 	// 5. Now, after mapping the error (if any), we can fail the message.
 	if err != nil {
-		ctx.HandleError(outMsg, fmt.Errorf("%w: %w", FaultHttpSendFailed, err))
+		ctx.HandleError(outMsg, FaultHttpSendFailed.Wrap(err))
 		return
 	}
 
@@ -207,3 +239,13 @@ func (n *HttpClientNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 }
 
 func (n *HttpClientNode) Destroy() {}
+
+// Errors returns the list of possible faults that this node can produce.
+func (n *HttpClientNode) Errors() []*types.Fault {
+	return []*types.Fault{
+		FaultHttpClientBuildRequestFailed,
+		FaultHttpSendFailed,
+		FaultHttpClientInvalidProxy,
+		FaultHttpClientMapResponseFailed,
+	}
+}

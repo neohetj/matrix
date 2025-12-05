@@ -18,142 +18,153 @@ package types
 
 import (
 	"encoding/json"
-	"time"
 
-	"github.com/google/uuid"
+	"github.com/NeohetJ/Matrix/pkg/cnst"
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
-// DefaultRuleMsg is the default implementation of the RuleMsg interface.
-type DefaultRuleMsg struct {
-	id         string
-	ts         int64
-	msgType    string
-	dataFormat DataFormat
-	data       string
-	dataT      DataT
-	metadata   Metadata
+// CoreObjDef holds the definition of a business object, including its OpenAPI schema.
+type CoreObjDef interface {
+	json.Marshaler
+
+	// SID returns the unique type identifier for the object definition.
+	SID() string
+
+	// New returns a new instance of the business object.
+	New() any
+
+	// Description returns a human-readable description of the object.
+	Description() string
+
+	// Schema returns the JSON schema of the object's fields in OpenAPI format.
+	Schema() string
+
+	// OpenAPISchema returns the raw openapi3.Schema object.
+	OpenAPISchema() *openapi3.Schema
 }
 
-// NewMsg creates a new message with the given type, data, and metadata.
-// It automatically generates a new UUID and sets the timestamp.
-// The dataFormat is initially empty and should be set explicitly via WithDataFormat.
-func NewMsg(msgType, data string, metadata Metadata, dataT DataT) RuleMsg {
-	if metadata == nil {
-		metadata = make(Metadata)
+// CoreObj is the interface for a concrete business object instance.
+type CoreObj interface {
+	Key() string
+	Definition() CoreObjDef
+	Body() any
+	SetBody(body any) error
+	DeepCopy() (CoreObj, error)
+}
+
+// CoreObjRegistry is the interface for managing a collection of CoreObjDef.
+type CoreObjRegistry interface {
+	Register(defs ...CoreObjDef)
+	Get(sid string) (CoreObjDef, bool)
+	GetAll() []CoreObjDef
+}
+
+// DataT is the interface for a container of structured business objects.
+// It holds multiple, typed objects, accessible by a unique key.
+type DataT interface {
+	// Get retrieves a business object by its unique object ID (objId).
+	Get(objId string) (CoreObj, bool)
+	// Set adds or updates a business object in the container using its objId as the key.
+	Set(objId string, value CoreObj)
+	// NewItem creates a new CoreObj instance based on a registered definition (SID),
+	// assigns it the given object ID (objId), and adds it to the container.
+	NewItem(sid, objId string) (CoreObj, error)
+	// GetAll returns a map of all business objects.
+	GetAll() map[string]CoreObj
+	// Copy returns a shallow copy of the container.
+	Copy() DataT
+	// DeepCopy returns a deep copy of the container.
+	DeepCopy() (DataT, error)
+
+	// GetByParam retrieves a business object by its logical parameter name,
+	// by resolving the name to an objId using the node's context.
+	// It returns (nil, nil) if the object is not found but no error occurred.
+	GetByParam(ctx NodeCtx, pname string) (CoreObj, error)
+
+	// NewItemByParam creates a new business object by its logical parameter name,
+	// by resolving the name to an objId and SID using the node's context.
+	NewItemByParam(ctx NodeCtx, pname string) (CoreObj, error)
+}
+
+// Data is a type for message data, represented as a string.
+type Data string
+
+// Metadata is a type for message metadata, represented as a map with string keys and string values.
+type Metadata map[string]string
+
+// Copy creates a new copy of the metadata.
+func (m Metadata) Copy() Metadata {
+	newMd := make(Metadata, len(m))
+	for k, v := range m {
+		newMd[k] = v
 	}
-	if dataT == nil {
-		dataT = NewDataT()
+	return newMd
+}
+
+// Config is a type for component configurations, represented as a map with string keys and any values.
+type ConfigMap map[string]any
+
+// Get retrieves a value from the ConfigMap by key and casts it to type T.
+// It returns the zero value of T and false if the key is missing or the type assertion fails.
+func GetConfigMap[T any](c ConfigMap, key string) (T, bool) {
+	val, ok := c[key]
+	if !ok {
+		var zero T
+		return zero, false
 	}
-	return &DefaultRuleMsg{
-		id:         uuid.NewString(),
-		ts:         time.Now().UnixMilli(),
-		msgType:    msgType,
-		data:       data,
-		dataT:      dataT,
-		metadata:   metadata,
-		dataFormat: "", // Default to empty
-	}
-}
-
-func (m *DefaultRuleMsg) ID() string {
-	return m.id
-}
-
-func (m *DefaultRuleMsg) Ts() int64 {
-	return m.ts
-}
-
-func (m *DefaultRuleMsg) Type() string {
-	return m.msgType
-}
-
-func (m *DefaultRuleMsg) DataFormat() DataFormat {
-	return m.dataFormat
-}
-
-func (m *DefaultRuleMsg) WithDataFormat(dataFormat DataFormat) RuleMsg {
-	m.dataFormat = dataFormat
-	return m
-}
-
-func (m *DefaultRuleMsg) Data() string {
-	return m.data
-}
-
-func (m *DefaultRuleMsg) DataT() DataT {
-	return m.dataT
-}
-
-func (m *DefaultRuleMsg) Metadata() Metadata {
-	return m.metadata
-}
-
-func (m *DefaultRuleMsg) SetData(data string) {
-	m.data = data
-}
-
-func (m *DefaultRuleMsg) SetMetadata(metadata Metadata) {
-	m.metadata = metadata
-}
-
-func (m *DefaultRuleMsg) Copy() RuleMsg {
-	// Create a new message instance.
-	newMsg := &DefaultRuleMsg{
-		// Keep the original ID and timestamp to trace the message origin.
-		id:         m.id,
-		ts:         m.ts,
-		msgType:    m.msgType,
-		dataFormat: m.dataFormat,
-		data:       m.data,
-		// Shallow copy of DataT (share the reference) as per design.
-		dataT: m.dataT,
-		// Deep copy of Metadata (each branch gets its own metadata) to prevent race conditions.
-		metadata: m.metadata.Copy(),
-	}
-	return newMsg
-}
-
-// DeepCopy creates a full, deep copy of the RuleMsg.
-func (m *DefaultRuleMsg) DeepCopy() (RuleMsg, error) {
-	// Deep copy the DataT container.
-	newDataT, err := m.dataT.DeepCopy()
-	if err != nil {
-		return nil, err
+	tVal, ok := val.(T)
+	if ok {
+		return tVal, true
 	}
 
-	// Create a new message instance with the deep-copied DataT.
-	newMsg := &DefaultRuleMsg{
-		id:         m.id,
-		ts:         m.ts,
-		msgType:    m.msgType,
-		dataFormat: m.dataFormat,
-		data:       m.data,
-		dataT:      newDataT,
-		metadata:   m.metadata.Copy(), // Metadata's Copy is a deep copy.
+	// Try ConfigMap conversion if T is ConfigMap and val is map[string]any
+	if _, isConfigMap := any(tVal).(ConfigMap); isConfigMap {
+		if mVal, isMap := val.(map[string]any); isMap {
+			return any(ConfigMap(mVal)).(T), true
+		}
 	}
-	return newMsg, nil
+
+	return tVal, false
 }
 
-// MarshalJSON implements the json.Marshaler interface.
-// This allows us to control the serialization of the DefaultRuleMsg,
-// ensuring private fields are included in the JSON output.
-func (m *DefaultRuleMsg) MarshalJSON() ([]byte, error) {
-	// Use a temporary struct with public fields for marshaling.
-	return json.Marshal(&struct {
-		Id         string     `json:"id"`
-		Ts         int64      `json:"ts"`
-		MsgType    string     `json:"msgType"`
-		DataFormat DataFormat `json:"dataFormat"`
-		Data       string     `json:"data"`
-		DataT      DataT      `json:"dataT"`
-		Metadata   Metadata   `json:"metadata"`
-	}{
-		Id:         m.id,
-		Ts:         m.ts,
-		MsgType:    m.msgType,
-		DataFormat: m.dataFormat,
-		Data:       m.data,
-		DataT:      m.dataT,
-		Metadata:   m.metadata,
-	})
+// Merge merges another ConfigMap into this one.
+// Keys in the other ConfigMap will overwrite keys in this ConfigMap.
+func (c ConfigMap) Merge(other ConfigMap) {
+	for k, v := range other {
+		c[k] = v
+	}
+}
+
+// RuleMsg is the interface for a message in the rule engine.
+// It carries both raw, serialized data and structured, typed business objects.
+type RuleMsg interface {
+	// ID returns the message ID.
+	ID() string
+	// Ts returns the message timestamp.
+	Ts() int64
+	// Type returns the message type.
+	Type() string
+	// DataFormat returns the format of the Data field, e.g., "JSON", "TEXT".
+	DataFormat() cnst.MFormat
+	// Data returns the raw message payload, typically a JSON string.
+	// This is used for communication with external systems.
+	Data() Data
+	// DataT returns the container for structured business objects.
+	// This is used for processing within the rule chain.
+	DataT() DataT
+	// Metadata returns the message metadata.
+	Metadata() Metadata
+
+	// SetData sets the raw message payload and its format.
+	SetData(data string, format cnst.MFormat)
+	// SetMetadata sets the message metadata.
+	SetMetadata(metadata Metadata)
+
+	// Copy returns a copy of the message.
+	Copy() RuleMsg
+	// DeepCopy returns a deep copy of the message.
+	DeepCopy() (RuleMsg, error)
+
+	// WithDataFormat sets the raw message payload format and returns the message.
+	WithDataFormat(format cnst.MFormat) RuleMsg
 }

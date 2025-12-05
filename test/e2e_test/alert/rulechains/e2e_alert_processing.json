@@ -1,0 +1,94 @@
+{
+  "ruleChain": {
+    "id": "rc-simple-e2e-test",
+    "name": "Simple E2E Test Rule Chain",
+    "description": "一个简单的、用于端到端测试的规则链",
+    "attrs": {
+      "executable": true
+    }
+  },
+  "metadata": {
+    "nodes": [
+      {
+        "id": "node-start",
+        "type": "action/log",
+        "name": "测试开始",
+        "description": "记录测试开始的日志",
+        "configuration": {
+          "level": "INFO",
+          "message": "E2E test started.\n Input data %+v",
+          "args": [
+            "data.labels"
+          ]
+        }
+      },
+      {
+        "id": "node-parse-alert-body",
+        "type": "transform/object_mapper",
+        "name": "解析并校验告警",
+        "description": "将原始告警JSON解析到结构化的DataT对象中",
+        "configuration": {
+          "mappingDefinition": {
+            "mapAll": "rulemsg://dataT/asdflasjgie?sid=parsedAlert"
+          }
+        }
+      },
+      {
+        "id": "node-route-by-severity",
+        "type": "action/exprSwitch",
+        "name": "按严重等级路由",
+        "description": "根据parsedAlert.labels.severity的值进行路由",
+        "configuration": {
+          "cases": {
+            "Critical": "dataT.asdflasjgie.labels.severity == 'critical'",
+            "Warning": "dataT.asdflasjgie.labels.severity == 'warning'"
+          },
+          "defaultRelation": "Info"
+        }
+      },
+      {
+        "id": "node-log-critical-alert",
+        "type": "action/log",
+        "name": "记录严重告警",
+        "description": "记录Critical级别的告警日志",
+        "configuration": {
+          "level": "ERROR",
+          "message": "Critical alert received: %v",
+          "args": [
+            "dataT.asdflasjgie.annotations.summary"
+          ]
+        }
+      },
+      {
+        "id": "node-log-warning-alert",
+        "type": "action/log",
+        "name": "记录警告告警",
+        "description": "记录Warning级别的告警日志",
+        "configuration": {
+          "level": "WARN",
+          "message": "Warning alert received: %v",
+          "args": [
+            "dataT.asdflasjgie.annotations.summary"
+          ]
+        }
+      },
+      {
+        "id": "node-log-info-alert",
+        "type": "action/log",
+        "name": "记录普通告警",
+        "description": "记录信息级别的告警日志",
+        "configuration": {
+          "level": "INFO",
+          "message": "INFO alert received: %v"
+        }
+      }
+    ],
+    "connections": [
+      { "fromId": "node-start", "toId": "node-parse-alert-body", "type": "Success" },
+      { "fromId": "node-parse-alert-body", "toId": "node-route-by-severity", "type": "Success" },
+      { "fromId": "node-route-by-severity", "toId": "node-log-critical-alert", "type": "Critical" },
+      { "fromId": "node-route-by-severity", "toId": "node-log-warning-alert", "type": "Warning" },
+      { "fromId": "node-route-by-severity", "toId": "node-log-info-alert", "type": "Info" }
+    ]
+  }
+}

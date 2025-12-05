@@ -1,0 +1,48 @@
+{
+  "ruleChain": {
+    "id": "rc-image-upload",
+    "name": "Image Upload Rule Chain",
+    "attrs": {
+      "executable": true
+    }
+  },
+  "metadata": {
+    "nodes": [
+      {
+        "id": "node-save-file",
+        "type": "functions",
+        "name": "Save Uploaded File",
+        "configuration": {
+          "functionName": "SaveFile",
+          "business": {
+            "uploadRootDir": "uploads"
+          }
+        },
+        "inputs": {
+            "file": {
+                "objId": "uploadedFileObjId",
+                "defineSid": "MultipartFileHeader"
+            }
+        },
+        "outputs": {
+            "result": {
+                "objId": "uploadedFileMetaObjId",
+                "defineSid": "FileMetadata"
+            }
+        }
+      },
+      {
+        "id": "node-log-success",
+        "type": "action/log",
+        "name": "Log Success",
+        "configuration": {
+          "level": "INFO",
+          "message": "File uploaded and saved successfully."
+        }
+      }
+    ],
+    "connections": [
+      { "fromId": "node-save-file", "toId": "node-log-success", "type": "Success" }
+    ]
+  }
+}

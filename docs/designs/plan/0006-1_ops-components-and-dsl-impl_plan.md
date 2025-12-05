@@ -36,11 +36,11 @@ relations:
 
 **问题**: 不同的运维节点（如`ops/machine`, `ops/service`）在可视化渲染时，需要有不同的图标来直观地区分。
 
-**方案**: 我们将在 `types.NodeDefinition` 结构体中增加一个可选的 `Icon` 字段。
+**方案**: 我们将在 `types.NodeMetadata` 结构体中增加一个可选的 `Icon` 字段。
 
 ```go
 // In: Architect/matrix/pkg/types/node.go
-type NodeDefinition struct {
+type NodeMetadata struct {
     Type        string   `json:"type"`
     Name        string   `json:"name"`
     // ... (其他字段)
@@ -48,7 +48,7 @@ type NodeDefinition struct {
 }
 ```
 
-*   **实现**: 在每个运维节点的 `Definition()` 方法返回的 `NodeDefinition` 中，为其 `Icon` 字段赋一个标准化的值。例如，对于 `MachineNode`，可以设置为 `"server"`；对于 `ServiceNode`，可以设置为 `"cog"`。
+*   **实现**: 在每个运维节点的 `Definition()` 方法返回的 `NodeMetadata` 中，为其 `Icon` 字段赋一个标准化的值。例如，对于 `MachineNode`，可以设置为 `"server"`；对于 `ServiceNode`，可以设置为 `"cog"`。
 *   **消费**: 前端可视化工具或拓扑图生成器在解析规则链DSL后，可以读取每个节点的 `Definition().Icon` 字段，并根据该值从图标库（如Font Awesome, Material Icons）中选择并渲染对应的图标。
 
 ### 2.2. Application 与 Service 节点的区别与关联 (ApplicationVsService)

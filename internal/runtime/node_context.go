@@ -23,25 +23,19 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gitlab.com/neohet/matrix/internal/log"
-	"gitlab.com/neohet/matrix/pkg/types"
+	"github.com/NeohetJ/Matrix/internal/log"
+	"github.com/NeohetJ/Matrix/pkg/cnst"
+	"github.com/NeohetJ/Matrix/pkg/message"
+	"github.com/NeohetJ/Matrix/pkg/types"
 )
-
-// ChainInstance holds the live state of a running rule chain execution.
-type ChainInstance struct {
-	def         *types.RuleChainDef
-	nodes       map[string]types.Node
-	nodeDefs    map[string]*types.NodeDef
-	connections map[string][]types.Connection
-}
 
 // DefaultNodeCtx is the default implementation of the NodeCtx interface.
 type DefaultNodeCtx struct {
 	context.Context
-	config       types.Config
+	config       types.ConfigMap
 	selfDef      *types.NodeDef
+	chain        types.ChainInstance
 	runtime      *DefaultRuntime
-	chain        *ChainInstance
 	onEnd        func(msg types.RuleMsg, err error)
 	parentCtx    *DefaultNodeCtx
 	waitingCount int32
@@ -50,7 +44,7 @@ type DefaultNodeCtx struct {
 }
 
 // NewDefaultNodeCtx creates a new node context.
-func NewDefaultNodeCtx(ctx context.Context, r *DefaultRuntime, chain *ChainInstance, selfDef *types.NodeDef, parent *DefaultNodeCtx, onEnd func(msg types.RuleMsg, err error), aspects []types.Aspect, callback types.CallbackFunc) *DefaultNodeCtx {
+func NewDefaultNodeCtx(ctx context.Context, r *DefaultRuntime, chain types.ChainInstance, selfDef *types.NodeDef, parent *DefaultNodeCtx, onEnd func(msg types.RuleMsg, err error), aspects []types.Aspect, callback types.CallbackFunc) *DefaultNodeCtx {
 	return &DefaultNodeCtx{
 		Context:   ctx,
 		runtime:   r,
@@ -98,24 +92,24 @@ func (ctx *DefaultNodeCtx) SetContext(c context.Context) {
 }
 
 // Config returns the node's configuration.
-func (ctx *DefaultNodeCtx) Config() types.Config {
+func (ctx *DefaultNodeCtx) Config() types.ConfigMap {
 	return ctx.config
 }
 
 // ChainConfig returns the configuration of the current rule chain.
-func (ctx *DefaultNodeCtx) ChainConfig() types.Config {
-	if ctx.chain == nil || ctx.chain.def == nil {
+func (ctx *DefaultNodeCtx) ChainConfig() types.ConfigMap {
+	if ctx.chain == nil || ctx.chain.Definition() == nil {
 		return nil
 	}
-	return ctx.chain.def.RuleChain.Configuration
+	return ctx.chain.Definition().RuleChain.Configuration
 }
 
 // ChainID returns the ID of the current rule chain.
 func (ctx *DefaultNodeCtx) ChainID() string {
-	if ctx.chain == nil || ctx.chain.def == nil {
+	if ctx.chain == nil || ctx.chain.Definition() == nil {
 		return ""
 	}
-	return ctx.chain.def.RuleChain.ID
+	return ctx.chain.Definition().RuleChain.ID
 }
 
 // Logger returns the logger instance for the current runtime context.
@@ -139,13 +133,16 @@ func (ctx *DefaultNodeCtx) NodeID() string {
 	return ctx.selfDef.ID
 }
 
-// GetNodeById checks if a node with the given ID exists in the current rule chain.
-func (ctx *DefaultNodeCtx) GetNodeById(id string) bool {
-	if ctx.chain == nil || ctx.chain.nodes == nil {
-		return false
+// GetNode returns the current Node instance from the Chain Instance.
+func (ctx *DefaultNodeCtx) GetNode() types.Node {
+	if ctx.chain == nil || ctx.selfDef == nil {
+		return nil
 	}
-	_, ok := ctx.chain.nodes[id]
-	return ok
+	node, ok := ctx.chain.GetNode(ctx.selfDef.ID)
+	if !ok {
+		return nil
+	}
+	return node
 }
 
 // TellSuccess finds the "Success" relation and calls TellNext.
@@ -178,24 +175,29 @@ func (ctx *DefaultNodeCtx) TellFailure(msg types.RuleMsg, err error) {
 // HandleError provides a standardized way to process errors within a node.
 // It logs the error and then routes the message to the 'Failure' output.
 func (ctx *DefaultNodeCtx) HandleError(msg types.RuleMsg, err error) {
-	// 1. Log the error with structured context.
-	ctx.Error("Node execution failed", "error", err)
-
-	// 2. Enrich the message metadata.
+	// 1. Enrich the message metadata.
 	if msg.Metadata() == nil {
 		msg.SetMetadata(make(types.Metadata))
 	}
 	metadata := msg.Metadata()
 	metadata[types.MetaError] = err.Error()
-	if ctx.SelfDef() != nil {
-		metadata[types.MetaErrorNodeID] = ctx.SelfDef().ID
-		metadata[types.MetaErrorNodeName] = ctx.SelfDef().Name
-	}
 	metadata[types.MetaErrorTimestamp] = time.Now().UTC().Format(time.RFC3339)
-
 	var fault *types.Fault
 	if errors.As(err, &fault) {
-		metadata[types.MetaErrorCode] = fmt.Sprintf("%d", fault.Code)
+		metadata[types.MetaErrorCode] = string(fault.Code)
+	}
+
+	if def := ctx.SelfDef(); def != nil {
+		metadata[types.MetaErrorNodeID] = ctx.SelfDef().ID
+		metadata[types.MetaErrorNodeName] = ctx.SelfDef().Name
+		// Log the error with structured context.
+		ctx.Error("Node execution failed",
+			"nodeId", def.ID,
+			"nodeName", def.Name,
+			"error", err)
+	} else {
+		// Log the error with structured context.
+		ctx.Error("Node execution failed", "error", err)
 	}
 
 	// 3. Route the message to the failure path.
@@ -211,8 +213,8 @@ func (ctx *DefaultNodeCtx) TellNext(msg types.RuleMsg, relationTypes ...string) 
 	}
 
 	// Get all connections for the current node
-	connections, ok := ctx.chain.connections[ctx.selfDef.ID]
-	if !ok {
+	connections := ctx.chain.GetConnections(ctx.selfDef.ID)
+	if len(connections) == 0 {
 		// No connections from this node, so it's a leaf
 		ctx.childDone(msg, nil)
 		return
@@ -223,8 +225,8 @@ func (ctx *DefaultNodeCtx) TellNext(msg types.RuleMsg, relationTypes ...string) 
 		for _, conn := range connections {
 			if conn.Type == relationType {
 				nextNodeID := conn.ToID
-				if nextNode, nodeOk := ctx.chain.nodes[nextNodeID]; nodeOk {
-					if nextDef, defOk := ctx.chain.nodeDefs[nextNodeID]; defOk {
+				if nextNode, nodeOk := ctx.chain.GetNode(nextNodeID); nodeOk {
+					if nextDef, defOk := ctx.chain.GetNodeDef(nextNodeID); defOk {
 						foundNext = true
 						// Increment parent's waiting counter before submitting the task
 						ctx.childReady()
@@ -244,6 +246,11 @@ func (ctx *DefaultNodeCtx) TellNext(msg types.RuleMsg, relationTypes ...string) 
 							// Defer the After aspect calls.
 							// It captures the final state of processedMsg and onMsgErr.
 							defer func() {
+								if r := recover(); r != nil {
+									onMsgErr = fmt.Errorf("node execution panic: %v", r)
+									nextCtx.Error("Recovered from panic in node execution", "panic", r)
+									nextCtx.childDone(processedMsg, onMsgErr)
+								}
 								for _, aspect := range nextCtx.aspects {
 									aspect.After(nextCtx, processedMsg, onMsgErr)
 								}
@@ -280,7 +287,7 @@ func (ctx *DefaultNodeCtx) TellNext(msg types.RuleMsg, relationTypes ...string) 
 // NewMsg creates a new message with a new message ID.
 func (ctx *DefaultNodeCtx) NewMsg(msgType string, metaData types.Metadata, data string) types.RuleMsg {
 	// By default, messages created within a chain are treated as TEXT, unless specified otherwise.
-	return types.NewMsg(msgType, data, metaData, nil).WithDataFormat("TEXT")
+	return message.NewMsg(msgType, data, metaData, nil).WithDataFormat(cnst.TEXT)
 }
 
 // SetOnAllNodesCompleted sets a callback that will be called when all nodes in the chain have completed.

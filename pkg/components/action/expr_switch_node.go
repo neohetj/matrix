@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/NeohetJ/Matrix/internal/registry"
+	"github.com/NeohetJ/Matrix/pkg/message"
+	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/NeohetJ/Matrix/pkg/utils"
 	"github.com/expr-lang/expr"
-	"gitlab.com/neohet/matrix/pkg/helper"
-	"gitlab.com/neohet/matrix/pkg/registry"
-	"gitlab.com/neohet/matrix/pkg/types"
-	"gitlab.com/neohet/matrix/pkg/utils"
 )
 
 const (
@@ -16,13 +16,13 @@ const (
 )
 
 var (
-	FaultExprCompilationFailed = &types.Fault{Code: 202501001, Message: "expression compilation failed"}
-	FaultExprEvaluationFailed  = &types.Fault{Code: 202501002, Message: "expression evaluation failed"}
-	FaultNoMatchCase           = &types.Fault{Code: 202501003, Message: "no case matched and no default relation configured"}
+	ExprCompilationFailed = &types.Fault{Code: "202501216", Message: "expression compilation failed"}
+	ExprEvaluationFailed  = &types.Fault{Code: "202501217", Message: "expression evaluation failed"}
+	NoMatchCase           = &types.Fault{Code: "202501218", Message: "no case matched and no default relation configured"}
 )
 
 var exprSwitchNodePrototype = &ExprSwitchNode{
-	BaseNode: *types.NewBaseNode(ExprSwitchNodeType, types.NodeDefinition{
+	BaseNode: *types.NewBaseNode(ExprSwitchNodeType, types.NodeMetadata{
 		Name:        "Expression Switch",
 		Description: "Routes messages based on configurable expressions.",
 		Dimension:   "Action",
@@ -34,9 +34,9 @@ var exprSwitchNodePrototype = &ExprSwitchNode{
 func init() {
 	registry.Default.NodeManager.Register(exprSwitchNodePrototype)
 	registry.Default.FaultRegistry.Register(
-		FaultExprCompilationFailed,
-		FaultExprEvaluationFailed,
-		FaultNoMatchCase,
+		ExprCompilationFailed,
+		ExprEvaluationFailed,
+		NoMatchCase,
 	)
 }
 
@@ -66,12 +66,12 @@ func (n *ExprSwitchNode) Type() types.NodeType {
 }
 
 // Init initializes the node instance with its specific configuration.
-func (n *ExprSwitchNode) Init(configuration types.Config) error {
+func (n *ExprSwitchNode) Init(configuration types.ConfigMap) error {
 	if err := utils.Decode(configuration, &n.nodeConfig); err != nil {
-		return fmt.Errorf("%s: %w", types.DefInvalidConfiguration.Message, err)
+		return fmt.Errorf("%s: %w", types.InvalidConfiguration.Message, err)
 	}
 	if len(n.nodeConfig.Cases) == 0 {
-		return fmt.Errorf("%s for node %s", types.DefInvalidConfiguration.Message, n.ID())
+		return fmt.Errorf("%s for node %s", types.InvalidConfiguration.Message, n.ID())
 	}
 	return nil
 }
@@ -79,7 +79,7 @@ func (n *ExprSwitchNode) Init(configuration types.Config) error {
 // OnMsg handles the incoming message by evaluating expressions.
 func (n *ExprSwitchNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 	ctx.Debug("ExprSwitchNode OnMsg started", "config", fmt.Sprintf("%+v", n.nodeConfig))
-	env := helper.BuildDataSource(msg)
+	env := message.MsgToMap(msg)
 
 	// Custom len function for expr
 	lenFunc := expr.Function("len",
@@ -116,14 +116,14 @@ func (n *ExprSwitchNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 		program, err := expr.Compile(expression, expr.Env(env), lenFunc)
 		if err != nil {
 			errInfo := fmt.Errorf("expression: '%s', details: %w", expression, err)
-			ctx.HandleError(msg, FaultExprCompilationFailed.Wrap(errInfo))
+			ctx.HandleError(msg, ExprCompilationFailed.Wrap(errInfo))
 			return
 		}
 
 		output, err := expr.Run(program, env)
 		if err != nil {
 			errInfo := fmt.Errorf("expression: '%s', details: %w", expression, err)
-			ctx.HandleError(msg, FaultExprEvaluationFailed.Wrap(errInfo))
+			ctx.HandleError(msg, ExprEvaluationFailed.Wrap(errInfo))
 			return
 		}
 
@@ -143,6 +143,6 @@ func (n *ExprSwitchNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 		ctx.TellNext(msg, n.nodeConfig.DefaultRelation)
 	} else {
 		ctx.Warn("No cases matched and no default relation configured")
-		ctx.HandleError(msg, FaultNoMatchCase)
+		ctx.HandleError(msg, NoMatchCase)
 	}
 }

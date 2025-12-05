@@ -55,8 +55,8 @@ package external
 
 import (
     "github.com/jmoiron/sqlx"
-    "gitlab.com/neohet/matrix/pkg/components/base"
-    "gitlab.com/neohet/matrix/pkg/types"
+    "github.com/NeohetJ/Matrix/pkg/components/base"
+    "github.com/NeohetJ/Matrix/pkg/types"
 )
 
 // 1. 定义配置

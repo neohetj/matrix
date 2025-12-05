@@ -1,10 +1,11 @@
 package trace
 
 import (
+	"sort"
 	"sync"
 	"time"
 
-	"gitlab.com/neohet/matrix/pkg/types"
+	"github.com/NeohetJ/Matrix/pkg/types"
 )
 
 // InMemoryStore implements the Store interface, storing snapshots in memory.
@@ -33,6 +34,29 @@ func (s *InMemoryStore) Get(executionID string) (*types.ExecutionStatus, bool) {
 		return val.(*types.ExecutionStatus), true
 	}
 	return nil, false
+}
+
+// List returns a list of execution statuses, ordered by StartTs descending.
+// Implements types.StoreListable interface.
+func (s *InMemoryStore) List(limit int) []*types.ExecutionStatus {
+	var statuses []*types.ExecutionStatus
+	s.store.Range(func(key, value interface{}) bool {
+		statuses = append(statuses, value.(*types.ExecutionStatus))
+		return true
+	})
+
+	// Sort by StartTs descending
+	sort.Slice(statuses, func(i, j int) bool {
+		// Note: We might need to lock if StartTs changes, but for listing it's usually fine
+		// to read potentially stale StartTs. Or lock each?
+		// For performance in List, we avoid heavy locking. StartTs is set early.
+		return statuses[i].Snapshot.StartTs > statuses[j].Snapshot.StartTs
+	})
+
+	if limit > 0 && len(statuses) > limit {
+		return statuses[:limit]
+	}
+	return statuses
 }
 
 // Delete removes a snapshot status by its ID.

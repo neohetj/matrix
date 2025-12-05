@@ -3,11 +3,10 @@ package action
 import (
 	"fmt"
 
-	"github.com/expr-lang/expr"
-	"gitlab.com/neohet/matrix/pkg/helper"
-	"gitlab.com/neohet/matrix/pkg/registry"
-	"gitlab.com/neohet/matrix/pkg/types"
-	"gitlab.com/neohet/matrix/pkg/utils"
+	"github.com/NeohetJ/Matrix/internal/registry"
+	"github.com/NeohetJ/Matrix/pkg/message"
+	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/NeohetJ/Matrix/pkg/utils"
 )
 
 const (
@@ -21,7 +20,7 @@ const (
 
 // logNodePrototype is the shared prototype instance for registration.
 var logNodePrototype = &LogNode{
-	BaseNode: *types.NewBaseNode(LogNodeType, types.NodeDefinition{
+	BaseNode: *types.NewBaseNode(LogNodeType, types.NodeMetadata{
 		Name:        "Log",
 		Description: "Logs a message to the console with a specified log level.",
 		Dimension:   "Action",
@@ -54,7 +53,7 @@ func (n *LogNode) New() types.Node {
 }
 
 // Init initializes the node with the given configuration.
-func (n *LogNode) Init(config types.Config) error {
+func (n *LogNode) Init(config types.ConfigMap) error {
 	if err := utils.Decode(config, &n.nodeConfig); err != nil {
 		return fmt.Errorf("failed to decode log node config: %w", err)
 	}
@@ -63,30 +62,12 @@ func (n *LogNode) Init(config types.Config) error {
 
 // OnMsg logs the configured message.
 func (n *LogNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
-	env := helper.BuildDataSource(msg)
-	var logMessage string
-
-	if len(n.nodeConfig.Args) > 0 {
-		var args []any
-		for _, argExpr := range n.nodeConfig.Args {
-			program, err := expr.Compile(argExpr, expr.Env(env))
-			if err != nil {
-				ctx.Warn("Failed to compile log arg expression", "expr", argExpr, "error", err)
-				args = append(args, fmt.Sprintf("<!%s!>", argExpr))
-				continue
-			}
-			output, err := expr.Run(program, env)
-			if err != nil {
-				ctx.Warn("Failed to run log arg expression", "expr", argExpr, "error", err)
-				args = append(args, fmt.Sprintf("<!%s!>", argExpr))
-				continue
-			}
-			args = append(args, output)
-		}
-		logMessage = fmt.Sprintf(n.nodeConfig.Message, args...)
-	} else {
-		// Fallback to original behavior: pass env as the single argument
-		logMessage = fmt.Sprintf(n.nodeConfig.Message)
+	// Use asset.RenderTemplate to replace placeholders in the message.
+	// This replaces the deprecated BuildDataSource and expr-based argument processing.
+	logMessage, err := message.ReplaceRuleMsg(n.nodeConfig.Message, msg)
+	if err != nil {
+		ctx.Warn("Failed to render log message template", "error", err)
+		logMessage = n.nodeConfig.Message // Fallback to raw message
 	}
 
 	switch n.nodeConfig.Level {

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"gitlab.com/neohet/matrix/pkg/types"
+	"github.com/NeohetJ/Matrix/pkg/types"
 )
 
 // HybridLoader implements the ResourceProvider interface by composing multiple

@@ -84,8 +84,8 @@ const (
 // in: matrixext/nodes/user_service/coreobj_defs.go
 func init() {
     registry.Default.CoreObjRegistry.Register(
-        types.NewCoreObjDef(&UserEnrichmentRequest{}, UserEnrichmentRequestV1_0_SID, "..."),
-        types.NewCoreObjDef(&UserProfile{}, UserProfileV1_0_SID, "..."),
+        message.NewCoreObjDef(&UserEnrichmentRequest{}, UserEnrichmentRequestV1_0_SID, "..."),
+        message.NewCoreObjDef(&UserProfile{}, UserProfileV1_0_SID, "..."),
     )
 }
 ```

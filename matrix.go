@@ -24,22 +24,24 @@ import (
 
 	"embed"
 
-	"gitlab.com/neohet/matrix/internal/aop"
-	"gitlab.com/neohet/matrix/internal/builder"
-	"gitlab.com/neohet/matrix/internal/log"
-	"gitlab.com/neohet/matrix/internal/runtime"
-	"gitlab.com/neohet/matrix/pkg/config"
-	"gitlab.com/neohet/matrix/pkg/registry"
-	"gitlab.com/neohet/matrix/pkg/trace"
-	"gitlab.com/neohet/matrix/pkg/types"
+	"github.com/NeohetJ/Matrix/internal/registry"
 
-	_ "gitlab.com/neohet/matrix/pkg/components/action"
-	_ "gitlab.com/neohet/matrix/pkg/components/endpoint"
-	_ "gitlab.com/neohet/matrix/pkg/components/external"
-	_ "gitlab.com/neohet/matrix/pkg/components/functions"
-	_ "gitlab.com/neohet/matrix/pkg/components/link"
-	_ "gitlab.com/neohet/matrix/pkg/components/ops"
+	"github.com/NeohetJ/Matrix/internal/aop"
+	"github.com/NeohetJ/Matrix/internal/builder"
+	_ "github.com/NeohetJ/Matrix/internal/builtin"
+	"github.com/NeohetJ/Matrix/internal/log"
+	"github.com/NeohetJ/Matrix/internal/runtime"
+	"github.com/NeohetJ/Matrix/pkg/config"
+	"github.com/NeohetJ/Matrix/pkg/trace"
+	"github.com/NeohetJ/Matrix/pkg/types"
+
+	_ "github.com/NeohetJ/Matrix/pkg/components/action"
+	_ "github.com/NeohetJ/Matrix/pkg/components/endpoint"
+	_ "github.com/NeohetJ/Matrix/pkg/components/external"
 )
+
+// Registry is the default, global instance of the registry.
+var Registry = types.DefaultRegistry
 
 // --- Public Helper Functions ---
 
@@ -61,7 +63,7 @@ func SetLogger(logger types.Logger) {
 // MatrixEngine is the facade for the refactored rule engine.
 // It holds an internal reference to the registry and exposes its components via methods.
 type MatrixEngine struct {
-	config       config.Config
+	config       config.MatrixConfig
 	registry     types.RegistryProvider
 	traceManager *trace.Manager
 	loader       types.ResourceProvider
@@ -71,15 +73,49 @@ type MatrixEngine struct {
 
 // --- Getters for core components ---
 
-func (e *MatrixEngine) RuntimePool() types.RuntimePool { return e.registry.GetRuntimePool() }
-func (e *MatrixEngine) SharedNodePool() types.NodePool { return e.registry.GetSharedNodePool() }
-func (e *MatrixEngine) NodeManager() types.NodeManager { return e.registry.GetNodeManager() }
+func (e *MatrixEngine) RuntimePool() types.RuntimePool {
+	if e.registry == nil {
+		return nil
+	}
+	return e.registry.GetRuntimePool()
+}
+
+func (e *MatrixEngine) SharedNodePool() types.NodePool {
+	if e.registry == nil {
+		return nil
+	}
+	return e.registry.GetSharedNodePool()
+}
+
+func (e *MatrixEngine) NodeManager() types.NodeManager {
+	if e.registry == nil {
+		return nil
+	}
+	return e.registry.GetNodeManager()
+}
+
 func (e *MatrixEngine) NodeFuncManager() types.NodeFuncManager {
+	if e.registry == nil {
+		return nil
+	}
 	return e.registry.GetNodeFuncManager()
 }
-func (e *MatrixEngine) TraceManager() *trace.Manager   { return e.traceManager }
+
+// GetEngineConfig retrieves a value from the global business configuration.
+func (e *MatrixEngine) GetEngineConfig(key string) (any, bool) {
+	return e.config.GetEngineConfig(key)
+}
+
+// TraceManager returns the trace manager.
+// Note: This method is not part of the types.MatrixEngine interface.
+func (e *MatrixEngine) TraceManager() *trace.Manager { return e.traceManager }
+
+// Config returns the full matrix configuration.
+// Note: This method is not part of the types.MatrixEngine interface.
+func (e *MatrixEngine) Config() config.MatrixConfig { return e.config }
+
 func (e *MatrixEngine) Loader() types.ResourceProvider { return e.loader }
-func (e *MatrixEngine) Config() config.Config          { return e.config }
+func (e *MatrixEngine) BizConfig() types.ConfigMap     { return e.config.Business }
 func (e *MatrixEngine) Logger() types.Logger           { return e.logger }
 
 // Option is a function that configures the MatrixEngine.
@@ -109,11 +145,18 @@ func WithEmbedFS(fs embed.FS) Option {
 	}
 }
 
+// WithRegistry sets a custom registry provider for the engine.
+func WithRegistry(r types.RegistryProvider) Option {
+	return func(e *MatrixEngine) {
+		e.registry = r
+	}
+}
+
 // --- Constructors ---
 
 // New is the simplified entry point for the Matrix engine.
 // It initializes, configures, and builds a complete engine instance.
-func New(cfg config.Config, opts ...Option) (*MatrixEngine, error) {
+func New(cfg config.MatrixConfig, opts ...Option) (*MatrixEngine, error) {
 	engine := &MatrixEngine{
 		config: cfg,
 	}
@@ -143,71 +186,109 @@ func New(cfg config.Config, opts ...Option) (*MatrixEngine, error) {
 // newEngine is the underlying, private constructor for the Matrix engine.
 // It takes a pre-configured engine instance and the discovered component paths to finalize the build.
 func newEngine(e *MatrixEngine) (*MatrixEngine, error) {
+	rulechainPaths, endpointPaths, sharedNodePaths := e.discoverComponents()
+
+	sch, err := e.initScheduler()
+	if err != nil {
+		return nil, err
+	}
+
+	defs, err := e.loadDefinitions(rulechainPaths)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := e.initRegistryAndLoadComponents(sharedNodePaths, endpointPaths); err != nil {
+		return nil, err
+	}
+
+	runtimeOpts := e.initRuntimeOpts()
+	if err := e.initRuntimes(sch, defs, runtimeOpts); err != nil {
+		return nil, err
+	}
+
+	return e, nil
+}
+
+func (e *MatrixEngine) discoverComponents() (rulechainPaths, endpointPaths, sharedNodePaths []string) {
 	componentsRoot := e.config.Loader.ComponentsRoot
 	if componentsRoot == "" {
 		componentsRoot = "components" // Default convention
 	}
-	rulechainPaths, endpointPaths, sharedNodePaths := Discover(e.loader, componentsRoot, e.config.EnabledComponents)
+	return Discover(e.loader, componentsRoot, e.config.EnabledComponents)
+}
 
-	// Defensive coding: If scheduler type is not set, default to "ants".
+func (e *MatrixEngine) initScheduler() (types.Scheduler, error) {
 	if e.config.Scheduler.Type == "" {
 		e.config.Scheduler.Type = "ants"
 	}
-
 	sch, err := builder.NewSchedulerFromConfig(e.config.Scheduler)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create scheduler: %w", err)
 	}
+	return sch, nil
+}
 
+func (e *MatrixEngine) loadDefinitions(rulechainPaths []string) (map[string]*types.RuleChainDef, error) {
 	defs, err := builder.LoadDefs(e.loader, rulechainPaths)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load rule chain definitions: %w", err)
 	}
+	return defs, nil
+}
 
-	reg := registry.Default
-	nodeMgr := reg.GetNodeManager()
-	sharedNodePool := reg.GetSharedNodePool()
-	pool := reg.GetRuntimePool()
+func (e *MatrixEngine) initRegistryAndLoadComponents(sharedNodePaths, endpointPaths []string) error {
+	if e.registry == nil {
+		e.registry = registry.Default
+	}
+
+	nodeMgr := e.registry.GetNodeManager()
+	sharedNodePool := e.registry.GetSharedNodePool()
+	pool := e.registry.GetRuntimePool()
 
 	if err := builder.LoadSharedNodes(e.loader, sharedNodePaths, nodeMgr, sharedNodePool); err != nil {
-		return nil, fmt.Errorf("failed to load shared nodes: %w", err)
+		return fmt.Errorf("failed to load shared nodes: %w", err)
 	}
 
 	if err := builder.LoadEndpoints(e.loader, endpointPaths, nodeMgr, sharedNodePool, pool); err != nil {
-		return nil, fmt.Errorf("failed to load endpoints: %w", err)
+		return fmt.Errorf("failed to load endpoints: %w", err)
 	}
-	merger := builder.NewMerger(defs)
+	return nil
+}
 
+func (e *MatrixEngine) initRuntimeOpts() []runtime.Option {
 	var runtimeOpts []runtime.Option
-	var traceManager *trace.Manager
 
 	if e.config.Trace.EnableAop {
-		// Create a default in-memory trace store.
-		// TODO: Make the store type configurable.
 		traceStore := trace.NewInMemoryStore(24 * time.Hour)
-		traceManager = trace.NewManager(traceStore)
-		tracer := traceManager.GetTracer()
+		e.traceManager = trace.NewManager(traceStore)
+		tracer := e.traceManager.GetTracer()
 		traceAspect := aop.NewTraceAspect(tracer)
 		runtimeOpts = append(runtimeOpts, runtime.WithAspects(traceAspect))
 	}
 
 	runtimeOpts = append(runtimeOpts, runtime.WithLogger(e.logger))
-	for id, _ := range defs {
+	return runtimeOpts
+}
+
+func (e *MatrixEngine) initRuntimes(sch types.Scheduler, defs map[string]*types.RuleChainDef, runtimeOpts []runtime.Option) error {
+	merger := builder.NewMerger(defs)
+	pool := e.registry.GetRuntimePool()
+
+	for id := range defs {
 		finalDef, err := merger.Merge(id)
 		if err != nil {
-			return nil, fmt.Errorf("failed to merge rule chain %s: %w", id, err)
+			return fmt.Errorf("failed to merge rule chain %s: %w", id, err)
 		}
-		rt, err := runtime.NewDefaultRuntime(sch, finalDef, runtimeOpts...)
+
+		rtOpts := append(runtimeOpts, runtime.WithEngine(e))
+		rt, err := runtime.NewDefaultRuntime(sch, finalDef, rtOpts...)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create runtime for chain %s: %w", id, err)
+			return fmt.Errorf("failed to create runtime for chain %s: %w", id, err)
 		}
 		if err := pool.Register(id, rt); err != nil {
-			return nil, fmt.Errorf("failed to register runtime for chain %s: %w", id, err)
+			return fmt.Errorf("failed to register runtime for chain %s: %w", id, err)
 		}
 	}
-
-	e.registry = reg
-	e.traceManager = traceManager
-
-	return e, nil
+	return nil
 }

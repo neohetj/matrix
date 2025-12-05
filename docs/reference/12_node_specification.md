@@ -102,7 +102,7 @@ flowchart TD
 
 ### 2.1. 契约声明API (ContractDeclarationAPI)
 
-对于通用组件节点，数据合约直接在其 `NodeDefinition` 结构体中声明。
+对于通用组件节点，数据合约直接在其 `NodeMetadata` 结构体中声明。
 
 ```go
 // in: matrix/pkg/types/node.go
@@ -113,8 +113,8 @@ type MetadataDef struct {
     Description string `json:"description"`
 }
 
-// NodeDefinition 描述一个节点的静态元数据
-type NodeDefinition struct {
+// NodeMetadata 描述一个节点的静态元数据
+type NodeMetadata struct {
     Type        string   `json:"type"`
     Name        string   `json:"name"`
     // ... (其他字段)
@@ -133,7 +133,7 @@ type NodeDefinition struct {
 
 ### 2.2. 与 `function` 节点的区别 (DifferenceFromFunctions)
 
--   **通用节点**: 如上所示，在 `NodeDefinition` 中声明对 `RuleMsg.Data` 和 `RuleMsg.Metadata` 的访问。它们通常不直接操作类型化的 `DataT` 容器。
+-   **通用节点**: 如上所示，在 `NodeMetadata` 中声明对 `RuleMsg.Data` 和 `RuleMsg.Metadata` 的访问。它们通常不直接操作类型化的 `DataT` 容器。
 -   **`function`**: `function` 是 `DataT` 的主要生产者和消费者。因此，它的**完整数据合约**（包括对 `DataT` 的 `Inputs/Outputs`）被定义在其更具体的 `FuncObject.Configuration` 中。详情请参阅 **[参考-11: 函数开发与注册规范][Ref-FuncSpec]**。
 
 ## 3. 共享资源依赖规范 (SharedResourceDependency)

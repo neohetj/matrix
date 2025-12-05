@@ -7,7 +7,7 @@ import (
 	"path"
 	"strings"
 
-	"gitlab.com/neohet/matrix/pkg/types"
+	"github.com/NeohetJ/Matrix/pkg/types"
 )
 
 // httpFS implements the http.FileSystem interface by wrapping a ResourceProvider.

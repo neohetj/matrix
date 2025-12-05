@@ -1,19 +1,18 @@
 package endpoint
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 
-	"github.com/julienschmidt/httprouter"
-	"gitlab.com/neohet/matrix/pkg/helper"
-	"gitlab.com/neohet/matrix/pkg/registry"
-	"gitlab.com/neohet/matrix/pkg/types"
-	"gitlab.com/neohet/matrix/pkg/utils"
+	"github.com/NeohetJ/Matrix/internal/registry"
+	"github.com/NeohetJ/Matrix/pkg/cnst"
+	"github.com/NeohetJ/Matrix/pkg/helper"
+	"github.com/NeohetJ/Matrix/pkg/message"
+	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/NeohetJ/Matrix/pkg/utils"
 )
 
 const (
@@ -21,11 +20,8 @@ const (
 )
 
 var (
-	DefRequestDecodingFailed   = &types.Fault{Code: int32(types.CodeRequestDecodingFailed), Message: "failed to decode request body"}
-	DefRequiredFieldMissing    = &types.Fault{Code: int32(types.CodeRequiredFieldMissing), Message: "required field not found in http request"}
-	DefFieldConversionFailed   = &types.Fault{Code: int32(types.CodeFieldConversionFailed), Message: "failed to convert field"}
-	DefInvalidMappingFormat    = &types.Fault{Code: int32(types.CodeInvalidMappingFormat), Message: "invalid mapping format"}
-	DefDataTItemCreationFailed = &types.Fault{Code: int32(types.CodeDataTItemCreationFailed), Message: "failed to create new DataT item"}
+	DefInvalidMappingFormat    = &types.Fault{Code: cnst.CodeInvalidMappingFormat, Message: "invalid mapping format"}
+	DefDataTItemCreationFailed = &types.Fault{Code: cnst.CodeDataTItemCreationFailed, Message: "failed to create new DataT item"}
 )
 
 // HttpEndpoint is a specific type of PassiveEndpoint for handling HTTP requests.
@@ -38,6 +34,16 @@ type HttpEndpoint interface {
 	GetHttpPath() string
 	GetHttpMethod() string
 	Configuration() HttpEndpointNodeConfiguration
+
+	// GetInputMapping returns the configuration for mapping data from the HTTP request to the RuleMsg.
+	// This implements part of the SubChainTrigger interface (as DataContractProvider).
+	GetInputMapping() types.EndpointIOPacket
+	// GetOutputMapping returns the configuration for mapping data from the RuleMsg to the HTTP response.
+	// This implements part of the SubChainTrigger interface (as DataContractProvider).
+	GetOutputMapping() types.EndpointIOPacket
+	// GetTargetChainID returns the ID of the rule chain triggered by this endpoint.
+	// This implements the SubChainTrigger interface.
+	GetTargetChainID() string
 }
 
 // HandleOptions holds the optional parameters for handling an HTTP request.
@@ -71,7 +77,7 @@ type ErrorConverter interface {
 
 // httpEndpointNodePrototype is the shared prototype instance used for registration.
 var httpEndpointNodePrototype = &HttpEndpointNode{
-	BaseNode: *types.NewBaseNode(HttpEndpointNodeType, types.NodeDefinition{
+	BaseNode: *types.NewBaseNode(HttpEndpointNodeType, types.NodeMetadata{
 		Name:        "HTTP Endpoint V2",
 		Description: "Receives HTTP requests and triggers a rule chain based on a unified definition.",
 		Dimension:   "Endpoint",
@@ -82,7 +88,14 @@ var httpEndpointNodePrototype = &HttpEndpointNode{
 
 // Self-registering to the NodeManager
 func init() {
-	registry.Default.NodeManager.Register(httpEndpointNodePrototype)
+	registry.Default.GetNodeManager().Register(httpEndpointNodePrototype)
+	registry.Default.GetFaultRegistry().Register(
+		helper.RequestDecodingFailed,
+		helper.RequiredFieldMissing,
+		helper.FieldConversionFailed,
+		DefInvalidMappingFormat,
+		DefDataTItemCreationFailed,
+	)
 }
 
 // HttpEndpointNodeConfiguration holds the V2 configuration for the HttpEndpointNode.
@@ -112,22 +125,22 @@ func (n *HttpEndpointNode) New() types.Node {
 }
 
 // Init initializes the node with its static configuration.
-func (n *HttpEndpointNode) Init(config types.Config) error {
+func (n *HttpEndpointNode) Init(config types.ConfigMap) error {
 	if err := utils.Decode(config, &n.nodeConfig); err != nil {
-		return fmt.Errorf("%s: %w", types.DefInvalidConfiguration.Message, err)
+		return types.InvalidConfiguration.Wrap(err)
 	}
 	if n.nodeConfig.RuleChainID == "" {
-		return types.DefInvalidConfiguration
+		return types.InvalidConfiguration
 	}
 	if n.nodeConfig.HttpMethod == "" || n.nodeConfig.HttpPath == "" {
-		return types.DefInvalidConfiguration
+		return types.InvalidConfiguration
 	}
 
 	n.faultCodeMap = make(map[string]int32)
 	for respCodeStr, faultCodes := range n.nodeConfig.ErrorMappings {
 		code, err := strconv.Atoi(respCodeStr)
 		if err != nil {
-			return fmt.Errorf("invalid response code in mapping: %s", respCodeStr)
+			return types.InvalidConfiguration.Wrap(fmt.Errorf("invalid response code in mapping: %s", respCodeStr))
 		}
 		for _, fc := range faultCodes {
 			n.faultCodeMap[fc] = int32(code)
@@ -142,13 +155,47 @@ func (n *HttpEndpointNode) Init(config types.Config) error {
 	return nil
 }
 
+func (n *HttpEndpointNode) createServiceErrorFromMsg(msg types.RuleMsg, errStr string) *types.ServiceError {
+	failureInfo := &types.FailureInfo{
+		Error: errStr,
+	}
+
+	if val, ok := msg.Metadata()[types.MetaErrorNodeID]; ok {
+		failureInfo.NodeID = val
+	}
+	if val, ok := msg.Metadata()[types.MetaErrorNodeName]; ok {
+		failureInfo.NodeName = val
+	}
+	if val, ok := msg.Metadata()[types.MetaErrorTimestamp]; ok {
+		failureInfo.Timestamp = val
+	}
+	if val, ok := msg.Metadata()[types.MetaErrorCode]; ok {
+		failureInfo.Code = val
+	}
+
+	// Determine response code based on mapping or default
+	responseCode := n.defaultErrorCode
+	// Override with specific mapping if found
+	if n.faultCodeMap != nil {
+		if code, ok := n.faultCodeMap[failureInfo.Code]; ok {
+			responseCode = code
+		}
+	}
+
+	return &types.ServiceError{
+		ResponseCode: responseCode,
+		UserMessage:  failureInfo.Error,
+		FailureInfo:  failureInfo,
+	}
+}
+
 // SetRuntimePool implements the types.Endpoint interface.
 func (n *HttpEndpointNode) SetRuntimePool(pool any) error {
 	if p, ok := pool.(types.RuntimePool); ok {
 		n.runtimePool = p
 		return nil
 	}
-	return types.DefInvalidConfiguration
+	return types.InvalidConfiguration
 }
 
 // GetHttpPath returns the configured HTTP path for routing.
@@ -171,6 +218,47 @@ func (n *HttpEndpointNode) Configuration() HttpEndpointNodeConfiguration {
 	return n.nodeConfig
 }
 
+// GetInputMapping returns the configuration for mapping data from the HTTP request to the RuleMsg.
+func (n *HttpEndpointNode) GetInputMapping() types.EndpointIOPacket {
+	req := n.nodeConfig.EndpointDefinition.Request
+	var combined types.EndpointIOPacket
+
+	// 1. Path Params
+	combined.Fields = append(combined.Fields, req.PathParams...)
+
+	// 2. Query Params
+	combined.Fields = append(combined.Fields, req.QueryParams.Fields...)
+
+	// 3. Headers
+	combined.Fields = append(combined.Fields, req.Headers.Fields...)
+
+	// 4. Body
+	combined.Fields = append(combined.Fields, req.Body.Fields...)
+	combined.MapAll = req.Body.MapAll
+
+	return combined
+}
+
+// GetOutputMapping returns the configuration for mapping data from the RuleMsg to the HTTP response.
+func (n *HttpEndpointNode) GetOutputMapping() types.EndpointIOPacket {
+	resp := n.nodeConfig.EndpointDefinition.Response
+	var combined types.EndpointIOPacket
+
+	// 1. Headers
+	combined.Fields = append(combined.Fields, resp.Headers.Fields...)
+
+	// 2. Body
+	combined.Fields = append(combined.Fields, resp.Body.Fields...)
+	combined.MapAll = resp.Body.MapAll
+
+	return combined
+}
+
+// GetTargetChainID returns the ID of the rule chain triggered by this endpoint.
+func (n *HttpEndpointNode) GetTargetChainID() string {
+	return n.nodeConfig.RuleChainID
+}
+
 // ErrorResponse is the standard JSON structure for error responses.
 type ErrorResponse struct {
 	Code    int    `json:"code"`
@@ -178,18 +266,38 @@ type ErrorResponse struct {
 	Details string `json:"details,omitempty"`
 }
 
-// writeJsonError is a helper to write a standard JSON error response.
-func writeJsonError(w http.ResponseWriter, code int, message string, details error) {
+// writeResponse writes the HTTP response, handling both success and error cases.
+// If err is provided, it writes an error response. Otherwise, it writes the success response.
+func (n *HttpEndpointNode) writeResponse(w http.ResponseWriter, statusCode int, headers map[string]string, body any, err error) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(code)
-	response := ErrorResponse{
-		Code:    code,
-		Message: message,
+
+	if err != nil {
+		// Error case
+		if statusCode == 0 {
+			statusCode = http.StatusInternalServerError
+		}
+
+		response := ErrorResponse{
+			Code:    statusCode,
+			Message: err.Error(),
+		}
+
+		// If body contains details, we could include them
+		if details, ok := body.(string); ok && details != "" {
+			response.Details = details
+		}
+
+		w.WriteHeader(statusCode)
+		json.NewEncoder(w).Encode(response)
+		return
 	}
-	if details != nil {
-		response.Details = details.Error()
+
+	// Success case
+	for k, v := range headers {
+		w.Header().Set(k, v)
 	}
-	json.NewEncoder(w).Encode(response)
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(body)
 }
 
 // HandleHttpRequest is the core method that processes the incoming HTTP request.
@@ -199,17 +307,21 @@ func (n *HttpEndpointNode) HandleHttpRequest(w http.ResponseWriter, r *http.Requ
 		opt(options)
 	}
 
-	initialMsg, err := n.convertRequestToRuleMsg(r)
-	if err != nil {
+	// Create the initial message
+	msg := message.NewMsg(n.nodeConfig.RuleChainID, "", make(types.Metadata), nil)
+
+	if options.ExecutionID != "" {
+		msg.Metadata()[types.ExecutionIDKey] = options.ExecutionID
+	}
+
+	nodeCtx := registry.NewMinimalNodeCtx(n.ID())
+	// Process all parameter types
+	if err := helper.MapHttpRequestToRuleMsg(nodeCtx, msg, n.nodeConfig.EndpointDefinition.Request, r, n.nodeConfig.HttpPath); err != nil {
 		return &types.ServiceError{
 			ResponseCode: http.StatusBadRequest,
 			UserMessage:  err.Error(),
 			Cause:        err,
 		}
-	}
-
-	if options.ExecutionID != "" {
-		initialMsg.Metadata()[types.ExecutionIDKey] = options.ExecutionID
 	}
 
 	var rt types.Runtime
@@ -233,53 +345,25 @@ func (n *HttpEndpointNode) HandleHttpRequest(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	finalMsg, execErr := rt.ExecuteAndWait(r.Context(), n.nodeConfig.StartNodeID, initialMsg, onEnd)
+	finalMsg, execErr := rt.ExecuteAndWait(r.Context(), n.nodeConfig.StartNodeID, msg, onEnd)
 
 	if execErr != nil {
 		var serviceErr *types.ServiceError
 		if errors.As(execErr, &serviceErr) {
 			return serviceErr
 		}
-		return &types.ServiceError{ResponseCode: int32(types.CodeInternalError), UserMessage: "internal server error", Cause: execErr}
+		return &types.ServiceError{ResponseCode: n.defaultErrorCode, UserMessage: "internal server error", Cause: execErr}
 	}
 
 	if finalMsg != nil {
 		if errStr, ok := finalMsg.Metadata()[types.MetaError]; ok {
-			failureInfo := &types.FailureInfo{
-				Error: errStr,
-			}
-
-			if val, ok := finalMsg.Metadata()[types.MetaErrorNodeID]; ok {
-				failureInfo.NodeID = val
-			}
-			if val, ok := finalMsg.Metadata()[types.MetaErrorNodeName]; ok {
-				failureInfo.NodeName = val
-			}
-			if val, ok := finalMsg.Metadata()[types.MetaErrorTimestamp]; ok {
-				failureInfo.Timestamp = val
-			}
-			if val, ok := finalMsg.Metadata()[types.MetaErrorCode]; ok {
-				failureInfo.Code = val
-			}
-
-			// Determine response code based on mapping or default
-			responseCode := n.defaultErrorCode
-			// Override with specific mapping if found
-			if n.faultCodeMap != nil {
-				if code, ok := n.faultCodeMap[failureInfo.Code]; ok {
-					responseCode = code
-				}
-			}
-
-			return &types.ServiceError{
-				ResponseCode: responseCode,
-				UserMessage:  failureInfo.Error,
-				FailureInfo:  failureInfo,
-			}
+			serviceErr := n.createServiceErrorFromMsg(finalMsg, errStr)
+			n.writeResponse(w, int(serviceErr.ResponseCode), nil, nil, serviceErr)
+			return serviceErr
 		}
 	}
 
-	responseBody, responseHeaders, statusCode, err := n.convertResponse(finalMsg)
+	responseBody, responseHeaders, statusCode, err := helper.MapRuleMsgToHttpResponse(nodeCtx, finalMsg, n.nodeConfig.EndpointDefinition.Response)
 	if err != nil {
 		return &types.ServiceError{
 			ResponseCode: n.defaultErrorCode,
@@ -288,232 +372,7 @@ func (n *HttpEndpointNode) HandleHttpRequest(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	for k, v := range responseHeaders {
-		w.Header().Set(k, v)
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(responseBody)
+	n.writeResponse(w, statusCode, responseHeaders, responseBody, nil)
 
 	return nil
-}
-
-// manualExtractPathParams manually extracts path parameters by comparing the configured path pattern
-// with the actual request path. This is a fallback for environments where httprouter.Params
-// are not correctly passed through the context.
-func manualExtractPathParams(configPath, requestPath string) map[string]string {
-	configParts := strings.Split(strings.Trim(configPath, "/"), "/")
-	requestParts := strings.Split(strings.Trim(requestPath, "/"), "/")
-
-	if len(configParts) != len(requestParts) {
-		return nil
-	}
-
-	params := make(map[string]string)
-	for i, part := range configParts {
-		if strings.HasPrefix(part, ":") {
-			key := strings.TrimPrefix(part, ":")
-			params[key] = requestParts[i]
-		}
-	}
-	return params
-}
-
-// extractPathParams extracts path parameters from the request context.
-func extractPathParams(ctx context.Context) map[string]string {
-	params, ok := ctx.Value(httprouter.ParamsKey).(httprouter.Params)
-	if !ok {
-		return nil
-	}
-	pathParams := make(map[string]string)
-	for _, param := range params {
-		pathParams[param.Key] = param.Value
-	}
-	return pathParams
-}
-
-// convertRequestToRuleMsg handles the conversion from an http.Request to a types.RuleMsg.
-func (n *HttpEndpointNode) convertRequestToRuleMsg(r *http.Request) (types.RuleMsg, error) {
-	// 1. Prepare data sources
-	var bodyData map[string]any
-	if r.Body != nil && r.ContentLength > 0 {
-		if err := json.NewDecoder(r.Body).Decode(&bodyData); err != nil && err.Error() != "EOF" {
-			return nil, fmt.Errorf("%s: %w", DefRequestDecodingFailed.Message, err)
-		}
-		defer r.Body.Close()
-	}
-	queryParams := r.URL.Query()
-	headerParams := r.Header
-	pathParams := extractPathParams(r.Context())
-	// Fallback to manual extraction if context does not contain params.
-	if pathParams == nil {
-		pathParams = manualExtractPathParams(n.nodeConfig.HttpPath, r.URL.Path)
-	}
-
-	// 2. Create the initial message
-	msg := types.NewMsg(n.nodeConfig.RuleChainID, "", make(types.Metadata), nil).WithDataFormat(types.JSON)
-	pendingDataT := make(map[string]map[string]any)
-	objDefineSids := make(map[string]string)
-
-	// 3. Define a generic mapping processor
-	processMapping := func(param types.HttpParam, valueProvider func(string) (any, bool)) error {
-		rawValue, found := valueProvider(param.Name)
-		if !found {
-			if param.Required {
-				return fmt.Errorf("%s: %s", DefRequiredFieldMissing.Message, param.Name)
-			}
-			return nil
-		}
-
-		convertedValue, err := utils.Convert(rawValue, param.Type)
-		if err != nil {
-			return fmt.Errorf("%s: %s, %w", DefFieldConversionFailed.Message, param.Name, err)
-		}
-
-		msgParts := strings.SplitN(param.Mapping.To, ".", 2)
-		if len(msgParts) < 2 {
-			return fmt.Errorf("%s: %s, %s", DefInvalidMappingFormat.Message, param.Name, param.Mapping.To)
-		}
-		msgType := msgParts[0]
-		msgKey := msgParts[1]
-
-		switch msgType {
-		case "metadata":
-			msg.Metadata()[msgKey] = fmt.Sprintf("%v", convertedValue)
-		case "dataT":
-			objParts := strings.SplitN(msgKey, ".", 2)
-			if len(objParts) < 2 {
-				return fmt.Errorf("%s: %s, %s", DefInvalidMappingFormat.Message, param.Name, msgKey)
-			}
-			objID, fieldPath := objParts[0], objParts[1]
-
-			if _, ok := pendingDataT[objID]; !ok {
-				pendingDataT[objID] = make(map[string]any)
-			}
-			setValueByDotPath(pendingDataT[objID], fieldPath, convertedValue)
-
-			if _, ok := objDefineSids[objID]; !ok && param.Mapping.DefineSID != "" {
-				objDefineSids[objID] = param.Mapping.DefineSID
-			}
-		}
-		return nil
-	}
-
-	// 4. Process all parameter types
-	reqDef := n.nodeConfig.EndpointDefinition.Request
-	for _, p := range reqDef.PathParams {
-		if err := processMapping(p, func(name string) (any, bool) { v, ok := pathParams[name]; return v, ok }); err != nil {
-			return nil, err
-		}
-	}
-	for _, p := range reqDef.QueryParams {
-		// Check if the parameter type is defined as a slice/array.
-		if strings.HasSuffix(p.Type, "[]") || strings.HasPrefix(p.Type, "[]") {
-			// If it's a slice type, pass the whole slice.
-			// The key for query arrays might be `ids[]` or just `ids`.
-			if values, ok := queryParams[p.Name]; ok && len(values) > 0 {
-				if err := processMapping(p, func(name string) (any, bool) { return values, true }); err != nil {
-					return nil, err
-				}
-			} else if p.Required {
-				return nil, fmt.Errorf("%s: %s", DefRequiredFieldMissing.Message, p.Name)
-			}
-		} else {
-			// Otherwise, maintain the old behavior of getting the first value.
-			if err := processMapping(p, func(name string) (any, bool) { v := queryParams.Get(name); return v, v != "" }); err != nil {
-				return nil, err
-			}
-		}
-	}
-	for _, p := range reqDef.Headers {
-		if err := processMapping(p, func(name string) (any, bool) { v := headerParams.Get(name); return v, v != "" }); err != nil {
-			return nil, err
-		}
-	}
-	for _, p := range reqDef.BodyFields {
-		if err := processMapping(p, func(name string) (any, bool) { v, ok, _ := utils.ExtractByPath(bodyData, name); return v, ok }); err != nil {
-			return nil, err
-		}
-	}
-
-	// 5. Build and set DataT objects
-	dataT := msg.DataT()
-	for objID, dataMap := range pendingDataT {
-		defineSid, ok := objDefineSids[objID]
-		if !ok {
-			return nil, fmt.Errorf("%s: %s", types.DefInvalidConfiguration.Message, objID)
-		}
-		newObj, err := dataT.NewItem(defineSid, objID)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %s, %s, %w", DefDataTItemCreationFailed.Message, objID, defineSid, err)
-		}
-		if err := utils.Decode(dataMap, newObj.Body()); err != nil {
-			return nil, fmt.Errorf("%s: %s, %w", types.DefInvalidParams.Message, objID, err)
-		}
-	}
-
-	return msg, nil
-}
-
-// setValueByDotPath is a simplified helper to set a value in a nested map.
-func setValueByDotPath(data map[string]any, path string, value any) {
-	parts := strings.Split(path, ".")
-	current := data
-	for i, part := range parts {
-		if i == len(parts)-1 {
-			current[part] = value
-		} else {
-			if _, ok := current[part].(map[string]any); !ok {
-				current[part] = make(map[string]any)
-			}
-			current = current[part].(map[string]any)
-		}
-	}
-}
-
-// convertResponse converts the final RuleMsg to a structured HTTP response.
-func (n *HttpEndpointNode) convertResponse(msg types.RuleMsg) (body map[string]any, headers map[string]string, statusCode int, err error) {
-	responseBody := make(map[string]any)
-	responseHeaders := make(map[string]string)
-	respDef := n.nodeConfig.EndpointDefinition.Response
-
-	// Set default status code
-	statusCode = respDef.SuccessCode
-	if statusCode == 0 {
-		statusCode = http.StatusOK
-	}
-
-	if msg == nil || msg.DataT() == nil {
-		// log.Warn(nil, "Cannot convert response from a nil message or a message with nil DataT.")
-		return responseBody, responseHeaders, statusCode, nil
-	}
-
-	// Process body fields
-	nodeCtx := registry.NewMinimalNodeCtx(n.ID())
-	for _, param := range respDef.BodyFields {
-		nodeCtx.Debug("Extracting response body field", "path", param.Mapping.To)
-		val, found, extractErr := helper.ExtractFromMsgByPath(msg, param.Mapping.To)
-		if extractErr != nil {
-			return nil, nil, 0, fmt.Errorf("error extracting path %s from message: %w", param.Mapping.To, extractErr)
-		}
-		if found {
-			nodeCtx.Debug("Successfully extracted response body field", "path", param.Mapping.To, "value_type", fmt.Sprintf("%T", val))
-			setValueByDotPath(responseBody, param.Name, val)
-		} else {
-			nodeCtx.Warn("Response body field not found in message", "path", param.Mapping.To)
-		}
-	}
-
-	// Process header fields
-	for _, param := range respDef.Headers {
-		val, found, extractErr := helper.ExtractFromMsgByPath(msg, param.Mapping.To)
-		if extractErr != nil {
-			return nil, nil, 0, fmt.Errorf("error extracting path %s from message: %w", param.Mapping.To, extractErr)
-		}
-		if found {
-			responseHeaders[param.Name] = fmt.Sprintf("%v", val)
-		}
-	}
-
-	return responseBody, responseHeaders, statusCode, nil
 }

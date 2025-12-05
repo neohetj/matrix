@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/NeohetJ/Matrix/pkg/cnst"
 	"github.com/expr-lang/expr"
-	"github.com/mitchellh/mapstructure"
 )
 
 // ToMap 将任意结构体或结构体指针转换为 map[string]any。
@@ -49,56 +49,30 @@ func ToMapSlice(data any) ([]map[string]any, error) {
 	return result, nil
 }
 
-// Decode 将 map[string]any 的数据解码到一个强类型的结构体指针中。
-// 使用 `mitchellh/mapstructure` 库，它功能强大且性能优于纯反射。
-// targetStructPtr 必须是一个指向结构体的指针。
-func Decode(data map[string]any, targetStructPtr any) error {
-	if data == nil {
-		return fmt.Errorf("input data map is nil")
-	}
-	v := reflect.ValueOf(targetStructPtr)
-	if v.Kind() != reflect.Ptr {
-		return fmt.Errorf("target must be a pointer")
-	}
-	switch v.Elem().Kind() {
-	case reflect.Struct, reflect.Map:
-		// Allowed kinds
-	default:
-		return fmt.Errorf("target must be a pointer to a struct or a map, but got %s", v.Elem().Kind())
-	}
-
-	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
-		Result:           targetStructPtr,
-		WeaklyTypedInput: true, // 允许在解码时进行类型转换
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create mapstructure decoder: %w", err)
-	}
-
-	if err := decoder.Decode(data); err != nil {
-		return fmt.Errorf("failed to decode map to struct: %w", err)
-	}
-	return nil
-}
-
 // Convert 将一个值转换为指定的目标类型。
-// targetType 可以是 "string", "int", "float", "bool", "map", "slice"。
-func Convert(value any, targetType string) (any, error) {
+// targetType 可以是 cnst.STRING, cnst.INT, cnst.INT64, cnst.FLOAT, cnst.BOOL, cnst.MAP 等。
+func Convert(value any, targetType cnst.MType) (any, error) {
+	if !targetType.IsSupported() {
+		return nil, fmt.Errorf("unsupported target type: %s", targetType)
+	}
 	if value == nil {
-		switch strings.ToLower(targetType) {
-		case "string":
+		switch targetType {
+		case cnst.STRING:
 			return "", nil
-		case "int", "integer":
+		case cnst.INT:
 			return 0, nil
-		case "float", "double", "number":
+		case cnst.INT64:
+			return int64(0), nil
+		case cnst.FLOAT:
 			return 0.0, nil
-		case "bool", "boolean":
+		case cnst.BOOL:
 			return false, nil
-		case "object", "map":
+		case cnst.OBJECT, cnst.MAP:
 			return nil, nil
 		default:
 			// Handle slice types like "[]string"
-			if strings.HasPrefix(targetType, "[]") {
+			isList, _ := targetType.IsList()
+			if isList {
 				return nil, nil
 			}
 			return nil, nil
@@ -107,10 +81,9 @@ func Convert(value any, targetType string) (any, error) {
 
 	sourceType := reflect.TypeOf(value)
 	sValue := reflect.ValueOf(value)
-	lowerTargetType := strings.ToLower(targetType)
 
-	switch lowerTargetType {
-	case "string":
+	switch targetType {
+	case cnst.STRING:
 		if sourceType.Kind() == reflect.String {
 			return value.(string), nil
 		}
@@ -122,7 +95,7 @@ func Convert(value any, targetType string) (any, error) {
 			}
 		}
 		return fmt.Sprintf("%v", value), nil
-	case "int", "integer":
+	case cnst.INT:
 		switch sourceType.Kind() {
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 			return int(sValue.Int()), nil
@@ -140,7 +113,25 @@ func Convert(value any, targetType string) (any, error) {
 		default:
 			return nil, fmt.Errorf("can't convert %s to int", sourceType.String())
 		}
-	case "float", "double", "number":
+	case cnst.INT64:
+		switch sourceType.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			return sValue.Int(), nil
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			return int64(sValue.Uint()), nil
+		case reflect.Float32, reflect.Float64:
+			return int64(sValue.Float()), nil
+		case reflect.String:
+			return strconv.ParseInt(value.(string), 10, 64)
+		case reflect.Bool:
+			if sValue.Bool() {
+				return int64(1), nil
+			}
+			return int64(0), nil
+		default:
+			return nil, fmt.Errorf("can't convert %s to int64", sourceType.String())
+		}
+	case cnst.FLOAT:
 		switch sourceType.Kind() {
 		case reflect.Float32, reflect.Float64:
 			return sValue.Float(), nil
@@ -153,7 +144,7 @@ func Convert(value any, targetType string) (any, error) {
 		default:
 			return nil, fmt.Errorf("can't convert %s to float", sourceType.String())
 		}
-	case "bool", "boolean":
+	case cnst.BOOL:
 		switch sourceType.Kind() {
 		case reflect.Bool:
 			return value.(bool), nil
@@ -175,7 +166,7 @@ func Convert(value any, targetType string) (any, error) {
 		default:
 			return nil, fmt.Errorf("can't convert %s to bool", sourceType.String())
 		}
-	case "object", "map":
+	case cnst.OBJECT, cnst.MAP:
 		if sourceType.Kind() == reflect.Map {
 			return ToMap(value)
 		}
@@ -191,7 +182,8 @@ func Convert(value any, targetType string) (any, error) {
 		return nil, fmt.Errorf("can't convert %s to map[string]any", sourceType.String())
 	default:
 		// Handle slice types like "[]string", "[]int", etc.
-		if strings.HasPrefix(lowerTargetType, "[]") {
+		isList, elemTypeStr := targetType.IsList()
+		if isList {
 			// If the source is a string, try to unmarshal it as a JSON array.
 			if sourceType.Kind() == reflect.String {
 				var result []any
@@ -205,18 +197,18 @@ func Convert(value any, targetType string) (any, error) {
 				return nil, fmt.Errorf("can't convert non-slice type %s to %s", sourceType.String(), targetType)
 			}
 
-			elemTypeStr := strings.TrimPrefix(lowerTargetType, "[]")
-
 			// Create a new slice of the correct Go type.
 			var targetSlice reflect.Value
-			switch elemTypeStr {
-			case "string":
+			switch cnst.MType(elemTypeStr) {
+			case cnst.STRING:
 				targetSlice = reflect.ValueOf(make([]string, 0, sValue.Len()))
-			case "int", "integer":
+			case cnst.INT:
 				targetSlice = reflect.ValueOf(make([]int, 0, sValue.Len()))
-			case "float", "double", "number":
+			case cnst.INT64:
+				targetSlice = reflect.ValueOf(make([]int64, 0, sValue.Len()))
+			case cnst.FLOAT:
 				targetSlice = reflect.ValueOf(make([]float64, 0, sValue.Len()))
-			case "bool", "boolean":
+			case cnst.BOOL:
 				targetSlice = reflect.ValueOf(make([]bool, 0, sValue.Len()))
 			default:
 				// For complex types, we can't easily determine the type.
@@ -226,7 +218,7 @@ func Convert(value any, targetType string) (any, error) {
 
 			for i := 0; i < sValue.Len(); i++ {
 				elem := sValue.Index(i).Interface()
-				convertedElem, err := Convert(elem, elemTypeStr)
+				convertedElem, err := Convert(elem, cnst.MType(elemTypeStr))
 				if err != nil {
 					return nil, fmt.Errorf("error converting slice element at index %d: %w", i, err)
 				}
@@ -254,7 +246,7 @@ func ExtractByPath(data any, path string) (any, bool, error) {
 
 	for _, part := range parts {
 		v := reflect.ValueOf(current)
-		if v.Kind() == reflect.Ptr {
+		if v.Kind() == reflect.Pointer {
 			v = v.Elem()
 		}
 
@@ -324,88 +316,79 @@ func GetValueFromMapByPath(data map[string]any, path string) (any, bool) {
 	return current, true
 }
 
-// ReflectToSchema 将一个 Go 结构体类型转换为一个描述其结构的 map。
-// 这是对“场景五”的封装。
-// structPtrOrInstance 可以是一个结构体实例，或一个指向结构体的指针。
-func ReflectToSchema(structPtrOrInstance any) (map[string]any, error) {
-	if structPtrOrInstance == nil {
-		return nil, fmt.Errorf("input cannot be nil")
-	}
-
-	t := reflect.TypeOf(structPtrOrInstance)
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
-	if t.Kind() != reflect.Struct {
-		return nil, fmt.Errorf("input must be a struct or a pointer to a struct")
-	}
-
-	return reflectStruct(t), nil
-}
-
-func reflectStruct(t reflect.Type) map[string]any {
-	schema := make(map[string]any)
-	schema["type"] = "object"
-	properties := make(map[string]any)
-
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		// Skip unexported fields
-		if field.PkgPath != "" {
-			continue
-		}
-
-		fieldName := field.Name
-		jsonTag := field.Tag.Get("json")
-		if jsonTag != "" && jsonTag != "-" {
-			if parts := strings.Split(jsonTag, ","); len(parts) > 0 {
-				fieldName = parts[0]
-			}
-		}
-
-		if field.Anonymous {
-			// For anonymous fields, merge their properties into the current schema.
-			anonymousSchema := reflectStruct(field.Type)
-			if anonProps, ok := anonymousSchema["properties"].(map[string]any); ok {
-				for k, v := range anonProps {
-					properties[k] = v
-				}
-			}
+// SetValueByDotPath sets a value in a nested map using a dot-separated path.
+// It creates nested maps as needed.
+func SetValueByDotPath(data map[string]any, path string, value any) {
+	parts := strings.Split(path, ".")
+	current := data
+	for i, part := range parts {
+		if i == len(parts)-1 {
+			current[part] = value
 		} else {
-			properties[fieldName] = reflectType(field.Type)
+			if _, ok := current[part].(map[string]any); !ok {
+				current[part] = make(map[string]any)
+			}
+			current = current[part].(map[string]any)
 		}
 	}
-	schema["properties"] = properties
-	return schema
 }
 
-func reflectType(t reflect.Type) map[string]any {
-	switch t.Kind() {
-	case reflect.String:
-		return map[string]any{"type": "string"}
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return map[string]any{"type": "integer"}
-	case reflect.Float32, reflect.Float64:
-		return map[string]any{"type": "number"}
-	case reflect.Bool:
-		return map[string]any{"type": "boolean"}
-	case reflect.Slice, reflect.Array:
-		return map[string]any{
-			"type":  "array",
-			"items": reflectType(t.Elem()),
-		}
-	case reflect.Map:
-		// Assuming string keys for simplicity
-		return map[string]any{
-			"type":                 "object",
-			"additionalProperties": reflectType(t.Elem()),
-		}
-	case reflect.Struct:
-		return reflectStruct(t)
-	case reflect.Ptr:
-		return reflectType(t.Elem())
+// IsNil checks if a value is nil, handling interface-wrapped nil values.
+func IsNil(value any) bool {
+	if value == nil {
+		return true
+	}
+	v := reflect.ValueOf(value)
+	if !v.IsValid() {
+		return true
+	}
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Map, reflect.Pointer, reflect.Interface, reflect.Slice:
+		return v.IsNil()
+	}
+	return false
+}
+
+// InferMType infers the MType from a Go value.
+func InferMType(val any) (cnst.MType, bool) {
+	switch val.(type) {
+	case int, int32:
+		return cnst.INT, true
+	case int64:
+		return cnst.INT64, true
+	case float32, float64:
+		return cnst.FLOAT, true
+	case bool:
+		return cnst.BOOL, true
+	case string:
+		return cnst.STRING, true
+	case map[string]any:
+		return cnst.MAP, true
 	default:
-		return map[string]any{"type": "any"}
+		return "", false
+	}
+}
+
+// ZeroValue creates a new zero value for type T.
+// It handles pointers, maps, and slices correctly for Matrix parameters.
+func ZeroValue[T any]() (T, bool) {
+	var zero T
+	paramType := reflect.TypeOf((*T)(nil)).Elem()
+	if paramType == nil {
+		return zero, false
+	}
+
+	switch paramType.Kind() {
+	case reflect.Pointer:
+		value := reflect.New(paramType.Elem()).Interface().(T)
+		return value, true
+	case reflect.Map:
+		value := reflect.MakeMap(paramType).Interface().(T)
+		return value, true
+	case reflect.Slice:
+		value := reflect.MakeSlice(paramType, 0, 0).Interface().(T)
+		return value, true
+	default:
+		return zero, true
 	}
 }

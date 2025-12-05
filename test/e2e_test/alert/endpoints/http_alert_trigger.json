@@ -1,0 +1,56 @@
+{
+  "id": "ep_http_alert_trigger",
+  "type": "endpoint/http",
+  "name": "HTTP Alert Trigger",
+  "configuration": {
+    "ruleChainId": "rc-simple-e2e-test",
+    "startNodeId": "node-route-by-severity",
+    "httpMethod": "POST",
+    "httpPath": "/alert",
+    "description": "Triggers an alert via HTTP POST",
+    "endpointDefinition": {
+      "request": {
+        "body": {
+          "fields": [
+            {
+              "name": "severity",
+              "type": "string",
+              "required": true,
+              "bindPath": "rulemsg://dataT/asdflasjgie.labels.severity?sid=parsedAlert"
+            },
+            {
+              "name": "summary",
+              "type": "string",
+              "required": true,
+              "bindPath": "rulemsg://dataT/asdflasjgie.annotations.summary?sid=parsedAlert"
+            }
+          ]
+        }
+      },
+      "response": {
+        "successCode": 200,
+        "body": {
+          "fields": [
+            {
+              "name": "status",
+              "bindPath": "'ok'"
+            },
+            {
+              "name": "summary",
+              "bindPath": "rulemsg://dataT/asdflasjgie.annotations.summary"
+            }
+          ]
+        }
+      }
+    },
+    "errorMappings": {
+      "400": [
+        "202501003"
+      ],
+      "500": [
+        "202501001",
+        "202501002"
+      ]
+    }
+  }
+}

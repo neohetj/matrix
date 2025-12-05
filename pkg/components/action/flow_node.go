@@ -3,9 +3,9 @@ package action
 import (
 	"fmt"
 
-	"gitlab.com/neohet/matrix/pkg/registry"
-	"gitlab.com/neohet/matrix/pkg/types"
-	"gitlab.com/neohet/matrix/pkg/utils"
+	"github.com/NeohetJ/Matrix/internal/registry"
+	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/NeohetJ/Matrix/pkg/utils"
 )
 
 const (
@@ -13,7 +13,7 @@ const (
 )
 
 var flowNodePrototype = &FlowNode{
-	BaseNode: *types.NewBaseNode(FlowNodeType, types.NodeDefinition{
+	BaseNode: *types.NewBaseNode(FlowNodeType, types.NodeMetadata{
 		Name:        "Flow",
 		Description: "Executes a sub-chain synchronously and continues the flow upon its completion.",
 		Dimension:   "Action",
@@ -52,12 +52,12 @@ func (n *FlowNode) Type() types.NodeType {
 }
 
 // Init initializes the node instance with its specific configuration.
-func (n *FlowNode) Init(configuration types.Config) error {
+func (n *FlowNode) Init(configuration types.ConfigMap) error {
 	if err := utils.Decode(configuration, &n.nodeConfig); err != nil {
-		return types.DefInvalidConfiguration.Wrap(fmt.Errorf("failed to decode flow node config: %w", err))
+		return types.InvalidConfiguration.Wrap(fmt.Errorf("failed to decode flow node config: %w", err))
 	}
 	if n.nodeConfig.ChainId == "" {
-		return types.DefInvalidConfiguration.Wrap(fmt.Errorf("'chainId' is not specified for node %s", n.ID()))
+		return types.InvalidConfiguration.Wrap(fmt.Errorf("'chainId' is not specified for node %s", n.ID()))
 	}
 	return nil
 }
@@ -65,9 +65,9 @@ func (n *FlowNode) Init(configuration types.Config) error {
 // OnMsg executes the sub-chain synchronously.
 func (n *FlowNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 	// 1. Look up the target runtime from the global default runtime pool.
-	targetRuntime, ok := registry.Default.RuntimePool.Get(n.nodeConfig.ChainId)
+	targetRuntime, ok := ctx.GetRuntime().GetEngine().RuntimePool().Get(n.nodeConfig.ChainId)
 	if !ok {
-		ctx.TellFailure(msg, types.DefNodeNotFound.Wrap(fmt.Errorf("target chain with id '%s' not found in default runtime pool", n.nodeConfig.ChainId)))
+		ctx.TellFailure(msg, types.NodeNotFound.Wrap(fmt.Errorf("target chain with id '%s' not found in default runtime pool", n.nodeConfig.ChainId)))
 		return
 	}
 

@@ -23,7 +23,7 @@ import (
 	"context"
 	"sync"
 
-	"gitlab.com/neohet/matrix/pkg/types"
+	"github.com/NeohetJ/Matrix/pkg/types"
 )
 
 const (

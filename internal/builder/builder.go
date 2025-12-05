@@ -9,13 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gitlab.com/neohet/matrix/internal/loader"
-	"gitlab.com/neohet/matrix/internal/log"
-	"gitlab.com/neohet/matrix/internal/parser"
-	"gitlab.com/neohet/matrix/internal/scheduler"
+	"github.com/NeohetJ/Matrix/internal/loader"
+	"github.com/NeohetJ/Matrix/internal/log"
+	"github.com/NeohetJ/Matrix/internal/parser"
+	"github.com/NeohetJ/Matrix/internal/scheduler"
 
-	"gitlab.com/neohet/matrix/pkg/config"
-	"gitlab.com/neohet/matrix/pkg/types"
+	"github.com/NeohetJ/Matrix/pkg/config"
+	"github.com/NeohetJ/Matrix/pkg/types"
 )
 
 type DefMap map[string]*types.RuleChainDef

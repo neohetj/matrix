@@ -4,7 +4,7 @@ import (
 	"embed"
 	"io/fs"
 
-	"gitlab.com/neohet/matrix/pkg/types"
+	"github.com/NeohetJ/Matrix/pkg/types"
 )
 
 // EmbedProvider implements the ResourceProvider interface for an embedded filesystem.

@@ -1,0 +1,56 @@
+{
+  "id": "image_upload_endpoint",
+  "type": "endpoint/http",
+  "name": "Image Upload Endpoint",
+  "configuration": {
+    "ruleChainId": "rc-image-upload",
+    "httpMethod": "POST",
+    "httpPath": "/api/upload",
+    "description": "Upload an image file",
+    "endpointDefinition": {
+      "request": {
+        "body": {
+          "fields": [
+            {
+              "name": "image",
+              "type": "file",
+              "required": true,
+              "bindPath": "rulemsg://dataT/uploadedFileObjId?sid=MultipartFileHeader"
+            }
+          ]
+        }
+      },
+      "response": {
+        "successCode": 200,
+        "body": {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string",
+              "required": true,
+              "bindPath": "rulemsg://dataT/uploadedFileMetaObjId.path?sid=FileMetadata"
+            },
+            {
+              "name": "type",
+              "type": "string",
+              "required": true,
+              "bindPath": "rulemsg://dataT/uploadedFileMetaObjId.type?sid=FileMetadata"
+            },
+            {
+              "name": "size",
+              "type": "int",
+              "required": true,
+              "bindPath": "rulemsg://dataT/uploadedFileMetaObjId.size?sid=FileMetadata"
+            },
+            {
+              "name": "md5",
+              "type": "string",
+              "required": true,
+              "bindPath": "rulemsg://dataT/uploadedFileMetaObjId.md5?sid=FileMetadata"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

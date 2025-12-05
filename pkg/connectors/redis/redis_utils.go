@@ -22,9 +22,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NeohetJ/Matrix/internal/registry"
+	"github.com/NeohetJ/Matrix/pkg/types"
 	"github.com/redis/go-redis/v9"
-	"gitlab.com/neohet/matrix/pkg/registry"
-	"gitlab.com/neohet/matrix/pkg/types"
 )
 
 // GetRedisConnection retrieves a Redis connection, either from a shared node pool
@@ -38,35 +38,35 @@ func GetRedisConnection(nodePool types.NodePool, redisDsn string) (*redis.Client
 		nodeId := strings.TrimPrefix(redisDsn, "ref://")
 		sharedCtx, ok := nodePool.Get(nodeId)
 		if !ok {
-			return nil, false, types.DefNodeNotFound.Wrap(fmt.Errorf("redis client node not found by ref: %s", redisDsn))
+			return nil, false, types.NodeNotFound.Wrap(fmt.Errorf("redis client node not found by ref: %s", redisDsn))
 		}
 
 		node := sharedCtx.GetNode()
 		redisClient, ok := node.(types.SharedNode)
 		if !ok {
-			return nil, false, types.DefInternalError.Wrap(fmt.Errorf("node %s is not a SharedNode", redisDsn))
+			return nil, false, types.InternalError.Wrap(fmt.Errorf("node %s is not a SharedNode", redisDsn))
 		}
 
 		instance, err := redisClient.GetInstance()
 		if err != nil {
-			return nil, false, types.DefInternalError.Wrap(fmt.Errorf("failed to get redis instance from %s: %w", redisDsn, err))
+			return nil, false, types.InternalError.Wrap(fmt.Errorf("failed to get redis instance from %s: %w", redisDsn, err))
 		}
 
 		client, ok := instance.(*redis.Client)
 		if !ok {
-			return nil, false, types.DefInternalError.Wrap(fmt.Errorf("shared instance from %s is not a *redis.Client", redisDsn))
+			return nil, false, types.InternalError.Wrap(fmt.Errorf("shared instance from %s is not a *redis.Client", redisDsn))
 		}
 		return client, false, nil
 	} else {
 		opt, err := redis.ParseURL(redisDsn)
 		if err != nil {
-			return nil, false, types.DefInternalError.Wrap(fmt.Errorf("failed to parse redis DSN: %w", err))
+			return nil, false, types.InternalError.Wrap(fmt.Errorf("failed to parse redis DSN: %w", err))
 		}
 		opt.PoolTimeout = 5 * time.Second
 		client := redis.NewClient(opt)
 		if err := client.Ping(context.Background()).Err(); err != nil {
 			client.Close()
-			return nil, false, types.DefInternalError.Wrap(fmt.Errorf("failed to connect to redis: %w", err))
+			return nil, false, types.InternalError.Wrap(fmt.Errorf("failed to connect to redis: %w", err))
 		}
 		return client, true, nil
 	}

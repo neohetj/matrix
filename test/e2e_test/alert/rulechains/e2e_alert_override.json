@@ -1,0 +1,73 @@
+{
+  "ruleChain": {
+    "id": "rc-e2e-alert-override",
+    "name": "E2E Alert Override Rule Chain",
+    "description": "用于验证HTTP Client Request Body字段覆盖与补充功能的规则链",
+    "attrs": {
+      "executable": true
+    }
+  },
+  "metadata": {
+    "nodes": [
+      {
+        "id": "node-start",
+        "type": "action/log",
+        "name": "测试开始",
+        "description": "记录测试开始的日志",
+        "configuration": {
+          "level": "INFO",
+          "message": "E2E test started.\n Input data %+v",
+          "args": [
+            "data.labels"
+          ]
+        }
+      },
+      {
+        "id": "node-parse-alert-body",
+        "type": "transform/object_mapper",
+        "name": "解析并校验告警",
+        "description": "将原始告警JSON解析到结构化的DataT对象中",
+        "configuration": {
+          "mappingDefinition": {
+            "mapAll": "rulemsg://dataT/asdflasjgie?sid=parsedAlert"
+          }
+        }
+      },
+      {
+        "id": "node-webhook-override",
+        "type": "external/httpClient",
+        "name": "发送 Webhook (Override)",
+        "description": "发送请求并覆盖/补充字段",
+        "configuration": {
+          "defaultTimeout": "5s",
+          "request": {
+            "url": "${metadata.webhook_url}/webhook",
+            "method": "POST",
+            "body": {
+              "mapAll": "rulemsg://dataT/asdflasjgie?sid=parsedAlert",
+              "fields": [
+                {
+                  "name": "labels.severity",
+                  "type": "string",
+                  "bindPath": "'CRITICAL_URGENT'"
+                },
+                {
+                  "name": "forwarded_at",
+                  "type": "int",
+                  "bindPath": "rulemsg://metadata/ts"
+                }
+              ]
+            }
+          },
+          "response": {
+            "statusCodeTarget": "metadata.webhook_status"
+          }
+        }
+      }
+    ],
+    "connections": [
+      { "fromId": "node-start", "toId": "node-parse-alert-body", "type": "Success" },
+      { "fromId": "node-parse-alert-body", "toId": "node-webhook-override", "type": "Success" }
+    ]
+  }
+}

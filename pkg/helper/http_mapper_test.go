@@ -8,15 +8,27 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NeohetJ/Matrix/internal/registry"
+	"github.com/NeohetJ/Matrix/pkg/cnst"
+	"github.com/NeohetJ/Matrix/pkg/message"
+	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/NeohetJ/Matrix/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gitlab.com/neohet/matrix/pkg/registry"
-	"gitlab.com/neohet/matrix/pkg/types"
 )
+
+func assertFaultCode(t *testing.T, err error, expectedCode cnst.ErrCode) {
+	var fault *types.Fault
+	if errors.As(err, &fault) {
+		assert.Equal(t, expectedCode, fault.Code, "Expected fault code %d, but got %d", expectedCode, fault.Code)
+	} else {
+		assert.Fail(t, "Expected error to be of type *types.Fault")
+	}
+}
 
 // setupTestMsg creates a message with pre-populated dataT objects for testing.
 func setupTestMsg(t *testing.T) types.RuleMsg {
-	dataT := types.NewDataT()
+	dataT := message.NewDataT()
 
 	headersObj, err := dataT.NewItem("map_string_string", "headersObj")
 	require.NoError(t, err)
@@ -30,7 +42,7 @@ func setupTestMsg(t *testing.T) types.RuleMsg {
 	require.NoError(t, err)
 	*(queryObj.Body().(*map[string]string)) = map[string]string{"q": "matrix", "limit": "10"}
 
-	msg := types.NewMsg("TEST", `{"key":"value"}`, make(map[string]string), dataT)
+	msg := message.NewMsg("TEST", `{"key":"value"}`, make(map[string]string), dataT)
 	msg.Metadata()["requestId"] = "req-123"
 	return msg
 }
@@ -40,19 +52,20 @@ func TestMapRuleMsgToHttpRequest_NewMappings(t *testing.T) {
 	msg := setupTestMsg(t)
 
 	t.Run("Dynamic Headers and Body from dataT", func(t *testing.T) {
-		cfg := HttpRequestMap{
+		cfg := types.HttpRequestMap{
 			URL:    "http://test.com/api",
 			Method: "POST",
-			Headers: &HttpMappingSource{
-				From: &DynamicTarget{Path: "dataT.headersObj"},
+			Headers: types.EndpointIOPacket{
+				MapAll: utils.Ptr("rulemsg://dataT/headersObj?sid=map_string_string"),
 			},
-			Body: &HttpMappingSource{
-				From: &DynamicTarget{Path: "dataT.bodyObj"},
+			Body: types.EndpointIOPacket{
+				MapAll: utils.Ptr("rulemsg://dataT/bodyObj?sid=map_string_interface"),
 			},
 		}
 
-		req, err := MapRuleMsgToHttpRequest(ctx, msg, cfg, "5s")
+		req, cancel, err := MapRuleMsgToHttpRequest(ctx, msg, cfg, "5s")
 		require.NoError(t, err)
+		defer cancel()
 
 		assert.Equal(t, "dynamic-value", req.Header.Get("X-Dynamic-Header"))
 		bodyBytes, err := io.ReadAll(req.Body)
@@ -62,20 +75,21 @@ func TestMapRuleMsgToHttpRequest_NewMappings(t *testing.T) {
 	})
 
 	t.Run("Mixed Dynamic and Static Body", func(t *testing.T) {
-		cfg := HttpRequestMap{
+		cfg := types.HttpRequestMap{
 			URL:    "http://test.com/api",
 			Method: "POST",
-			Body: &HttpMappingSource{
-				From: &DynamicTarget{Path: "dataT.bodyObj"},
-				Params: []HttpParam{
-					{Name: "id", Mapping: HttpMapping{From: "'456'"}}, // Use single quotes for string literal
-					{Name: "newField", Mapping: HttpMapping{From: "metadata.requestId"}},
+			Body: types.EndpointIOPacket{
+				MapAll: utils.Ptr("rulemsg://dataT/bodyObj?sid=map_string_interface"),
+				Fields: []types.EndpointIOField{
+					{Name: "id", BindPath: "'456'", Type: "string"}, // Use single quotes for string literal
+					{Name: "newField", BindPath: "rulemsg://metadata/requestId", Type: "string"},
 				},
 			},
 		}
 
-		req, err := MapRuleMsgToHttpRequest(ctx, msg, cfg, "5s")
+		req, cancel, err := MapRuleMsgToHttpRequest(ctx, msg, cfg, "5s")
 		require.NoError(t, err)
+		defer cancel()
 
 		bodyBytes, err := io.ReadAll(req.Body)
 		require.NoError(t, err)
@@ -85,16 +99,17 @@ func TestMapRuleMsgToHttpRequest_NewMappings(t *testing.T) {
 	})
 
 	t.Run("Dynamic Query Params from dataT", func(t *testing.T) {
-		cfg := HttpRequestMap{
+		cfg := types.HttpRequestMap{
 			URL:    "http://test.com/api",
 			Method: "GET",
-			QueryParams: &HttpMappingSource{
-				From: &DynamicTarget{Path: "dataT.queryObj"},
+			QueryParams: types.EndpointIOPacket{
+				MapAll: utils.Ptr("rulemsg://dataT/queryObj?sid=map_string_string"),
 			},
 		}
 
-		req, err := MapRuleMsgToHttpRequest(ctx, msg, cfg, "5s")
+		req, cancel, err := MapRuleMsgToHttpRequest(ctx, msg, cfg, "5s")
 		require.NoError(t, err)
+		defer cancel()
 
 		q := req.URL.Query()
 		assert.Equal(t, "matrix", q.Get("q"))
@@ -102,36 +117,38 @@ func TestMapRuleMsgToHttpRequest_NewMappings(t *testing.T) {
 	})
 
 	t.Run("Static Literal Value Mapping", func(t *testing.T) {
-		cfg := HttpRequestMap{
+		cfg := types.HttpRequestMap{
 			URL:    "http://test.com/api",
 			Method: "GET",
-			Headers: &HttpMappingSource{
-				Params: []HttpParam{
-					{Name: "Content-Type", Mapping: HttpMapping{From: "'application/json'"}},
-					{Name: "X-Custom-Static", Mapping: HttpMapping{From: `"static-value"`}},
+			Headers: types.EndpointIOPacket{
+				Fields: []types.EndpointIOField{
+					{Name: "Content-Type", BindPath: "'application/json'"},
+					{Name: "X-Custom-Static", BindPath: `"static-value"`},
 				},
 			},
 		}
 
-		req, err := MapRuleMsgToHttpRequest(ctx, msg, cfg, "5s")
+		req, cancel, err := MapRuleMsgToHttpRequest(ctx, msg, cfg, "5s")
 		require.NoError(t, err)
+		defer cancel()
 
 		assert.Equal(t, "application/json", req.Header.Get("Content-Type"))
 		assert.Equal(t, "static-value", req.Header.Get("X-Custom-Static"))
 	})
 
 	t.Run("Body from msg.Data backward compatibility", func(t *testing.T) {
-		msgWithData := types.NewMsg("TEST", `{"from":"data"}`, make(map[string]string), types.NewDataT())
-		cfg := HttpRequestMap{
+		msgWithData := message.NewMsg("TEST", `{"from":"data"}`, make(map[string]string), message.NewDataT())
+		cfg := types.HttpRequestMap{
 			URL:    "http://test.com/api",
 			Method: "POST",
-			Body: &HttpMappingSource{
-				From: &DynamicTarget{Path: "data"},
+			Body: types.EndpointIOPacket{
+				MapAll: utils.Ptr("rulemsg://data"),
 			},
 		}
 
-		req, err := MapRuleMsgToHttpRequest(ctx, msgWithData, cfg, "5s")
+		req, cancel, err := MapRuleMsgToHttpRequest(ctx, msgWithData, cfg, "5s")
 		require.NoError(t, err)
+		defer cancel()
 
 		bodyBytes, err := io.ReadAll(req.Body)
 		require.NoError(t, err)
@@ -139,19 +156,68 @@ func TestMapRuleMsgToHttpRequest_NewMappings(t *testing.T) {
 	})
 
 	t.Run("Empty and nil mappings", func(t *testing.T) {
-		cfg := HttpRequestMap{
+		emptyMsg := message.NewMsg("TEST", "", nil, message.NewDataT())
+		cfg := types.HttpRequestMap{
 			URL:         "http://test.com/api",
 			Method:      "GET",
-			Headers:     nil,
-			QueryParams: &HttpMappingSource{}, // Empty source
-			Body:        nil,
+			Headers:     types.EndpointIOPacket{},
+			QueryParams: types.EndpointIOPacket{}, // Empty source
+			Body:        types.EndpointIOPacket{},
 		}
 
-		req, err := MapRuleMsgToHttpRequest(ctx, msg, cfg, "5s")
+		req, cancel, err := MapRuleMsgToHttpRequest(ctx, emptyMsg, cfg, "5s")
 		require.NoError(t, err)
+		defer cancel()
 		assert.Empty(t, req.Header)
 		assert.Empty(t, req.URL.RawQuery)
 		assert.Nil(t, req.Body)
+	})
+}
+
+type testValueProvider struct {
+	val any
+}
+
+func (p *testValueProvider) GetValue(name string) (any, bool, error) {
+	if p.val == nil {
+		return nil, false, nil
+	}
+	if name == "bad_int" {
+		return "not-an-int", true, nil
+	}
+	return p.val, true, nil
+}
+
+func (p *testValueProvider) GetAll() (any, bool, error) {
+	return p.val, p.val != nil, nil
+}
+
+func TestProcessInbound_Errors(t *testing.T) {
+	ctx := registry.NewMinimalNodeCtx("test-node")
+	msg := message.NewMsg("TEST", "", nil, message.NewDataT())
+
+	t.Run("Required Field Missing", func(t *testing.T) {
+		packet := types.EndpointIOPacket{
+			Fields: []types.EndpointIOField{
+				{Name: "missing_field", Required: true},
+			},
+		}
+		provider := &testValueProvider{val: nil}
+		err := ProcessInbound(ctx, msg, packet, provider)
+		assert.Error(t, err)
+		assertFaultCode(t, err, cnst.CodeRequiredFieldMissing)
+	})
+
+	t.Run("Field Conversion Failed", func(t *testing.T) {
+		packet := types.EndpointIOPacket{
+			Fields: []types.EndpointIOField{
+				{Name: "bad_int", Type: cnst.INT, Required: true},
+			},
+		}
+		provider := &testValueProvider{val: "some-val"}
+		err := ProcessInbound(ctx, msg, packet, provider)
+		assert.Error(t, err)
+		assertFaultCode(t, err, cnst.CodeFieldConversionFailed)
 	})
 }
 
@@ -169,22 +235,16 @@ func TestMapHttpResponseToRuleMsg_NewMappings(t *testing.T) {
 			},
 			Body: io.NopCloser(strings.NewReader(respBody)),
 		}
-		cfg := HttpResponseMap{
+		cfg := types.HttpResponseMap{
 			StatusCodeTarget: "meta.httpStatus",
-			Headers: &HttpMappingSource{
-				From: &DynamicTarget{
-					Path:      "dataT.responseHeaders",
-					DefineSID: "map_string_string",
-				},
-				Params: []HttpParam{
-					{Name: "X-Response-Id", Mapping: HttpMapping{To: "metadata.responseId"}},
+			Headers: types.EndpointIOPacket{
+				MapAll: utils.Ptr("rulemsg://dataT/responseHeaders?sid=map_string_string"),
+				Fields: []types.EndpointIOField{
+					{Name: "X-Response-Id", BindPath: "rulemsg://metadata/responseId"}, // Client: Name=Source, BindPath=Target
 				},
 			},
-			Body: &HttpMappingSource{
-				From: &DynamicTarget{
-					Path:      "dataT.responseBody",
-					DefineSID: "map_string_interface",
-				},
+			Body: types.EndpointIOPacket{
+				MapAll: utils.Ptr("rulemsg://dataT/responseBody?sid=map_string_interface"),
 			},
 		}
 
@@ -217,11 +277,11 @@ func TestMapHttpResponseToRuleMsg_NewMappings(t *testing.T) {
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
 			Body:       io.NopCloser(strings.NewReader(respBody)),
 		}
-		cfg := HttpResponseMap{
-			Body: &HttpMappingSource{
-				Params: []HttpParam{
-					{Name: "status", Mapping: HttpMapping{To: "metadata.requestStatus"}},
-					{Name: "trace_id", Mapping: HttpMapping{To: "metadata.traceId"}},
+		cfg := types.HttpResponseMap{
+			Body: types.EndpointIOPacket{
+				Fields: []types.EndpointIOField{
+					{Name: "status", BindPath: "rulemsg://metadata/requestStatus"},
+					{Name: "trace_id", BindPath: "rulemsg://metadata/traceId"},
 				},
 			},
 		}
@@ -238,7 +298,7 @@ func TestMapHttpResponseToRuleMsg_NewMappings(t *testing.T) {
 	t.Run("Map request error to metadata", func(t *testing.T) {
 		outMsg := setupTestMsg(t)
 		requestErr := errors.New("connection refused")
-		cfg := HttpResponseMap{
+		cfg := types.HttpResponseMap{
 			ErrorTarget: "meta.httpError",
 		}
 

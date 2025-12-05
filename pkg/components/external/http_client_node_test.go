@@ -24,12 +24,12 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/NeohetJ/Matrix/internal/registry"
+	"github.com/NeohetJ/Matrix/pkg/message"
+	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/NeohetJ/Matrix/pkg/utils"
+	tutils "github.com/NeohetJ/Matrix/test/utils"
 	"github.com/stretchr/testify/assert"
-	"gitlab.com/neohet/matrix/pkg/helper"
-	"gitlab.com/neohet/matrix/pkg/registry"
-	"gitlab.com/neohet/matrix/pkg/types"
-	"gitlab.com/neohet/matrix/pkg/utils"
-	"gitlab.com/neohet/matrix/test/test_utils"
 )
 
 const (
@@ -38,7 +38,7 @@ const (
 
 func init() {
 	registry.Default.CoreObjRegistry.Register(
-		types.NewCoreObjDef(&map[string]interface{}{}, MapStringInterfaceSID, "Generic map object"),
+		message.NewCoreObjDef(&map[string]interface{}{}, MapStringInterfaceSID, "Generic map object"),
 	)
 }
 
@@ -59,9 +59,9 @@ func TestHttpClientNode_Init(t *testing.T) {
 	t.Run("should fail if defineSid is not registered", func(t *testing.T) {
 		node := httpClientNodePrototype.New().(*HttpClientNode)
 		config := HttpClientNodeConfiguration{
-			Response: helper.HttpResponseMap{
-				Body: &helper.HttpMappingSource{
-					From: &helper.DynamicTarget{DefineSID: "NonExistentV1_0"},
+			Response: types.HttpResponseMap{
+				Body: types.EndpointIOPacket{
+					MapAll: utils.Ptr("rulemsg://data?sid=NonExistentV1_0"),
 				},
 			},
 		}
@@ -87,7 +87,7 @@ func TestHttpClientNode_OnMsg(t *testing.T) {
 	// 测试点: 最简单的GET请求，验证客户端与测试服务器的基本连通性。
 	t.Run("super simple GET request", func(t *testing.T) {
 		config := HttpClientNodeConfiguration{
-			Request: helper.HttpRequestMap{
+			Request: types.HttpRequestMap{
 				URL:    "http://example.com/simple",
 				Method: "GET",
 			},
@@ -103,8 +103,8 @@ func TestHttpClientNode_OnMsg(t *testing.T) {
 			},
 		}
 
-		ctx := test_utils.NewMockNodeCtx()
-		node.OnMsg(ctx, test_utils.NewTestRuleMsg())
+		ctx := tutils.NewMockNodeCtx()
+		node.OnMsg(ctx, tutils.NewTestRuleMsg())
 
 		assert.Nil(t, ctx.FailureErr)
 		assert.NotNil(t, ctx.SuccessMsg)
@@ -113,14 +113,14 @@ func TestHttpClientNode_OnMsg(t *testing.T) {
 	// 测试点: 验证指南示例1：使用POST方法发送JSON并接收JSON响应的成功路径。
 	t.Run("Guide Example 1: POST JSON and receive JSON", func(t *testing.T) {
 		config := HttpClientNodeConfiguration{
-			Request: helper.HttpRequestMap{
+			Request: types.HttpRequestMap{
 				URL:    "http://example.com/users/${dataT.userInfo.userId}",
 				Method: "POST",
-				Body:   &helper.HttpMappingSource{From: &helper.DynamicTarget{Path: "dataT.userInfo"}},
+				Body:   types.EndpointIOPacket{MapAll: utils.Ptr("rulemsg://dataT/userInfo")},
 			},
-			Response: helper.HttpResponseMap{
+			Response: types.HttpResponseMap{
 				StatusCodeTarget: "httpStatusCode",
-				Body:             &helper.HttpMappingSource{From: &helper.DynamicTarget{Path: "dataT.apiResult", DefineSID: MapStringInterfaceSID}},
+				Body:             types.EndpointIOPacket{MapAll: utils.Ptr("rulemsg://dataT/apiResult?sid=" + MapStringInterfaceSID)},
 			},
 		}
 		node := newNodeForTest(t, config)
@@ -140,11 +140,11 @@ func TestHttpClientNode_OnMsg(t *testing.T) {
 			},
 		}
 
-		msg := test_utils.NewTestRuleMsg()
+		msg := tutils.NewTestRuleMsg()
 		userInfo, _ := msg.DataT().NewItem(MapStringInterfaceSID, "userInfo")
 		json.Unmarshal([]byte(`{"userId": 123, "userName": "Alice"}`), userInfo.Body())
 
-		ctx := test_utils.NewMockNodeCtx()
+		ctx := tutils.NewMockNodeCtx()
 		node.OnMsg(ctx, msg)
 
 		assert.Nil(t, ctx.FailureErr)
@@ -157,10 +157,10 @@ func TestHttpClientNode_OnMsg(t *testing.T) {
 	// 测试点: 验证指南示例2：使用GET方法并正确映射查询参数的成功路径。
 	t.Run("Guide Example 2: GET with QueryParams", func(t *testing.T) {
 		config := HttpClientNodeConfiguration{
-			Request: helper.HttpRequestMap{
+			Request: types.HttpRequestMap{
 				URL:         "http://example.com/items",
 				Method:      "GET",
-				QueryParams: &helper.HttpMappingSource{From: &helper.DynamicTarget{Path: "dataT.queryParams"}},
+				QueryParams: types.EndpointIOPacket{MapAll: utils.Ptr("rulemsg://dataT/queryParams")},
 			},
 		}
 		node := newNodeForTest(t, config)
@@ -173,11 +173,11 @@ func TestHttpClientNode_OnMsg(t *testing.T) {
 				}, nil
 			},
 		}
-		msg := test_utils.NewTestRuleMsg()
+		msg := tutils.NewTestRuleMsg()
 		queryParams, _ := msg.DataT().NewItem(MapStringInterfaceSID, "queryParams")
 		json.Unmarshal([]byte(`{"page": 1, "pageSize": 10}`), queryParams.Body())
 
-		ctx := test_utils.NewMockNodeCtx()
+		ctx := tutils.NewMockNodeCtx()
 		node.OnMsg(ctx, msg)
 		assert.Nil(t, ctx.FailureErr)
 	})
@@ -185,14 +185,14 @@ func TestHttpClientNode_OnMsg(t *testing.T) {
 	// 测试点: 验证指南示例4：组合使用动态`from`和静态`params`来构建请求体的功能。
 	t.Run("Guide Example 4: Combine request body", func(t *testing.T) {
 		config := HttpClientNodeConfiguration{
-			Request: helper.HttpRequestMap{
+			Request: types.HttpRequestMap{
 				URL:    "http://example.com/complex",
 				Method: "POST",
-				Body: &helper.HttpMappingSource{
-					From: &helper.DynamicTarget{Path: "dataT.baseInfo"},
-					Params: []helper.HttpParam{
-						{Name: "dynamic_field", Mapping: helper.HttpMapping{From: "metadata.dynamicId"}},
-						{Name: "static_field", Mapping: helper.HttpMapping{From: "'static_value'"}},
+				Body: types.EndpointIOPacket{
+					MapAll: utils.Ptr("rulemsg://dataT/baseInfo"),
+					Fields: []types.EndpointIOField{
+						{Name: "dynamic_field", BindPath: "rulemsg://metadata/dynamicId", Type: "string"},
+						{Name: "static_field", BindPath: "'static_value'", Type: "string"},
 					},
 				},
 			},
@@ -205,12 +205,12 @@ func TestHttpClientNode_OnMsg(t *testing.T) {
 				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewBufferString(""))}, nil
 			},
 		}
-		msg := test_utils.NewTestRuleMsg()
+		msg := tutils.NewTestRuleMsg()
 		msg.Metadata()["dynamicId"] = "xyz"
 		baseInfo, _ := msg.DataT().NewItem(MapStringInterfaceSID, "baseInfo")
 		json.Unmarshal([]byte(`{"common": "value"}`), baseInfo.Body())
 
-		ctx := test_utils.NewMockNodeCtx()
+		ctx := tutils.NewMockNodeCtx()
 		node.OnMsg(ctx, msg)
 		assert.Nil(t, ctx.FailureErr)
 	})
@@ -218,8 +218,8 @@ func TestHttpClientNode_OnMsg(t *testing.T) {
 	// 测试点: 验证指南示例5：确保HttpResponseMap中定义的所有元信息目标键都能被正确填充。
 	t.Run("Guide Example 5: Map all response metadata", func(t *testing.T) {
 		config := HttpClientNodeConfiguration{
-			Request: helper.HttpRequestMap{URL: "http://example.com", Method: "GET"},
-			Response: helper.HttpResponseMap{
+			Request: types.HttpRequestMap{URL: "http://example.com", Method: "GET"},
+			Response: types.HttpResponseMap{
 				StatusCodeTarget: "http.status_code",
 				LatencyMsTarget:  "http.latency_ms",
 				ErrorTarget:      "http.error",
@@ -232,8 +232,8 @@ func TestHttpClientNode_OnMsg(t *testing.T) {
 			},
 		}
 
-		ctx := test_utils.NewMockNodeCtx()
-		node.OnMsg(ctx, test_utils.NewTestRuleMsg())
+		ctx := tutils.NewMockNodeCtx()
+		node.OnMsg(ctx, tutils.NewTestRuleMsg())
 
 		assert.Nil(t, ctx.FailureErr)
 		meta := ctx.SuccessMsg.Metadata()
@@ -244,8 +244,8 @@ func TestHttpClientNode_OnMsg(t *testing.T) {
 	// 测试点: 确保在发生网络连接错误时，节点能正确地走向失败链路，并报告相应的错误信息。
 	t.Run("should fail on connection error and map error metadata", func(t *testing.T) {
 		config := HttpClientNodeConfiguration{
-			Request:  helper.HttpRequestMap{URL: "http://localhost:9999", Method: "GET"},
-			Response: helper.HttpResponseMap{ErrorTarget: "http.error"},
+			Request:  types.HttpRequestMap{URL: "http://localhost:9999", Method: "GET"},
+			Response: types.HttpResponseMap{ErrorTarget: "http.error"},
 		}
 		node := newNodeForTest(t, config)
 		// Inject a mock client that always returns an error.
@@ -255,11 +255,11 @@ func TestHttpClientNode_OnMsg(t *testing.T) {
 			},
 		}
 
-		ctx := test_utils.NewMockNodeCtx()
-		node.OnMsg(ctx, test_utils.NewTestRuleMsg())
+		ctx := tutils.NewMockNodeCtx()
+		node.OnMsg(ctx, tutils.NewTestRuleMsg())
 
 		assert.NotNil(t, ctx.FailureErr)
-		assert.Equal(t, FaultHttpSendFailed.Message, test_utils.GetRootError(ctx.FailureErr).Message)
+		assert.Equal(t, FaultHttpSendFailed.Message, tutils.GetRootError(ctx.FailureErr).Message)
 		assert.Contains(t, ctx.FailureMsg.Metadata()["http.error"], "simulated connection refused")
 	})
 }

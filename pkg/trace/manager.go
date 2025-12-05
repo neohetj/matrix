@@ -3,7 +3,7 @@ package trace
 import (
 	"time"
 
-	"gitlab.com/neohet/matrix/pkg/types"
+	"github.com/NeohetJ/Matrix/pkg/types"
 )
 
 // Manager manages the lifecycle of trace snapshots.
@@ -27,6 +27,16 @@ func (m *Manager) GetTracer() *Tracer {
 // GetSnapshot retrieves an execution snapshot from the store.
 func (m *Manager) GetSnapshot(executionID string) (*types.ExecutionStatus, bool) {
 	return m.store.Get(executionID)
+}
+
+// GetRecentSnapshots returns the most recent snapshots when the store supports listing.
+// When the underlying store does not implement types.StoreListable, it returns an empty slice.
+func (m *Manager) GetRecentSnapshots(limit int) []*types.ExecutionStatus {
+	listable, ok := m.store.(types.StoreListable)
+	if !ok {
+		return nil
+	}
+	return listable.List(limit)
 }
 
 // FinalizeSnapshot marks a trace snapshot as complete by setting its EndTs.

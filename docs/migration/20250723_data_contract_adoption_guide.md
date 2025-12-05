@@ -15,7 +15,7 @@ tags:
 
 ## 1. 变更概述
 
-为了增强框架的静态分析能力和UI工具链支持，我们对`types.Node`接口和相关定义进行了扩展，引入了统一的数据访问契约。本次变更的核心是在`types.Node`接口上增加了一个新方法`GetDataContract()`，并为`NodeDefinition`和`FuncObject`增加了用于声明数据依赖的字段。
+为了增强框架的静态分析能力和UI工具链支持，我们对`types.Node`接口和相关定义进行了扩展，引入了统一的数据访问契约。本次变更的核心是在`types.Node`接口上增加了一个新方法`GetDataContract()`，并为`NodeMetadata`和`FuncObject`增加了用于声明数据依赖的字段。
 
 虽然此变更是向后兼容的，但我们强烈建议所有节点开发者遵循本指南，为现有节点添加数据契约，以充分利用新功能带来的优势。
 
@@ -23,7 +23,7 @@ tags:
 
 *   **`types.Node`接口**: 增加了一个新方法`GetDataContract() DataContract`。
 *   **所有`types.Node`的实现**: 所有实现了`Node`接口的结构体都必须实现`GetDataContract`方法。
-*   **非函数节点定义**: `types.NodeDefinition`结构体现已包含`ReadsData`, `ReadsMetadata`, `WritesMetadata`字段。
+*   **非函数节点定义**: `types.NodeMetadata`结构体现已包含`ReadsData`, `ReadsMetadata`, `WritesMetadata`字段。
 *   **函数节点定义**: `types.FuncObjectConfiguration`结构体现已包含`ReadsData`, `ReadsMetadata`, `WritesMetadata`字段。
 
 ## 3. 手动迁移与适配清单
@@ -44,15 +44,15 @@ tags:
 对于您开发的每一个非函数节点（如`action`, `filter`, `flow`等类型）：
 
 - [ ] 审查节点`OnMsg`方法的实现逻辑。
-- [ ] **如果**节点从`msg.Data()`中读取数据，请在`NodeDefinition`的`ReadsData`字段中声明所读取字段的路径列表（例如 `["user.id", "product.name"]`）。
-- [ ] **如果**节点从`msg.Metadata()`中读取数据，请在`NodeDefinition`的`ReadsMetadata`字段中声明所读取的键。
-- [ ] **如果**节点向`msg.Metadata()`中写入数据，请在`NodeDefinition`的`WritesMetadata`字段中声明所写入的键。
+- [ ] **如果**节点从`msg.Data()`中读取数据，请在`NodeMetadata`的`ReadsData`字段中声明所读取字段的路径列表（例如 `["user.id", "product.name"]`）。
+- [ ] **如果**节点从`msg.Metadata()`中读取数据，请在`NodeMetadata`的`ReadsMetadata`字段中声明所读取的键。
+- [ ] **如果**节点向`msg.Metadata()`中写入数据，请在`NodeMetadata`的`WritesMetadata`字段中声明所写入的键。
 
 **示例 (`for_each_node.go`):**
 ```go
 // 之前
 var forEachNodePrototype = &ForEachNode{
-	BaseNode: *types.NewBaseNode(ForEachNodeType, types.NodeDefinition{
+	BaseNode: *types.NewBaseNode(ForEachNodeType, types.NodeMetadata{
 		Name: "For Each",
 		// ...
 	}),
@@ -60,7 +60,7 @@ var forEachNodePrototype = &ForEachNode{
 
 // 之后
 var forEachNodePrototype = &ForEachNode{
-	BaseNode: *types.NewBaseNode(ForEachNodeType, types.NodeDefinition{
+	BaseNode: *types.NewBaseNode(ForEachNodeType, types.NodeMetadata{
 		Name: "For Each",
 		// ...
 		WritesMetadata: []types.MetadataDef{

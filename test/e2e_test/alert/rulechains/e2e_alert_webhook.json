@@ -1,0 +1,100 @@
+{
+  "ruleChain": {
+    "id": "rc-e2e-alert-webhook",
+    "name": "E2E Alert Webhook Rule Chain",
+    "description": "一个用于测试HTTP Client集成、支持Webhook通知的规则链",
+    "attrs": {
+      "executable": true
+    }
+  },
+  "metadata": {
+    "nodes": [
+      {
+        "id": "node-start",
+        "type": "action/log",
+        "name": "测试开始",
+        "description": "记录测试开始的日志",
+        "configuration": {
+          "level": "INFO",
+          "message": "E2E test started.\n Input data %+v",
+          "args": [
+            "data.labels"
+          ]
+        }
+      },
+      {
+        "id": "node-parse-alert-body",
+        "type": "transform/object_mapper",
+        "name": "解析并校验告警",
+        "description": "将原始告警JSON解析到结构化的DataT对象中",
+        "configuration": {
+          "mappingDefinition": {
+            "mapAll": "rulemsg://dataT/asdflasjgie?sid=parsedAlert"
+          }
+        }
+      },
+      {
+        "id": "node-route-by-severity",
+        "type": "action/exprSwitch",
+        "name": "按严重等级路由",
+        "description": "根据parsedAlert.labels.severity的值进行路由",
+        "configuration": {
+          "cases": {
+            "Critical": "dataT.asdflasjgie.labels.severity == 'critical'",
+            "Warning": "dataT.asdflasjgie.labels.severity == 'warning'"
+          },
+          "defaultRelation": "Info"
+        }
+      },
+      {
+        "id": "node-webhook-notification",
+        "type": "external/httpClient",
+        "name": "发送 Webhook",
+        "description": "向外部系统发送Critical级别的告警通知",
+        "configuration": {
+          "defaultTimeout": "5s",
+          "request": {
+            "url": "${metadata.webhook_url}/webhook",
+            "method": "POST",
+            "body": {
+              "mapAll": "rulemsg://dataT/asdflasjgie?sid=parsedAlert"
+            }
+          },
+          "response": {
+            "statusCodeTarget": "metadata.webhook_status"
+          }
+        }
+      },
+      {
+        "id": "node-log-warning-alert",
+        "type": "action/log",
+        "name": "记录警告告警",
+        "description": "记录Warning级别的告警日志",
+        "configuration": {
+          "level": "WARN",
+          "message": "Warning alert received: %v",
+          "args": [
+            "dataT.asdflasjgie.annotations.summary"
+          ]
+        }
+      },
+      {
+        "id": "node-log-info-alert",
+        "type": "action/log",
+        "name": "记录普通告警",
+        "description": "记录信息级别的告警日志",
+        "configuration": {
+          "level": "INFO",
+          "message": "INFO alert received: %v"
+        }
+      }
+    ],
+    "connections": [
+      { "fromId": "node-start", "toId": "node-parse-alert-body", "type": "Success" },
+      { "fromId": "node-parse-alert-body", "toId": "node-route-by-severity", "type": "Success" },
+      { "fromId": "node-route-by-severity", "toId": "node-webhook-notification", "type": "Critical" },
+      { "fromId": "node-route-by-severity", "toId": "node-log-warning-alert", "type": "Warning" },
+      { "fromId": "node-route-by-severity", "toId": "node-log-info-alert", "type": "Info" }
+    ]
+  }
+}
