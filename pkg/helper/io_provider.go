@@ -1,6 +1,7 @@
 package helper
 
 import (
+	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/message"
 	"github.com/neohetj/matrix/pkg/types"
 )
@@ -31,16 +32,16 @@ type RuleMsgProvider struct {
 }
 
 func (p RuleMsgProvider) GetValue(name string) (any, bool, error) {
-	// Try to use the new Asset-based extraction if possible
 	val, err := message.ExtractFromMsg[any](p.Msg, name)
-	if err == nil {
-		return val, true, nil
+	if err != nil {
+		// If the error is a Fault with the AssetNotFound code, we treat it as a non-fatal "not found" case.
+		if types.IsFault(err, cnst.CodeAssetNotFound) {
+			return nil, false, nil
+		}
+		// For all other errors, we propagate them.
+		return nil, false, err
 	}
-	// Fallback or specific error handling:
-	// ExtractFromMsg returns error if not found or invalid scheme.
-	// We map the error to found=false if it's just a lookup failure, but ExtractFromMsg usually errors on miss.
-	// For backward compatibility behavior where "not found" is not always an error:
-	return val, false, err
+	return val, true, nil
 }
 
 func (p RuleMsgProvider) GetAll() (any, bool, error) {

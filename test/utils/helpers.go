@@ -2,6 +2,7 @@ package utils
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/neohetj/matrix/internal/contract"
 	"github.com/neohetj/matrix/pkg/types"
@@ -29,4 +30,22 @@ func GetRootError(err error) *types.Fault {
 		}
 	}
 	return fault
+}
+
+// MustInt is a test helper to convert any numeric type to int for comparison.
+func MustInt(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case float64:
+		return int(n)
+	case int32:
+		return int(n)
+	case int64:
+		return int(n)
+	case float32:
+		return int(n)
+	default:
+		panic(fmt.Sprintf("unexpected type %T for MustInt conversion", v))
+	}
 }

@@ -2,6 +2,7 @@ package helper
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -30,15 +31,15 @@ func assertFaultCode(t *testing.T, err error, expectedCode cnst.ErrCode) {
 func setupTestMsg(t *testing.T) types.RuleMsg {
 	dataT := message.NewDataT()
 
-	headersObj, err := dataT.NewItem("map_string_string", "headersObj")
+	headersObj, err := dataT.NewItem(cnst.SID_MAP_STRING_STRING, "headersObj")
 	require.NoError(t, err)
 	*(headersObj.Body().(*map[string]string)) = map[string]string{"X-Dynamic-Header": "dynamic-value"}
 
-	bodyObj, err := dataT.NewItem("map_string_interface", "bodyObj")
+	bodyObj, err := dataT.NewItem(cnst.SID_MAP_STRING_INTERFACE, "bodyObj")
 	require.NoError(t, err)
 	*(bodyObj.Body().(*map[string]interface{})) = map[string]interface{}{"user": "test", "id": 123}
 
-	queryObj, err := dataT.NewItem("map_string_string", "queryObj")
+	queryObj, err := dataT.NewItem(cnst.SID_MAP_STRING_STRING, "queryObj")
 	require.NoError(t, err)
 	*(queryObj.Body().(*map[string]string)) = map[string]string{"q": "matrix", "limit": "10"}
 
@@ -56,10 +57,10 @@ func TestMapRuleMsgToHttpRequest_NewMappings(t *testing.T) {
 			URL:    "http://test.com/api",
 			Method: "POST",
 			Headers: types.EndpointIOPacket{
-				MapAll: utils.Ptr("rulemsg://dataT/headersObj?sid=map_string_string"),
+				MapAll: utils.Ptr(fmt.Sprintf("rulemsg://dataT/headersObj?sid=%s", cnst.SID_MAP_STRING_STRING)),
 			},
 			Body: types.EndpointIOPacket{
-				MapAll: utils.Ptr("rulemsg://dataT/bodyObj?sid=map_string_interface"),
+				MapAll: utils.Ptr(fmt.Sprintf("rulemsg://dataT/bodyObj?sid=%s", cnst.SID_MAP_STRING_STRING)),
 			},
 		}
 
@@ -79,9 +80,9 @@ func TestMapRuleMsgToHttpRequest_NewMappings(t *testing.T) {
 			URL:    "http://test.com/api",
 			Method: "POST",
 			Body: types.EndpointIOPacket{
-				MapAll: utils.Ptr("rulemsg://dataT/bodyObj?sid=map_string_interface"),
+				MapAll: utils.Ptr(fmt.Sprintf("rulemsg://dataT/bodyObj?sid=%s", cnst.SID_MAP_STRING_INTERFACE)),
 				Fields: []types.EndpointIOField{
-					{Name: "id", BindPath: "'456'", Type: "string"}, // Use single quotes for string literal
+					{Name: "id", DefaultValue: "456", Type: "string"},
 					{Name: "newField", BindPath: "rulemsg://metadata/requestId", Type: "string"},
 				},
 			},
@@ -103,7 +104,7 @@ func TestMapRuleMsgToHttpRequest_NewMappings(t *testing.T) {
 			URL:    "http://test.com/api",
 			Method: "GET",
 			QueryParams: types.EndpointIOPacket{
-				MapAll: utils.Ptr("rulemsg://dataT/queryObj?sid=map_string_string"),
+				MapAll: utils.Ptr(fmt.Sprintf("rulemsg://dataT/queryObj?sid=%s", cnst.SID_MAP_STRING_STRING)),
 			},
 		}
 
@@ -122,8 +123,9 @@ func TestMapRuleMsgToHttpRequest_NewMappings(t *testing.T) {
 			Method: "GET",
 			Headers: types.EndpointIOPacket{
 				Fields: []types.EndpointIOField{
-					{Name: "Content-Type", BindPath: "'application/json'"},
-					{Name: "X-Custom-Static", BindPath: `"static-value"`},
+					// For static literal values, BindPath should be empty, and DefaultValue should be set.
+					{Name: "Content-Type", DefaultValue: "application/json"},
+					{Name: "X-Custom-Static", DefaultValue: "static-value"},
 				},
 			},
 		}
@@ -137,12 +139,12 @@ func TestMapRuleMsgToHttpRequest_NewMappings(t *testing.T) {
 	})
 
 	t.Run("Body from msg.Data backward compatibility", func(t *testing.T) {
-		msgWithData := message.NewMsg("TEST", `{"from":"data"}`, make(map[string]string), message.NewDataT())
+		msgWithData := message.NewMsg(string(cnst.TEXT), `{"from":"data"}`, make(map[string]string), message.NewDataT())
 		cfg := types.HttpRequestMap{
 			URL:    "http://test.com/api",
 			Method: "POST",
 			Body: types.EndpointIOPacket{
-				MapAll: utils.Ptr("rulemsg://data"),
+				MapAll: utils.Ptr(fmt.Sprintf("rulemsg://data?format=%s", cnst.TEXT)),
 			},
 		}
 
@@ -238,13 +240,13 @@ func TestMapHttpResponseToRuleMsg_NewMappings(t *testing.T) {
 		cfg := types.HttpResponseMap{
 			StatusCodeTarget: "meta.httpStatus",
 			Headers: types.EndpointIOPacket{
-				MapAll: utils.Ptr("rulemsg://dataT/responseHeaders?sid=map_string_string"),
+				MapAll: utils.Ptr(fmt.Sprintf("rulemsg://dataT/responseHeaders?sid=%s", cnst.SID_MAP_STRING_STRING)),
 				Fields: []types.EndpointIOField{
 					{Name: "X-Response-Id", BindPath: "rulemsg://metadata/responseId"}, // Client: Name=Source, BindPath=Target
 				},
 			},
 			Body: types.EndpointIOPacket{
-				MapAll: utils.Ptr("rulemsg://dataT/responseBody?sid=map_string_interface"),
+				MapAll: utils.Ptr(fmt.Sprintf("rulemsg://dataT/responseBody?sid=%s", cnst.SID_MAP_STRING_INTERFACE)),
 			},
 		}
 

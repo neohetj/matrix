@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 // RefAsset represents a parsed ref:// URI.
@@ -69,7 +70,7 @@ func (a RefAsset) Handle(uri *url.URL, ctx *AssetContext) (any, error) {
 
 	instance, err := pool.GetInstance(nodeId)
 	if err != nil {
-		return nil, err
+		return nil, types.AssetNotFound.Wrap(err)
 	}
 
 	return instance, nil

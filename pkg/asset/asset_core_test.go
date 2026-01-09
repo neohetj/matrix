@@ -220,6 +220,20 @@ func TestAssetResolve_NonURILiteral(t *testing.T) {
 	AssertErrorCode(t, err, AssetSchemeNotRegistered)
 }
 
+func TestAssetResolve_EmptyURI(t *testing.T) {
+	InitRegistry()
+
+	// Test with an empty URI
+	a := Asset[string]{URI: ""}
+	_, err := a.Resolve(NewAssetContext())
+
+	// Expect an error
+	assert.Error(t, err)
+
+	// Check if the error is the specific AssetInvalidURI fault
+	AssertErrorCode(t, err, AssetInvalidURI)
+}
+
 func TestDecodeAssetString(t *testing.T) {
 	type PromptConfig struct {
 		System Asset[string] `json:"system"`

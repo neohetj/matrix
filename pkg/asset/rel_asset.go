@@ -1,12 +1,14 @@
 package asset
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"strings"
 
 	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 // RelAsset represents a parsed rel:// URI.
@@ -48,6 +50,9 @@ func (a RelAsset) Handle(uri *url.URL, ctx *AssetContext) (any, error) {
 
 	content, err := os.ReadFile(path)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, types.AssetNotFound.Wrap(err)
+		}
 		return nil, fmt.Errorf("failed to read file from %s: %w", path, err)
 	}
 	return string(content), nil

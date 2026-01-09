@@ -7,6 +7,7 @@ import (
 	"log"
 	"sync"
 
+	"github.com/neohetj/matrix/internal/contract"
 	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/types"
 	"github.com/stretchr/testify/mock"
@@ -235,17 +236,55 @@ func (m *MockLogger) Reset() {
 
 type MockNodeCtx struct {
 	types.NodeCtx
-	Ctx        context.Context
-	SuccessMsg types.RuleMsg
-	FailureMsg types.RuleMsg
-	FailureErr error
-	NodeDef    types.NodeDef
+	Ctx              context.Context
+	SuccessMsg       types.RuleMsg
+	FailureMsg       types.RuleMsg
+	FailureErr       error
+	NodeDef          types.NodeDef
+	NodeIDValue      string
+	ChainIDValue     string
+	ChainConfigValue types.ConfigMap
+	chainInstance    types.ChainInstance
 }
 
-func NewMockNodeCtx() *MockNodeCtx {
-	return &MockNodeCtx{Ctx: context.Background()}
+type MockNodeCtxOption func(*MockNodeCtx)
+
+func NewMockNodeCtx(opts ...MockNodeCtxOption) *MockNodeCtx {
+	ctx := &MockNodeCtx{
+		Ctx:         context.Background(),
+		NodeIDValue: "test-node",
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(ctx)
+		}
+	}
+	return ctx
 }
-func (m *MockNodeCtx) GetContext() context.Context   { return m.Ctx }
+
+func WithTestNodeConfig(config map[string]any) MockNodeCtxOption {
+	return func(ctx *MockNodeCtx) {
+		ctx.NodeDef.Configuration = types.ConfigMap(config)
+	}
+}
+func (m *MockNodeCtx) GetContext() context.Context { return m.Ctx }
+func (m *MockNodeCtx) SetContext(ctx context.Context) {
+	m.Ctx = ctx
+}
+func (m *MockNodeCtx) ChainConfig() types.ConfigMap {
+	return m.ChainConfigValue
+}
+func (m *MockNodeCtx) ChainID() string { return m.ChainIDValue }
+func (m *MockNodeCtx) NodeID() string {
+	if m.NodeIDValue == "" {
+		return "test-node"
+	}
+	return m.NodeIDValue
+}
+func (m *MockNodeCtx) GetNode() types.Node { return nil }
+func (m *MockNodeCtx) GetRuntime() types.Runtime {
+	return nil
+}
 func (m *MockNodeCtx) TellSuccess(msg types.RuleMsg) { m.SuccessMsg = msg }
 func (m *MockNodeCtx) TellFailure(msg types.RuleMsg, err error) {
 	m.FailureMsg = msg
@@ -254,8 +293,13 @@ func (m *MockNodeCtx) TellFailure(msg types.RuleMsg, err error) {
 func (m *MockNodeCtx) HandleError(msg types.RuleMsg, err error) {
 	m.TellFailure(msg, err)
 }
-func (m *MockNodeCtx) SelfDef() *types.NodeDef { return &m.NodeDef }
-func (m *MockNodeCtx) Config() types.ConfigMap { return m.NodeDef.Configuration }
+func (m *MockNodeCtx) TellNext(msg types.RuleMsg, relationTypes ...string) {}
+func (m *MockNodeCtx) NewMsg(msgType string, metaData types.Metadata, data string) types.RuleMsg {
+	return contract.NewDefaultRuleMsg(msgType, data, metaData, contract.NewDataT())
+}
+func (m *MockNodeCtx) Config() types.ConfigMap         { return m.NodeDef.Configuration }
+func (m *MockNodeCtx) SelfDef() *types.NodeDef         { return &m.NodeDef }
+func (m *MockNodeCtx) SetOnAllNodesCompleted(f func()) {}
 func (m *MockNodeCtx) Logger() types.Logger {
 	return &TestLogger{}
 }
@@ -270,4 +314,14 @@ func (m *MockNodeCtx) Warn(msg string, fields ...any) {
 }
 func (m *MockNodeCtx) Error(msg string, fields ...any) {
 	m.Logger().Errorf(m.GetContext(), msg, fields...)
+}
+
+// SetChainInstance sets the chain instance for the mock context.
+func (m *MockNodeCtx) SetChainInstance(instance types.ChainInstance) {
+	m.chainInstance = instance
+}
+
+// ChainInstance returns the configured chain instance.
+func (m *MockNodeCtx) ChainInstance() types.ChainInstance {
+	return m.chainInstance
 }

@@ -58,9 +58,8 @@ func ProcessInbound(ctx types.NodeCtx, msg types.RuleMsg, packet types.EndpointI
 // ProcessOutbound handles mapping FROM RuleMsg TO an external target (like HTTP request parts).
 // Used by: HttpEndpoint (Response), HttpClient (Request).
 // It returns a map of values that should be sent to the external target.
-func ProcessOutbound(ctx types.NodeCtx, msg types.RuleMsg, packet types.EndpointIOPacket, provider ValueProvider) (map[string]any, error) {
-	result := make(map[string]any)
-
+func ProcessOutbound(ctx types.NodeCtx, msg types.RuleMsg, packet types.EndpointIOPacket, provider ValueProvider) (result map[string]any, err error) {
+	result = make(map[string]any)
 	// 1. MapAll: Extract a whole object from RuleMsg and merge it into result
 	if packet.MapAll != nil && *packet.MapAll != "" {
 		val, found, err := provider.GetValue(*packet.MapAll)
@@ -88,30 +87,38 @@ func ProcessOutbound(ctx types.NodeCtx, msg types.RuleMsg, packet types.Endpoint
 
 	// 2. Fields: Extract individual fields and override/add to result
 	for _, field := range packet.Fields {
-		val, found, err := provider.GetValue(field.BindPath)
-		if err != nil {
-			ctx.Warn("Failed to extract field", "bindPath", field.BindPath, "error", err)
-			continue
+		var val any
+		var found bool
+		var err error
+
+		if field.BindPath == "" {
+			val = field.DefaultValue
+			found = true
+		} else {
+			val, found, err = provider.GetValue(field.BindPath)
+			if err != nil {
+				ctx.Warn("Failed to extract field", "bindPath", field.BindPath, "error", err)
+				continue
+			}
 		}
+
 		if !found {
-			if field.Required {
+			if field.Required && field.DefaultValue == nil {
 				return nil, RequiredFieldMissing.Wrap(fmt.Errorf("'%s' (bound to %s)", field.Name, field.BindPath))
 			}
 			if field.DefaultValue != nil {
 				val = field.DefaultValue
 				found = true
+				ctx.Debug("Using DefaultValue", "field", field.Name, "value", val)
 			}
 		}
 
 		if found {
+			ctx.Debug("Field found", "field", field.Name, "value", val)
 			convertedVal, err := convertValue(val, field.Type)
 			if err != nil {
 				return nil, FieldConversionFailed.Wrap(fmt.Errorf("field '%s': %w", field.Name, err))
 			}
-			// Support dot notation in field.Name for nested structure construction?
-			// For simplicity, we use SetValueByDotPath if the caller supports it, but here we return a flat map
-			// where keys might contain dots. The consumer (e.g., JSON marshaller) should handle structure.
-			// Ideally, utils.SetValueByDotPath should be used on the result map.
 			utils.SetValueByDotPath(result, field.Name, convertedVal)
 		}
 	}

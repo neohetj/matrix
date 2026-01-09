@@ -146,7 +146,7 @@ func (a *Asset[T]) UnmarshalText(text []byte) error {
 func (a Asset[T]) Resolve(ctx *AssetContext) (T, error) {
 	var zero T
 	if a.URI == "" {
-		return zero, nil
+		return zero, AssetInvalidURI.Wrap(fmt.Errorf("uri is empty"))
 	}
 
 	// 1. 尝试解析 URI 字符串

@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/types"
 	"github.com/neohetj/matrix/pkg/utils"
 )
 
@@ -198,7 +199,7 @@ func (a ConfigAsset) Handle(uri *url.URL, ctx *AssetContext) (any, error) {
 		if defaultValue != "" {
 			return defaultValue, nil
 		}
-		return nil, fmt.Errorf("config key not found: %s", configPath)
+		return nil, types.AssetNotFound
 	}
 
 	return rawVal, nil

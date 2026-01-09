@@ -19,6 +19,7 @@ package types
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/neohetj/matrix/pkg/cnst"
@@ -51,6 +52,8 @@ var (
 	NodeNotFound = &Fault{Code: cnst.CodeNodeNotFound, Message: "node not found"}
 	// FuncNotFound defines an error for a missing function.
 	FuncNotFound = &Fault{Code: cnst.CodeFuncNotFound, Message: "function not found"}
+	// AssetNotFound
+	AssetNotFound = &Fault{Code: cnst.CodeAssetNotFound, Message: "asset not found"}
 )
 
 // ServiceError represents a standardized error object returned by a service endpoint.
@@ -149,6 +152,16 @@ func (e *Fault) Wrap(err error) *Fault {
 		Message: e.Message,
 		Wrapped: err,
 	}
+}
+
+// IsFault checks if an error is a Fault with a specific error code.
+// It traverses the error chain using errors.As.
+func IsFault(err error, code cnst.ErrCode) bool {
+	var fault *Fault
+	if errors.As(err, &fault) {
+		return fault.Code == code
+	}
+	return false
 }
 
 const (

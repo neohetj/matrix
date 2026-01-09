@@ -142,7 +142,7 @@ func (a RuleMsgAsset) Handle(uri *url.URL, ctx *AssetContext) (any, error) {
 			return nil, err
 		}
 		if !found {
-			return nil, fmt.Errorf("path not found in data: %s", targetPath)
+			return nil, types.AssetNotFound.Wrap(fmt.Errorf("path not found in data: %s", targetPath))
 		}
 		return val, nil
 
@@ -152,7 +152,7 @@ func (a RuleMsgAsset) Handle(uri *url.URL, ctx *AssetContext) (any, error) {
 		}
 		val, exists := msg.Metadata()[targetPath]
 		if !exists {
-			return nil, fmt.Errorf("metadata key not found: %s", targetPath)
+			return nil, types.AssetNotFound.Wrap(fmt.Errorf("metadata key not found: %s", targetPath))
 		}
 		return val, nil
 
@@ -169,7 +169,7 @@ func (a RuleMsgAsset) Handle(uri *url.URL, ctx *AssetContext) (any, error) {
 
 		coreObj, found := msg.DataT().Get(objID)
 		if !found {
-			return nil, fmt.Errorf("dataT object not found: %s", objID)
+			return nil, types.AssetNotFound.Wrap(fmt.Errorf("dataT object not found: %s", objID))
 		}
 
 		if fieldPath == "" {
@@ -188,7 +188,7 @@ func (a RuleMsgAsset) Handle(uri *url.URL, ctx *AssetContext) (any, error) {
 			return nil, err
 		}
 		if !found {
-			return nil, fmt.Errorf("field not found in dataT object %s: %s", objID, fieldPath)
+			return nil, types.AssetNotFound.Wrap(fmt.Errorf("field not found in dataT object %s: %s", objID, fieldPath))
 		}
 		return val, nil
 

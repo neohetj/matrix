@@ -138,4 +138,5 @@ const (
 	CodeAssetTypeMismatch        ErrCode = "200030004"
 	CodeAssetEmptyURI            ErrCode = "200030005"
 	CodeAssetCannotSetForNonURI  ErrCode = "200030006"
+	CodeAssetNotFound            ErrCode = "200030007"
 )

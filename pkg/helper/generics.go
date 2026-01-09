@@ -19,7 +19,7 @@ func GetParam[T any](ctx *asset.AssetContext, name string) (T, error) {
 		return zero, fmt.Errorf("rule message is required to resolve param '%s'", name)
 	}
 
-	objID, sid, err := resolveParamBinding(ctx, name, "inputs")
+	objID, sid, err := ResolveParamBinding(ctx, name, "inputs")
 	if err != nil {
 		return zero, err
 	}
@@ -42,7 +42,7 @@ func SetParam[T any](ctx *asset.AssetContext, name string, value T) (T, error) {
 		return zero, fmt.Errorf("rule message is required to resolve param '%s'", name)
 	}
 
-	objID, sid, err := resolveParamBinding(ctx, name, "outputs")
+	objID, sid, err := ResolveParamBinding(ctx, name, "outputs")
 	if err != nil {
 		return zero, err
 	}
@@ -109,12 +109,11 @@ func RenderConfigAsset[T any](ctx *asset.AssetContext, key string) (T, error) {
 }
 
 // GetConfigAsset retrieves a config value using Asset mechanism.
-// It constructs a config:// URI, resolves it via Asset[string],
-// and handles template rendering and type conversion if necessary.
+// It resolves the asset to its raw type and then performs conversions or template rendering.
 func GetConfigAsset[T any](ctx *asset.AssetContext, key string) (T, error) {
 	var zero T
 
-	uri, err := buildConfigAssetURI[T](ctx, key)
+	uri, err := BuildConfigAssetURI[T](ctx, key)
 	if err != nil {
 		return zero, err
 	}
@@ -122,14 +121,16 @@ func GetConfigAsset[T any](ctx *asset.AssetContext, key string) (T, error) {
 	asset.ClearConfigSearchedScopes(ctx)
 	defer asset.ClearConfigSearchedScopes(ctx)
 
-	// Resolve once as string, then render (if template) and convert.
-	strVal, err := asset.Asset[string]{URI: uri}.Resolve(ctx)
+	// Resolve the asset to its raw `any` type first.
+	rawVal, err := asset.Asset[any]{URI: uri}.Resolve(ctx)
 	if err != nil {
 		return zero, err
 	}
 
-	rendered := strVal
-	if asset.IsTemplate(strVal) {
+	//统一处理
+	finalVal := rawVal
+	// 优先判断是不是模版字符串，是则渲染
+	if strVal, ok := rawVal.(string); ok && asset.IsTemplate(strVal) {
 		innerURI := strings.TrimSuffix(strings.TrimPrefix(strVal, "${"), "}")
 		configAsset, pErr := asset.ParseConfig(innerURI)
 		if pErr != nil {
@@ -137,44 +138,39 @@ func GetConfigAsset[T any](ctx *asset.AssetContext, key string) (T, error) {
 		}
 
 		newURI := configAsset.BuildWithRemainingScopes(ctx)
-		rendered, err = asset.Asset[string]{URI: newURI}.Resolve(ctx)
+		rendered, err := asset.Asset[string]{URI: newURI}.Resolve(ctx)
 		if err != nil {
 			return zero, err
 		}
+		finalVal = rendered
 	}
 
-	// If T is string, we are done.
-	if v, ok := any(rendered).(T); ok {
-		return v, nil
+	// 尝试将最终值转换为目标类型
+	if val, ok := finalVal.(T); ok {
+		return val, nil
 	}
 
-	// Convert string to T using utils.Convert.
+	// 如果直接转换失败，尝试进行类型转换
 	var result T
-	var targetType cnst.MType
-	var ok bool
-
-	targetType, ok = utils.InferMType(result)
+	targetType, ok := utils.InferMType(result)
 	if !ok {
 		return zero, fmt.Errorf("unsupported type %T for auto conversion", result)
 	}
-
-	converted, err := utils.Convert(rendered, targetType)
+	converted, err := utils.Convert(finalVal, targetType)
 	if err != nil {
 		return zero, err
 	}
-
 	if v, ok := converted.(T); ok {
 		return v, nil
 	}
 
-	// Handle case where Convert returns a compatible type but not exact T.
-	return zero, fmt.Errorf("converted value %v (type %T) cannot be asserted to %T", converted, converted, result)
+	return zero, asset.AssetTypeMismatch.Wrap(fmt.Errorf("expected %T, but got value '%v' of type %T", zero, finalVal, finalVal))
 }
 
-func buildConfigAssetURI[T any](ctx *asset.AssetContext, key string) (string, error) {
+func BuildConfigAssetURI[T any](ctx *asset.AssetContext, key string) (string, error) {
 	var zero T
 
-	defaultValue, definedType := resolveConfigFieldMeta(ctx, key)
+	defaultValue, definedType := ResolveConfigFieldMeta(ctx, key)
 	if definedType == "" {
 		if mt, ok := utils.InferMType(zero); ok {
 			if mt == cnst.INT64 {
@@ -196,14 +192,14 @@ func buildConfigAssetURI[T any](ctx *asset.AssetContext, key string) (string, er
 	return builder.Build(), nil
 }
 
-func resolveConfigFieldMeta(ctx *asset.AssetContext, key string) (string, string) {
+func ResolveConfigFieldMeta(ctx *asset.AssetContext, key string) (defaultValue string, definedType string) {
 	nodeCtx := ctx.NodeCtx()
 	if nodeCtx == nil {
-		return "", ""
+		return defaultValue, definedType
 	}
 	fn, ok := nodeCtx.GetNode().(*base.FunctionsNode)
 	if !ok {
-		return "", ""
+		return defaultValue, definedType
 	}
 
 	var mgr types.NodeFuncManager
@@ -211,29 +207,29 @@ func resolveConfigFieldMeta(ctx *asset.AssetContext, key string) (string, string
 		mgr = r.GetEngine().NodeFuncManager()
 	}
 	if mgr == nil {
-		return "", ""
+		return defaultValue, definedType
 	}
 
 	funcDef, found := mgr.Get(fn.FuncConfig.FunctionName)
 	if !found || funcDef.FuncObject.Configuration.Business == nil {
-		return "", ""
+		return defaultValue, definedType
 	}
 
 	for _, field := range funcDef.FuncObject.Configuration.Business {
 		if field.ID != key {
 			continue
 		}
-		defaultValue := ""
+
 		if field.Default != nil {
 			defaultValue = fmt.Sprintf("%v", field.Default)
 		}
 		return defaultValue, string(field.Type)
 	}
 
-	return "", ""
+	return defaultValue, definedType
 }
 
-func resolveParamBinding(ctx *asset.AssetContext, name string, io string) (string, string, error) {
+func ResolveParamBinding(ctx *asset.AssetContext, name string, io string) (string, string, error) {
 	nodeCtx := ctx.NodeCtx()
 	if nodeCtx == nil {
 		return "", "", fmt.Errorf("node context is required to resolve param '%s'", name)
