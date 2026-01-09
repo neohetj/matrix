@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 // FileProvider implements the ResourceProvider interface for the local filesystem.

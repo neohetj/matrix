@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NeohetJ/Matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/cnst"
 )
 
 func TestToMap(t *testing.T) {

@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/NeohetJ/Matrix/internal/builtin/base"
-	"github.com/NeohetJ/Matrix/internal/contract"
-	"github.com/NeohetJ/Matrix/pkg/asset"
-	"github.com/NeohetJ/Matrix/pkg/cnst"
-	"github.com/NeohetJ/Matrix/pkg/types"
-	"github.com/NeohetJ/Matrix/pkg/utils"
+	"github.com/neohetj/matrix/internal/builtin/base"
+	"github.com/neohetj/matrix/internal/contract"
+	"github.com/neohetj/matrix/pkg/asset"
+	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/types"
+	"github.com/neohetj/matrix/pkg/utils"
 )
 
 // GetParam retrieves a parameter by name from DataT and converts it to the specified type T.

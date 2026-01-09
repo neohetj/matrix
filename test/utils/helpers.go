@@ -3,8 +3,8 @@ package utils
 import (
 	"errors"
 
-	"github.com/NeohetJ/Matrix/internal/contract"
-	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/neohetj/matrix/internal/contract"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 // NewTestRuleMsg creates a simple RuleMsg for testing.

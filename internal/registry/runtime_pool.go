@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/NeohetJ/Matrix/pkg/cnst"
-	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 // runtimePool is the default thread-safe implementation of RuntimePool.

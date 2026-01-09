@@ -3,9 +3,9 @@ package message
 import (
 	"testing"
 
-	"github.com/NeohetJ/Matrix/pkg/cnst"
-	"github.com/NeohetJ/Matrix/pkg/types"
-	"github.com/NeohetJ/Matrix/test/utils"
+	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/types"
+	"github.com/neohetj/matrix/test/utils"
 	"github.com/stretchr/testify/assert"
 )
 

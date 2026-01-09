@@ -26,12 +26,12 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/NeohetJ/Matrix/internal/builtin"
-	"github.com/NeohetJ/Matrix/internal/parser"
-	"github.com/NeohetJ/Matrix/internal/scheduler"
-	"github.com/NeohetJ/Matrix/pkg/cnst"
-	"github.com/NeohetJ/Matrix/pkg/message"
-	"github.com/NeohetJ/Matrix/pkg/types"
+	_ "github.com/neohetj/matrix/internal/builtin"
+	"github.com/neohetj/matrix/internal/parser"
+	"github.com/neohetj/matrix/internal/scheduler"
+	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/message"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 func TestRuntime_Execute_LogFunc(t *testing.T) {

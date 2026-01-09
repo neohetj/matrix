@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 // DefaultNodeManager is the default thread-safe implementation of the types.NodeManager interface.

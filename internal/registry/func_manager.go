@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 // DefaultNodeFuncManager is the default thread-safe implementation of the NodeFuncManager interface.

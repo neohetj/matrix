@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/NeohetJ/Matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/cnst"
 )
 
 // RelAsset represents a parsed rel:// URI.

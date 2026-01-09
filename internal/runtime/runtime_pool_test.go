@@ -23,14 +23,14 @@ package runtime
 
 // 	"github.com/stretchr/testify/assert"
 
-// 	"github.com/NeohetJ/Matrix/internal/parser"
-// 	"github.com/NeohetJ/Matrix/internal/scheduler"
-// 	"github.com/NeohetJ/Matrix/internal/registry"
-// 	"github.com/NeohetJ/Matrix/pkg/types"
+// 	"github.com/neohetj/matrix/internal/parser"
+// 	"github.com/neohetj/matrix/internal/scheduler"
+// 	"github.com/neohetj/matrix/internal/registry"
+// 	"github.com/neohetj/matrix/pkg/types"
 
-// 	_ "github.com/NeohetJ/Matrix/pkg/components/action"
-// 	_ "github.com/NeohetJ/Matrix/pkg/components/external"
-// 	_ "github.com/NeohetJ/Matrix/test/common/nodes"
+// 	_ "github.com/neohetj/matrix/pkg/components/action"
+// 	_ "github.com/neohetj/matrix/pkg/components/external"
+// 	_ "github.com/neohetj/matrix/test/common/nodes"
 // )
 
 // func TestRuntime_WithNodePool(t *testing.T) {

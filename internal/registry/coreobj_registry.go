@@ -21,8 +21,8 @@ import (
 	"regexp"
 	"sync"
 
-	"github.com/NeohetJ/Matrix/internal/log"
-	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/neohetj/matrix/internal/log"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 var (

@@ -20,9 +20,9 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/NeohetJ/Matrix/pkg/cnst"
-	"github.com/NeohetJ/Matrix/pkg/types"
 	"github.com/google/uuid"
+	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 // DefaultRuleMsg is the default implementation of the RuleMsg interface.

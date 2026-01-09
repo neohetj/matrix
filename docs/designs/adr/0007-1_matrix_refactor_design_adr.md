@@ -157,7 +157,7 @@ var ComponentsFS embed.FS
 - **优点**:
     - **清晰的边界**: `Matrix` 的核心 API 变得非常清晰和稳定。
     - **工厂模式**: `MatrixEngine` 提供了灵活的能力获取方式，为未来扩展（如多租户）奠定了基础。
-    - **终极解耦**: `Trinity` 应用的 `import` 列表中将不再出现 `github.com/NeohetJ/Matrix/pkg/registry` 或其他内部实现包。
+    - **终极解耦**: `Trinity` 应用的 `import` 列表中将不再出现 `github.com/neohetj/matrix/pkg/registry` 或其他内部实现包。
 
 - **缺点**:
     - `Trinity` 的启动逻辑需要进行较大规模的重构。

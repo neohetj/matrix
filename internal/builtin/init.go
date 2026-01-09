@@ -1,10 +1,10 @@
 package builtin
 
 import (
-	"github.com/NeohetJ/Matrix/internal/builtin/base"
-	_ "github.com/NeohetJ/Matrix/internal/builtin/nodes/loop"
-	_ "github.com/NeohetJ/Matrix/internal/builtin/nodes/transform"
-	"github.com/NeohetJ/Matrix/internal/registry"
+	"github.com/neohetj/matrix/internal/builtin/base"
+	_ "github.com/neohetj/matrix/internal/builtin/nodes/loop"
+	_ "github.com/neohetj/matrix/internal/builtin/nodes/transform"
+	"github.com/neohetj/matrix/internal/registry"
 )
 
 func init() {

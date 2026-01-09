@@ -4,9 +4,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/NeohetJ/Matrix/pkg/cnst"
-	"github.com/NeohetJ/Matrix/pkg/types"
-	"github.com/NeohetJ/Matrix/pkg/utils"
+	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/types"
+	"github.com/neohetj/matrix/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )

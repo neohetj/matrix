@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/NeohetJ/Matrix/pkg/cnst"
-	"github.com/NeohetJ/Matrix/pkg/utils"
+	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/utils"
 )
 
 // ConfigAsset represents a parsed config:// URI.

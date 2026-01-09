@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/NeohetJ/Matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/cnst"
 )
 
 var placeholderRegex = regexp.MustCompile(`\$\{([^}]+)\}`)

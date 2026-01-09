@@ -1,8 +1,8 @@
 package helper
 
 import (
-	"github.com/NeohetJ/Matrix/pkg/message"
-	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/neohetj/matrix/pkg/message"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 // ValueProvider defines a contract for providing values during inbound/outbound processing.

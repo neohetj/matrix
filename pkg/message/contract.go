@@ -17,8 +17,8 @@
 package message
 
 import (
-	"github.com/NeohetJ/Matrix/internal/contract"
-	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/neohetj/matrix/internal/contract"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 // NewDataT creates a new instance of the default DataT implementation.

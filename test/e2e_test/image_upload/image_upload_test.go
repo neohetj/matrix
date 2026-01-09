@@ -12,11 +12,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	matrix "github.com/NeohetJ/Matrix"
-	"github.com/NeohetJ/Matrix/internal/registry"
-	"github.com/NeohetJ/Matrix/pkg/components/endpoint"
-	"github.com/NeohetJ/Matrix/pkg/config"
-	"github.com/NeohetJ/Matrix/test/utils"
+	matrix "github.com/neohetj/matrix"
+	"github.com/neohetj/matrix/internal/registry"
+	"github.com/neohetj/matrix/pkg/components/endpoint"
+	"github.com/neohetj/matrix/pkg/config"
+	"github.com/neohetj/matrix/test/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

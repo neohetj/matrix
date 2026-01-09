@@ -21,7 +21,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/NeohetJ/Matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/cnst"
 )
 
 // Logger is the interface for a logger.

@@ -3,7 +3,7 @@ package loop
 import (
 	"testing"
 
-	"github.com/NeohetJ/Matrix/internal/registry"
+	"github.com/neohetj/matrix/internal/registry"
 	"github.com/stretchr/testify/assert"
 )
 

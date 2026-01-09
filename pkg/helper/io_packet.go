@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"mime/multipart"
 
-	"github.com/NeohetJ/Matrix/pkg/cnst"
-	"github.com/NeohetJ/Matrix/pkg/message"
-	"github.com/NeohetJ/Matrix/pkg/types"
-	"github.com/NeohetJ/Matrix/pkg/utils"
+	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/message"
+	"github.com/neohetj/matrix/pkg/types"
+	"github.com/neohetj/matrix/pkg/utils"
 )
 
 // ProcessInbound handles mapping from an external source (like HTTP request parts) TO RuleMsg.

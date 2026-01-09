@@ -17,7 +17,7 @@
 package runtime
 
 import (
-	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 // DefaultChainInstance is the default implementation of the ChainInstance interface.

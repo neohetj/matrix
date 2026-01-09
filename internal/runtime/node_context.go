@@ -23,10 +23,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/NeohetJ/Matrix/internal/log"
-	"github.com/NeohetJ/Matrix/pkg/cnst"
-	"github.com/NeohetJ/Matrix/pkg/message"
-	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/neohetj/matrix/internal/log"
+	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/message"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 // DefaultNodeCtx is the default implementation of the NodeCtx interface.

@@ -21,9 +21,9 @@ import (
 	"strings"
 	"testing"
 
-	matrixlog "github.com/NeohetJ/Matrix/internal/log"
-	"github.com/NeohetJ/Matrix/pkg/message"
-	"github.com/NeohetJ/Matrix/test/utils"
+	matrixlog "github.com/neohetj/matrix/internal/log"
+	"github.com/neohetj/matrix/pkg/message"
+	"github.com/neohetj/matrix/test/utils"
 	"github.com/stretchr/testify/assert"
 )
 

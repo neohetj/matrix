@@ -19,7 +19,7 @@ package trace
 import (
 	"time"
 
-	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 // Tracer is the new synchronous tracing service, responsible for recording node execution logs.

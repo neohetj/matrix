@@ -3,8 +3,8 @@ package registry
 import (
 	"testing"
 
-	"github.com/NeohetJ/Matrix/pkg/cnst"
-	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/types"
 	"github.com/stretchr/testify/assert"
 )
 

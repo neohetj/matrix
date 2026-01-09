@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/NeohetJ/Matrix/pkg/cnst"
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/neohetj/matrix/pkg/cnst"
 )
 
 // MTypeToOpenAPISchema converts a cnst.MType to an openapi3.Schema.

@@ -19,7 +19,7 @@ package parser
 import (
 	"encoding/json"
 
-	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 // JsonParser is the default implementation of the Parser interface, using standard JSON.

@@ -21,13 +21,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/NeohetJ/Matrix/internal/registry"
-	"github.com/NeohetJ/Matrix/pkg/asset"
-	"github.com/NeohetJ/Matrix/pkg/cnst"
-	"github.com/NeohetJ/Matrix/pkg/helper"
-	"github.com/NeohetJ/Matrix/pkg/message"
-	"github.com/NeohetJ/Matrix/pkg/types"
-	"github.com/NeohetJ/Matrix/pkg/utils"
+	"github.com/neohetj/matrix/internal/registry"
+	"github.com/neohetj/matrix/pkg/asset"
+	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/helper"
+	"github.com/neohetj/matrix/pkg/message"
+	"github.com/neohetj/matrix/pkg/types"
+	"github.com/neohetj/matrix/pkg/utils"
 )
 
 func init() {

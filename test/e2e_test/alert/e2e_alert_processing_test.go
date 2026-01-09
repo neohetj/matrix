@@ -9,16 +9,16 @@ import (
 	"net/http/httptest"
 	"strings"
 
-	matrix "github.com/NeohetJ/Matrix"
-	"github.com/NeohetJ/Matrix/internal/registry"
-	"github.com/NeohetJ/Matrix/pkg/cnst"
-	"github.com/NeohetJ/Matrix/pkg/config"
-	"github.com/NeohetJ/Matrix/pkg/message"
+	matrix "github.com/neohetj/matrix"
+	"github.com/neohetj/matrix/internal/registry"
+	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/config"
+	"github.com/neohetj/matrix/pkg/message"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/NeohetJ/Matrix/pkg/components/endpoint"
-	"github.com/NeohetJ/Matrix/pkg/types"
-	"github.com/NeohetJ/Matrix/test/utils"
+	"github.com/neohetj/matrix/pkg/components/endpoint"
+	"github.com/neohetj/matrix/pkg/types"
+	"github.com/neohetj/matrix/test/utils"
 )
 
 func assertErrorCode(t *testing.T, err error, expectedCode cnst.ErrCode) {

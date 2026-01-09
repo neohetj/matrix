@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 // InMemoryStore implements the Store interface, storing snapshots in memory.

@@ -1,4 +1,4 @@
-module github.com/NeohetJ/Matrix
+module github.com/neohetj/matrix
 
 go 1.22.5
 

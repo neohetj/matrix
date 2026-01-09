@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"io/fs"
 
-	"github.com/NeohetJ/Matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/cnst"
 )
 
 // ----------- Parser -----------

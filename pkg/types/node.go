@@ -21,8 +21,8 @@ package types
 import (
 	"context"
 
-	"github.com/NeohetJ/Matrix/pkg/cnst"
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/neohetj/matrix/pkg/cnst"
 )
 
 // ErrorMapping defines a map from an external protocol code/status (string)

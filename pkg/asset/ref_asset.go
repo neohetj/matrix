@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/NeohetJ/Matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/cnst"
 )
 
 // RefAsset represents a parsed ref:// URI.

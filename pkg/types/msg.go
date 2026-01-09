@@ -19,8 +19,8 @@ package types
 import (
 	"encoding/json"
 
-	"github.com/NeohetJ/Matrix/pkg/cnst"
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/neohetj/matrix/pkg/cnst"
 )
 
 // CoreObjDef holds the definition of a business object, including its OpenAPI schema.

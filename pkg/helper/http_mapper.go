@@ -26,11 +26,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NeohetJ/Matrix/pkg/cnst"
-	"github.com/NeohetJ/Matrix/pkg/message"
-	"github.com/NeohetJ/Matrix/pkg/trace"
-	"github.com/NeohetJ/Matrix/pkg/types"
-	"github.com/NeohetJ/Matrix/pkg/utils"
+	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/message"
+	"github.com/neohetj/matrix/pkg/trace"
+	"github.com/neohetj/matrix/pkg/types"
+	"github.com/neohetj/matrix/pkg/utils"
 )
 
 const (

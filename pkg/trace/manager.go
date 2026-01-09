@@ -3,7 +3,7 @@ package trace
 import (
 	"time"
 
-	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 // Manager manages the lifecycle of trace snapshots.

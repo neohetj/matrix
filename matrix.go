@@ -24,20 +24,20 @@ import (
 
 	"embed"
 
-	"github.com/NeohetJ/Matrix/internal/registry"
+	"github.com/neohetj/matrix/internal/registry"
 
-	"github.com/NeohetJ/Matrix/internal/aop"
-	"github.com/NeohetJ/Matrix/internal/builder"
-	_ "github.com/NeohetJ/Matrix/internal/builtin"
-	"github.com/NeohetJ/Matrix/internal/log"
-	"github.com/NeohetJ/Matrix/internal/runtime"
-	"github.com/NeohetJ/Matrix/pkg/config"
-	"github.com/NeohetJ/Matrix/pkg/trace"
-	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/neohetj/matrix/internal/aop"
+	"github.com/neohetj/matrix/internal/builder"
+	_ "github.com/neohetj/matrix/internal/builtin"
+	"github.com/neohetj/matrix/internal/log"
+	"github.com/neohetj/matrix/internal/runtime"
+	"github.com/neohetj/matrix/pkg/config"
+	"github.com/neohetj/matrix/pkg/trace"
+	"github.com/neohetj/matrix/pkg/types"
 
-	_ "github.com/NeohetJ/Matrix/pkg/components/action"
-	_ "github.com/NeohetJ/Matrix/pkg/components/endpoint"
-	_ "github.com/NeohetJ/Matrix/pkg/components/external"
+	_ "github.com/neohetj/matrix/pkg/components/action"
+	_ "github.com/neohetj/matrix/pkg/components/endpoint"
+	_ "github.com/neohetj/matrix/pkg/components/external"
 )
 
 // Registry is the default, global instance of the registry.

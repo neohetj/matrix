@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/NeohetJ/Matrix/internal/contract"
-	"github.com/NeohetJ/Matrix/pkg/asset"
-	"github.com/NeohetJ/Matrix/pkg/cnst"
-	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/neohetj/matrix/internal/contract"
+	"github.com/neohetj/matrix/pkg/asset"
+	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 // ExtractFromMsg extracts a value from a RuleMsg using the Asset system.

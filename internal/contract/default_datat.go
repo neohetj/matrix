@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/NeohetJ/Matrix/pkg/types"
-	"github.com/NeohetJ/Matrix/pkg/utils"
+	"github.com/neohetj/matrix/pkg/types"
+	"github.com/neohetj/matrix/pkg/utils"
 )
 
 // DefaultDataT is the default thread-safe implementation of the DataT interface.

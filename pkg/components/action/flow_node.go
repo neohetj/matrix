@@ -3,9 +3,9 @@ package action
 import (
 	"fmt"
 
-	"github.com/NeohetJ/Matrix/internal/registry"
-	"github.com/NeohetJ/Matrix/pkg/types"
-	"github.com/NeohetJ/Matrix/pkg/utils"
+	"github.com/neohetj/matrix/internal/registry"
+	"github.com/neohetj/matrix/pkg/types"
+	"github.com/neohetj/matrix/pkg/utils"
 )
 
 const (

@@ -22,8 +22,8 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/NeohetJ/Matrix/pkg/types"
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 // DefaultCoreObjDef holds the definition of a business object, including its OpenAPI schema.

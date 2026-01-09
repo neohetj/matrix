@@ -22,12 +22,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/NeohetJ/Matrix/internal/log"
+	"github.com/neohetj/matrix/internal/log"
 
-	"github.com/NeohetJ/Matrix/internal/registry"
-	"github.com/NeohetJ/Matrix/pkg/asset"
-	"github.com/NeohetJ/Matrix/pkg/cnst"
-	"github.com/NeohetJ/Matrix/pkg/types"
+	"github.com/neohetj/matrix/internal/registry"
+	"github.com/neohetj/matrix/pkg/asset"
+	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 // Option is a function type for configuring a DefaultRuntime.

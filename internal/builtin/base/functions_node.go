@@ -19,10 +19,10 @@ package base
 import (
 	"fmt"
 
-	"github.com/NeohetJ/Matrix/pkg/asset"
-	"github.com/NeohetJ/Matrix/pkg/types"
-	"github.com/NeohetJ/Matrix/pkg/utils"
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/neohetj/matrix/pkg/asset"
+	"github.com/neohetj/matrix/pkg/types"
+	"github.com/neohetj/matrix/pkg/utils"
 )
 
 const (
