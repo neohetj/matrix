@@ -25,7 +25,6 @@ import (
 
 	"github.com/neohetj/matrix/internal/log"
 	"github.com/neohetj/matrix/pkg/cnst"
-	"github.com/neohetj/matrix/pkg/message"
 	"github.com/neohetj/matrix/pkg/types"
 )
 
@@ -287,7 +286,7 @@ func (ctx *DefaultNodeCtx) TellNext(msg types.RuleMsg, relationTypes ...string) 
 // NewMsg creates a new message with a new message ID.
 func (ctx *DefaultNodeCtx) NewMsg(msgType string, metaData types.Metadata, data string) types.RuleMsg {
 	// By default, messages created within a chain are treated as TEXT, unless specified otherwise.
-	return message.NewMsg(msgType, data, metaData, nil).WithDataFormat(cnst.TEXT)
+	return types.NewMsg(msgType, data, metaData, nil).WithDataFormat(cnst.TEXT)
 }
 
 // SetOnAllNodesCompleted sets a callback that will be called when all nodes in the chain have completed.

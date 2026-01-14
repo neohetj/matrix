@@ -237,7 +237,7 @@ func (n *ForEachNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 		// Synchronous execution
 		var sharedIterMsg types.RuleMsg
 		if n.nodeConfig.MessageScope == "SHARED" {
-			sharedIterMsg = message.NewSubMsg(msg, n.nodeConfig.ChainId)
+			sharedIterMsg = types.NewSubMsg(msg, n.nodeConfig.ChainId)
 			if fault := n.applyMappings(ctx, msg, sharedIterMsg, nil); fault != nil {
 				ctx.HandleError(msg, fault)
 				return
@@ -301,7 +301,7 @@ func (n *ForEachNode) prepareIterMsg(ctx types.NodeCtx, parentMsg, sharedMsg typ
 	if sharedMsg != nil {
 		iterMsg = sharedMsg
 	} else {
-		iterMsg = message.NewSubMsg(parentMsg, n.nodeConfig.ChainId)
+		iterMsg = types.NewSubMsg(parentMsg, n.nodeConfig.ChainId)
 	}
 
 	if fault := n.applyMappings(ctx, parentMsg, iterMsg, item); fault != nil {

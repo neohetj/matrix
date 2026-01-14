@@ -7,12 +7,12 @@ import (
 	"github.com/neohetj/matrix/internal/registry"
 	"github.com/neohetj/matrix/pkg/asset"
 	"github.com/neohetj/matrix/pkg/cnst"
-	"github.com/neohetj/matrix/pkg/message"
+	"github.com/neohetj/matrix/pkg/types"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestRuleMsgAssetSet_DataTBasicTypes(t *testing.T) {
-	msg := message.NewMsg("test", "", nil, message.NewDataT())
+	msg := types.NewMsg("test", "", nil, types.NewDataT())
 	ctx := asset.NewAssetContext(asset.WithRuleMsg(msg))
 
 	tests := []struct {
@@ -66,7 +66,7 @@ func TestRuleMsgAssetSet_DataTBasicTypes(t *testing.T) {
 }
 
 func TestRuleMsgAssetSet_DataTMapTypes(t *testing.T) {
-	msg := message.NewMsg("test", "", nil, message.NewDataT())
+	msg := types.NewMsg("test", "", nil, types.NewDataT())
 	ctx := asset.NewAssetContext(asset.WithRuleMsg(msg))
 
 	stringMap := map[string]string{"k": "v"}
@@ -91,7 +91,7 @@ func TestRuleMsgAssetSet_DataTMapTypes(t *testing.T) {
 }
 
 func TestRuleMsgAssetSet_DataTBasicTypes_FromNumeric(t *testing.T) {
-	msg := message.NewMsg("test", "", nil, message.NewDataT())
+	msg := types.NewMsg("test", "", nil, types.NewDataT())
 	ctx := asset.NewAssetContext(asset.WithRuleMsg(msg))
 
 	tests := []struct {
@@ -131,7 +131,7 @@ func TestRuleMsgAssetSet_DataTBasicTypes_FromNumeric(t *testing.T) {
 }
 
 func TestRuleMsgAssetResolve_DataTPointerBasic(t *testing.T) {
-	msg := message.NewMsg("test", "", nil, message.NewDataT())
+	msg := types.NewMsg("test", "", nil, types.NewDataT())
 	ctx := asset.NewAssetContext(asset.WithRuleMsg(msg))
 
 	assetKey := "string_test"
@@ -145,7 +145,7 @@ func TestRuleMsgAssetResolve_DataTPointerBasic(t *testing.T) {
 }
 
 func TestRuleMsgAssetResolve_DataTPointerMap(t *testing.T) {
-	msg := message.NewMsg("test", "", nil, message.NewDataT())
+	msg := types.NewMsg("test", "", nil, types.NewDataT())
 	ctx := asset.NewAssetContext(asset.WithRuleMsg(msg))
 
 	assetKey := "map_test"
@@ -171,10 +171,10 @@ func TestRuleMsgAssetSet_DataTStructPointer(t *testing.T) {
 	}
 
 	registry.Default.CoreObjRegistry.Register(
-		message.NewCoreObjDef(&TestMemoryContext{}, "TestMemoryContextV1_0", "test memory context"),
+		types.NewCoreObjDef(&TestMemoryContext{}, "TestMemoryContextV1_0", "test memory context"),
 	)
 
-	msg := message.NewMsg("test", "", nil, message.NewDataT())
+	msg := types.NewMsg("test", "", nil, types.NewDataT())
 	ctx := asset.NewAssetContext(asset.WithRuleMsg(msg))
 
 	mc := &TestMemoryContext{Status: "success", Summary: "ok"}

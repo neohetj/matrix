@@ -11,7 +11,6 @@ import (
 
 	"github.com/neohetj/matrix/internal/registry"
 	"github.com/neohetj/matrix/pkg/cnst"
-	"github.com/neohetj/matrix/pkg/message"
 	"github.com/neohetj/matrix/pkg/types"
 	"github.com/neohetj/matrix/pkg/utils"
 	"github.com/stretchr/testify/assert"
@@ -29,7 +28,7 @@ func assertFaultCode(t *testing.T, err error, expectedCode cnst.ErrCode) {
 
 // setupTestMsg creates a message with pre-populated dataT objects for testing.
 func setupTestMsg(t *testing.T) types.RuleMsg {
-	dataT := message.NewDataT()
+	dataT := types.NewDataT()
 
 	headersObj, err := dataT.NewItem(cnst.SID_MAP_STRING_STRING, "headersObj")
 	require.NoError(t, err)
@@ -43,7 +42,7 @@ func setupTestMsg(t *testing.T) types.RuleMsg {
 	require.NoError(t, err)
 	*(queryObj.Body().(*map[string]string)) = map[string]string{"q": "matrix", "limit": "10"}
 
-	msg := message.NewMsg("TEST", `{"key":"value"}`, make(map[string]string), dataT)
+	msg := types.NewMsg("TEST", `{"key":"value"}`, make(map[string]string), dataT)
 	msg.Metadata()["requestId"] = "req-123"
 	return msg
 }
@@ -139,7 +138,7 @@ func TestMapRuleMsgToHttpRequest_NewMappings(t *testing.T) {
 	})
 
 	t.Run("Body from msg.Data backward compatibility", func(t *testing.T) {
-		msgWithData := message.NewMsg(string(cnst.TEXT), `{"from":"data"}`, make(map[string]string), message.NewDataT())
+		msgWithData := types.NewMsg(string(cnst.TEXT), `{"from":"data"}`, make(map[string]string), types.NewDataT())
 		cfg := types.HttpRequestMap{
 			URL:    "http://test.com/api",
 			Method: "POST",
@@ -158,7 +157,7 @@ func TestMapRuleMsgToHttpRequest_NewMappings(t *testing.T) {
 	})
 
 	t.Run("Empty and nil mappings", func(t *testing.T) {
-		emptyMsg := message.NewMsg("TEST", "", nil, message.NewDataT())
+		emptyMsg := types.NewMsg("TEST", "", nil, types.NewDataT())
 		cfg := types.HttpRequestMap{
 			URL:         "http://test.com/api",
 			Method:      "GET",
@@ -196,7 +195,7 @@ func (p *testValueProvider) GetAll() (any, bool, error) {
 
 func TestProcessInbound_Errors(t *testing.T) {
 	ctx := registry.NewMinimalNodeCtx("test-node")
-	msg := message.NewMsg("TEST", "", nil, message.NewDataT())
+	msg := types.NewMsg("TEST", "", nil, types.NewDataT())
 
 	t.Run("Required Field Missing", func(t *testing.T) {
 		packet := types.EndpointIOPacket{

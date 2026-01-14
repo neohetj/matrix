@@ -13,7 +13,6 @@ import (
 	"github.com/neohetj/matrix/pkg/asset"
 	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/helper"
-	"github.com/neohetj/matrix/pkg/message"
 	"github.com/neohetj/matrix/pkg/types"
 )
 
@@ -112,12 +111,12 @@ func SaveFile(ctx types.NodeCtx, msg types.RuleMsg) {
 func init() {
 	// Register the MultipartFileHeader CoreObj definition
 	registry.Default.CoreObjRegistry.Register(
-		message.NewCoreObjDef(&multipart.FileHeader{}, FileObjectSID, "A multipart file header object"),
+		types.NewCoreObjDef(&multipart.FileHeader{}, FileObjectSID, "A multipart file header object"),
 	)
 
 	// Register the FileMetadata CoreObj definition
 	registry.Default.CoreObjRegistry.Register(
-		message.NewCoreObjDef(&FileMetadata{}, FileMetadataSID, "File metadata object"),
+		types.NewCoreObjDef(&FileMetadata{}, FileMetadataSID, "File metadata object"),
 	)
 
 	// Register the SaveFile function

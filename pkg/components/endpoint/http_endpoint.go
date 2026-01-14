@@ -10,7 +10,6 @@ import (
 	"github.com/neohetj/matrix/internal/registry"
 	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/helper"
-	"github.com/neohetj/matrix/pkg/message"
 	"github.com/neohetj/matrix/pkg/types"
 	"github.com/neohetj/matrix/pkg/utils"
 )
@@ -308,7 +307,7 @@ func (n *HttpEndpointNode) HandleHttpRequest(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Create the initial message
-	msg := message.NewMsg(n.nodeConfig.RuleChainID, "", make(types.Metadata), nil)
+	msg := types.NewMsg(n.nodeConfig.RuleChainID, "", make(types.Metadata), nil)
 
 	if options.ExecutionID != "" {
 		msg.Metadata()[types.ExecutionIDKey] = options.ExecutionID

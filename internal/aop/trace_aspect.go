@@ -26,7 +26,6 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	"github.com/neohetj/matrix/pkg/message"
 	"github.com/neohetj/matrix/pkg/trace"
 	"github.com/neohetj/matrix/pkg/types"
 )
@@ -143,7 +142,7 @@ func (a *TraceAspect) processImages(msg types.RuleMsg) types.RuleMsg {
 	// Since we cannot modify the msg in-place if it doesn't support it,
 	// and we want to ensure the log contains the image content,
 	// we might need to construct a new message if changes are needed.
-	// But `RuleMsg` is an interface. We rely on `message.NewMsg` if we need to replace it.
+	// But `RuleMsg` is an interface. We rely on `types.NewMsg` if we need to replace it.
 
 	needsUpdate := false
 	newData := msg.Data()
@@ -203,7 +202,7 @@ func (a *TraceAspect) processImages(msg types.RuleMsg) types.RuleMsg {
 
 	if needsUpdate {
 		// Create a new message with updated data
-		return message.NewMsg(msg.ID(), string(newData), msg.Metadata(), msg.DataT())
+		return types.NewMsg(msg.ID(), string(newData), msg.Metadata(), msg.DataT())
 	}
 
 	return msg

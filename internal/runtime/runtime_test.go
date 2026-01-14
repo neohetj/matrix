@@ -30,7 +30,6 @@ import (
 	"github.com/neohetj/matrix/internal/parser"
 	"github.com/neohetj/matrix/internal/scheduler"
 	"github.com/neohetj/matrix/pkg/cnst"
-	"github.com/neohetj/matrix/pkg/message"
 	"github.com/neohetj/matrix/pkg/types"
 )
 
@@ -91,7 +90,7 @@ func TestRuntime_Execute_LogFunc(t *testing.T) {
 		t.Fatalf("Failed to create runtime: %v", err)
 	}
 
-	msg := message.NewMsg("TEST_MSG", `{"key":"value"}`, types.Metadata{"source": "test"}, nil).WithDataFormat(cnst.JSON)
+	msg := types.NewMsg("TEST_MSG", `{"key":"value"}`, types.Metadata{"source": "test"}, nil).WithDataFormat(cnst.JSON)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -160,7 +159,7 @@ func TestRuntime_ExecuteAndWait_LogFunc(t *testing.T) {
 		t.Fatalf("Failed to create runtime: %v", err)
 	}
 
-	msg := message.NewMsg("TEST_MSG_SYNC", `{"key":"sync"}`, types.Metadata{"source": "test_sync"}, nil).WithDataFormat(cnst.JSON)
+	msg := types.NewMsg("TEST_MSG_SYNC", `{"key":"sync"}`, types.Metadata{"source": "test_sync"}, nil).WithDataFormat(cnst.JSON)
 
 	// 2. Act
 	// Execute and wait for the result. Start from the specific node.
@@ -207,7 +206,7 @@ func TestRuntime_Reload(t *testing.T) {
 		t.Fatalf("Failed to create runtime v1: %v", err)
 	}
 
-	msg := message.NewMsg("TEST_RELOAD", "{}", nil, nil).WithDataFormat(cnst.JSON)
+	msg := types.NewMsg("TEST_RELOAD", "{}", nil, nil).WithDataFormat(cnst.JSON)
 
 	// 2. Act & Assert for V1
 	_, err = runtime.ExecuteAndWait(context.Background(), "log_v1", msg, nil)
@@ -331,7 +330,7 @@ func TestRuntime_AOP(t *testing.T) {
 		t.Fatalf("Failed to create runtime: %v", err)
 	}
 
-	msg := message.NewMsg("TEST_AOP", "{}", types.Metadata{}, nil).WithDataFormat(cnst.JSON)
+	msg := types.NewMsg("TEST_AOP", "{}", types.Metadata{}, nil).WithDataFormat(cnst.JSON)
 
 	// 2. Act
 	finalMsg, err := runtime.ExecuteAndWait(context.Background(), "node_a", msg, nil)
@@ -396,7 +395,7 @@ func TestRuntime_ForkJoin(t *testing.T) {
 		t.Fatalf("Failed to create runtime: %v", err)
 	}
 
-	msg := message.NewMsg("TEST_FORK_JOIN", "{}", types.Metadata{}, nil).WithDataFormat(cnst.JSON)
+	msg := types.NewMsg("TEST_FORK_JOIN", "{}", types.Metadata{}, nil).WithDataFormat(cnst.JSON)
 
 	// 2. Act
 	_, err = runtime.ExecuteAndWait(context.Background(), "entry", msg, nil)

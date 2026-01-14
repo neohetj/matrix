@@ -127,9 +127,9 @@ type FailureInfo struct {
 // It is defined at development time and includes a unique code and a message format.
 // A Fault is the root cause that can lead to a runtime Failure.
 type Fault struct {
-	Code    cnst.ErrCode
-	Message string
-	Wrapped error
+	Code    cnst.ErrCode `json:"code"`
+	Message string       `json:"message"`
+	Wrapped error        `json:"-"`
 }
 
 // Error implements the error interface for Fault.

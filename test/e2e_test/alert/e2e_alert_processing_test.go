@@ -13,7 +13,6 @@ import (
 	"github.com/neohetj/matrix/internal/registry"
 	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/config"
-	"github.com/neohetj/matrix/pkg/message"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/neohetj/matrix/pkg/components/endpoint"
@@ -44,7 +43,7 @@ func setup(t *testing.T) *TestEnv {
 		Labels      map[string]string `json:"labels"`
 		Annotations map[string]string `json:"annotations"`
 	}
-	registry.Default.CoreObjRegistry.Register(message.NewCoreObjDef(&Alert{}, "parsedAlert", "Parsed Alert"))
+	registry.Default.CoreObjRegistry.Register(types.NewCoreObjDef(&Alert{}, "parsedAlert", "Parsed Alert"))
 
 	mockLogger := &utils.MockLogger{}
 	cfg := config.MatrixConfig{

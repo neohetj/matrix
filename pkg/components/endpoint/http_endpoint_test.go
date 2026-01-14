@@ -13,7 +13,6 @@ import (
 	"github.com/neohetj/matrix/internal/registry"
 	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/helper"
-	"github.com/neohetj/matrix/pkg/message"
 	"github.com/neohetj/matrix/pkg/types"
 	"github.com/neohetj/matrix/pkg/utils"
 )
@@ -27,7 +26,7 @@ type MockCoreObjForTest struct {
 func init() {
 	// Register a mock CoreObj definition for the test.
 	registry.Default.CoreObjRegistry.Register(
-		message.NewCoreObjDef(
+		types.NewCoreObjDef(
 			&MockCoreObjForTest{},
 			"MockCoreObjForTestV1",
 			"A mock object for testing http endpoint.",
@@ -77,7 +76,7 @@ func mockRequestWithBody(method, urlStr, body string) *http.Request {
 
 // helperWrapper calls helper.MapHttpRequestToRuleMsg simulating the node's behavior
 func helperWrapper(node *HttpEndpointNode, r *http.Request) (types.RuleMsg, error) {
-	msg := message.NewMsg(node.nodeConfig.RuleChainID, "", make(types.Metadata), nil)
+	msg := types.NewMsg(node.nodeConfig.RuleChainID, "", make(types.Metadata), nil)
 	ctx := registry.NewMinimalNodeCtx("test-node")
 	err := helper.MapHttpRequestToRuleMsg(ctx, msg, node.nodeConfig.EndpointDefinition.Request, r, node.nodeConfig.HttpPath)
 	return msg, err
@@ -871,7 +870,7 @@ func TestConvertResponse(t *testing.T) {
 		t.Fatalf("Failed to initialize node: %v", err)
 	}
 
-	msg := message.NewMsg("testChain", "", types.Metadata{"traceId": "trace-xyz"}, nil)
+	msg := types.NewMsg("testChain", "", types.Metadata{"traceId": "trace-xyz"}, nil)
 	dataT := msg.DataT()
 	item, _ := dataT.NewItem("MockCoreObjForTestV1", "userObj")
 	item.Body().(*MockCoreObjForTest).SingleParam = "cline"

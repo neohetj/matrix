@@ -1,9 +1,10 @@
-package asset
+package asset_test
 
 import (
 	"os"
 	"testing"
 
+	"github.com/neohetj/matrix/pkg/asset"
 	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/types"
 	"github.com/neohetj/matrix/pkg/utils"
@@ -67,22 +68,22 @@ func (m *MockNodePool) GetInstance(id string) (any, error) {
 }
 
 func TestAssetResolve_RuleMsg(t *testing.T) {
-	InitRegistry()
+	asset.InitRegistry()
 
 	msg := &MockRuleMsg{
 		data:     `{"key": "value", "nested": {"foo": "bar"}}`,
 		metadata: types.Metadata{"trace_id": "12345"},
 	}
 
-	ctx := NewAssetContext(WithRuleMsg(msg))
+	ctx := asset.NewAssetContext(asset.WithRuleMsg(msg))
 
 	// Test Data Extraction
-	a1 := Asset[string]{URI: "rulemsg://data/key?format=JSON"}
+	a1 := asset.Asset[string]{URI: "rulemsg://data/key?format=JSON"}
 	v1, err := a1.Resolve(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "value", v1)
 
-	a1BadFormat := Asset[string]{URI: "rulemsg://data/key?format=TEXT"}
+	a1BadFormat := asset.Asset[string]{URI: "rulemsg://data/key?format=TEXT"}
 	_, err = a1BadFormat.Resolve(ctx)
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "rulemsg data format mismatch")
@@ -90,12 +91,12 @@ func TestAssetResolve_RuleMsg(t *testing.T) {
 	// Test Data Writing
 	// NOTE: partial updates to rulemsg data are not allowed: rulemsg://data/key
 	// We need to test full data write instead.
-	a1Full := Asset[string]{URI: "rulemsg://data?format=JSON"}
+	a1Full := asset.Asset[string]{URI: "rulemsg://data?format=JSON"}
 	err = a1Full.Set(ctx, "new_value")
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "data is not valid JSON")
 
-	a1MissingFormat := Asset[string]{URI: "rulemsg://data"}
+	a1MissingFormat := asset.Asset[string]{URI: "rulemsg://data"}
 	err = a1MissingFormat.Set(ctx, `{"key":"new_value"}`)
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "valid data format is required")
@@ -106,12 +107,12 @@ func TestAssetResolve_RuleMsg(t *testing.T) {
 	assert.Equal(t, cnst.JSON, msg.DataFormat())
 
 	// Test Metadata Extraction
-	a2 := Asset[string]{URI: "rulemsg://metadata/trace_id"}
+	a2 := asset.Asset[string]{URI: "rulemsg://metadata/trace_id"}
 	v2, err := a2.Resolve(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "12345", v2)
 
-	a2Missing := Asset[string]{URI: "rulemsg://metadata/missing"}
+	a2Missing := asset.Asset[string]{URI: "rulemsg://metadata/missing"}
 	_, err = a2Missing.Resolve(ctx)
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "metadata key not found: missing")
@@ -123,7 +124,7 @@ func TestAssetResolve_RuleMsg(t *testing.T) {
 }
 
 func TestAssetResolve_Config(t *testing.T) {
-	InitRegistry()
+	asset.InitRegistry()
 
 	nodeConfig := types.ConfigMap{"myKey": "nodeVal"}
 	engineConfig := types.ConfigMap{"engineKey": "engineVal"}
@@ -132,32 +133,32 @@ func TestAssetResolve_Config(t *testing.T) {
 	mockRuntime := &MockRuntime{engine: mockEngine}
 	mockNodeCtx := &MockNodeCtx{runtime: mockRuntime, config: nodeConfig}
 
-	ctx := NewAssetContext(
-		WithConfig(nodeConfig),
-		WithNodeCtx(mockNodeCtx),
+	ctx := asset.NewAssetContext(
+		asset.WithConfig(nodeConfig),
+		asset.WithNodeCtx(mockNodeCtx),
 	)
 
 	// Test Node Config
-	a1 := Asset[string]{URI: "config:///myKey?scope=node"}
+	a1 := asset.Asset[string]{URI: "config:///myKey?scope=node"}
 	v1, err := a1.Resolve(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "nodeVal", v1)
 
 	// Test Engine Config
-	a2 := Asset[string]{URI: "config:///engineKey?scope=engine"}
+	a2 := asset.Asset[string]{URI: "config:///engineKey?scope=engine"}
 	v2, err := a2.Resolve(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "engineVal", v2)
 
 	// Test Default
-	a3 := Asset[string]{URI: "config:///missing?default=defVal"}
+	a3 := asset.Asset[string]{URI: "config:///missing?default=defVal"}
 	v3, err := a3.Resolve(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "defVal", v3)
 }
 
 func TestAssetResolve_Rel(t *testing.T) {
-	InitRegistry()
+	asset.InitRegistry()
 
 	// Create temp file
 	tmpFile, err := os.CreateTemp("", "test_rel_*.txt")
@@ -168,26 +169,26 @@ func TestAssetResolve_Rel(t *testing.T) {
 	assert.NoError(t, err)
 	tmpFile.Close()
 
-	a1 := Asset[string]{URI: "rel://" + tmpFile.Name()}
-	v1, err := a1.Resolve(NewAssetContext())
+	a1 := asset.Asset[string]{URI: "rel://" + tmpFile.Name()}
+	v1, err := a1.Resolve(asset.NewAssetContext())
 	assert.NoError(t, err)
 	assert.Equal(t, "hello world", v1)
 }
 
 func TestAssetResolve_Ref(t *testing.T) {
-	InitRegistry()
+	asset.InitRegistry()
 
 	mockPool := new(MockNodePool)
 	mockPool.On("GetInstance", "myDB").Return("db_connection_mock", nil)
 
-	ctx := NewAssetContext(WithNodePool(mockPool))
+	ctx := asset.NewAssetContext(asset.WithNodePool(mockPool))
 
 	// Assuming WithNodeCtx is also needed if we use runtime lookup,
 	// but our implementation prioritized getting from context options if available?
 	// Let's check handlers_other.go implementation again...
 	// It calls GetNodePool(ctx).
 
-	a1 := Asset[string]{URI: "ref:///myDB"}
+	a1 := asset.Asset[string]{URI: "ref:///myDB"}
 	v1, err := a1.Resolve(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "db_connection_mock", v1)
@@ -203,46 +204,46 @@ func AssertErrorCode(t *testing.T, err error, expectedFault *types.Fault) {
 }
 
 func TestAssetResolve_NonURILiteral(t *testing.T) {
-	InitRegistry()
+	asset.InitRegistry()
 
 	// 1. String with control characters (invalid for url.Parse)
 	invalidURI := "not a uri\x01"
-	a2 := Asset[string]{URI: invalidURI}
-	_, err := a2.Resolve(NewAssetContext())
+	a2 := asset.Asset[string]{URI: invalidURI}
+	_, err := a2.Resolve(asset.NewAssetContext())
 	assert.Error(t, err)
-	AssertErrorCode(t, err, AssetInvalidURI)
+	AssertErrorCode(t, err, asset.AssetInvalidURI)
 
 	// 2. Regular string without scheme
 	regular := "just a string"
-	a3 := Asset[string]{URI: regular}
-	_, err = a3.Resolve(NewAssetContext())
+	a3 := asset.Asset[string]{URI: regular}
+	_, err = a3.Resolve(asset.NewAssetContext())
 	assert.Error(t, err)
-	AssertErrorCode(t, err, AssetSchemeNotRegistered)
+	AssertErrorCode(t, err, asset.AssetSchemeNotRegistered)
 }
 
 func TestAssetResolve_EmptyURI(t *testing.T) {
-	InitRegistry()
+	asset.InitRegistry()
 
 	// Test with an empty URI
-	a := Asset[string]{URI: ""}
-	_, err := a.Resolve(NewAssetContext())
+	a := asset.Asset[string]{URI: ""}
+	_, err := a.Resolve(asset.NewAssetContext())
 
 	// Expect an error
 	assert.Error(t, err)
 
-	// Check if the error is the specific AssetInvalidURI fault
-	AssertErrorCode(t, err, AssetInvalidURI)
+	// Check if the error is the specific asset.AssetInvalidURI fault
+	AssertErrorCode(t, err, asset.AssetInvalidURI)
 }
 
 func TestDecodeAssetString(t *testing.T) {
 	type PromptConfig struct {
-		System Asset[string] `json:"system"`
-		User   Asset[string] `json:"user"`
+		System asset.Asset[string] `json:"system"`
+		User   asset.Asset[string] `json:"user"`
 	}
 
 	data := map[string]any{
-		"system": "rel://./rulechains/auto_run_system.txt",
-		"user":   "rel://./rulechains/auto_run_user.txt",
+		"system": "rel://./prompts/auto_run_system.txt",
+		"user":   "rel://./prompts/auto_run_user.txt",
 	}
 
 	cfg := &PromptConfig{}

@@ -19,8 +19,9 @@
 package registry
 
 import (
+	"github.com/neohetj/matrix/internal/contract"
 	"github.com/neohetj/matrix/pkg/cnst"
-	"github.com/neohetj/matrix/pkg/message"
+
 	"github.com/neohetj/matrix/pkg/types"
 )
 
@@ -94,32 +95,32 @@ func init() {
 	)
 
 	Default.CoreObjRegistry.Register(
-		message.NewCoreObjDef(
+		contract.NewDefaultCoreObjDef(
 			"", // Default value for string
 			cnst.SID_STRING,
 			"基本类型：字符串",
 		),
-		message.NewCoreObjDef(
+		contract.NewDefaultCoreObjDef(
 			int64(0), // Default value for int64
 			cnst.SID_INT64,
 			"基本类型：64位整数",
 		),
-		message.NewCoreObjDef(
+		contract.NewDefaultCoreObjDef(
 			float64(0), // Default value for float64
 			cnst.SID_FLOAT64,
 			"基本类型：64位浮点数",
 		),
-		message.NewCoreObjDef(
+		contract.NewDefaultCoreObjDef(
 			false, // Default value for bool
 			cnst.SID_BOOL,
 			"基本类型：布尔值",
 		),
-		message.NewCoreObjDef(
+		contract.NewDefaultCoreObjDef(
 			map[string]string{},
 			cnst.SID_MAP_STRING_STRING,
 			"基本类型：字符串到字符串的映射",
 		),
-		message.NewCoreObjDef(
+		contract.NewDefaultCoreObjDef(
 			map[string]interface{}{},
 			cnst.SID_MAP_STRING_INTERFACE,
 			"基本类型：字符串到任意类型的映射",

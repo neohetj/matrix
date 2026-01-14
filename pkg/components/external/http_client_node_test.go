@@ -25,7 +25,6 @@ import (
 	"testing"
 
 	"github.com/neohetj/matrix/internal/registry"
-	"github.com/neohetj/matrix/pkg/message"
 	"github.com/neohetj/matrix/pkg/types"
 	"github.com/neohetj/matrix/pkg/utils"
 	tutils "github.com/neohetj/matrix/test/utils"
@@ -38,7 +37,7 @@ const (
 
 func init() {
 	registry.Default.CoreObjRegistry.Register(
-		message.NewCoreObjDef(&map[string]interface{}{}, MapStringInterfaceSID, "Generic map object"),
+		types.NewCoreObjDef(&map[string]interface{}{}, MapStringInterfaceSID, "Generic map object"),
 	)
 }
 

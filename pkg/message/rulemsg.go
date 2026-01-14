@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/neohetj/matrix/internal/contract"
 	"github.com/neohetj/matrix/pkg/asset"
 	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/types"
@@ -83,35 +82,4 @@ func MsgToMap(msg types.RuleMsg) map[string]any {
 	}
 
 	return res
-}
-
-// NewMsg creates a new message with the given type, data, and metadata.
-// It automatically generates a new UUID and sets the timestamp.
-// The dataFormat is initially empty and should be set explicitly via WithDataFormat.
-func NewMsg(msgType, data string, metadata types.Metadata, dataT types.DataT) types.RuleMsg {
-	if dataT == nil {
-		dataT = NewDataT()
-	}
-	return contract.NewDefaultRuleMsg(msgType, data, metadata, dataT)
-}
-
-// NewSubMsg creates a new sub-message from a parent message.
-// The new message type is constructed by combining the parent's ID with the sub-chain ID.
-// This allows for tracking the hierarchy of messages in trace logs.
-func NewSubMsg(parentMsg types.RuleMsg, subChainId string) types.RuleMsg {
-	if parentMsg == nil {
-		return NewMsg(subChainId, "", nil, nil)
-	}
-
-	newType := fmt.Sprintf("%s::%s", parentMsg.Type(), subChainId)
-	if parentMsg.Type() == "" {
-		// If parent type is empty, use parent ID as base
-		newType = fmt.Sprintf("%s::%s", parentMsg.ID(), subChainId)
-	}
-
-	// If parent type already contains "::", it means it's already a sub-message.
-	// We append to it to maintain full path.
-
-	// Create new message with derived type
-	return NewMsg(newType, "", parentMsg.Metadata().Copy(), NewDataT())
 }

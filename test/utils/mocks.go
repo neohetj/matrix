@@ -3,9 +3,13 @@ package utils
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/neohetj/matrix/internal/contract"
 	"github.com/neohetj/matrix/pkg/cnst"
@@ -13,6 +17,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+// ----------------------- MockRuleMsg -----------------------
 // MockRuleMsg
 type MockRuleMsg struct {
 	mock.Mock
@@ -68,6 +73,7 @@ func (m *MockRuleMsg) DeepCopy() (types.RuleMsg, error) {
 	return args.Get(0).(types.RuleMsg), args.Error(1)
 }
 
+// ----------------------- MockDataT -----------------------
 // MockDataT
 type MockDataT struct {
 	mock.Mock
@@ -111,6 +117,7 @@ func (m *MockDataT) NewItemByParam(ctx types.NodeCtx, pname string) (types.CoreO
 	return args.Get(0).(types.CoreObj), args.Error(1)
 }
 
+// ----------------------- MockCoreObj -----------------------
 // MockCoreObj
 type MockCoreObj struct {
 	mock.Mock
@@ -137,7 +144,7 @@ func (m *MockCoreObj) DeepCopy() (types.CoreObj, error) {
 	return args.Get(0).(types.CoreObj), args.Error(1)
 }
 
-// --- Mocks for Logger ---
+// ----------------------- TestLogger -----------------------
 
 // TestLogger is a simple logger that writes to stdout for testing purposes.
 type TestLogger struct{}
@@ -159,6 +166,7 @@ func (l *TestLogger) Errorf(ctx context.Context, format string, v ...any) {
 }
 func (l *TestLogger) With(fields ...any) types.Logger { return l }
 
+// ----------------------- MockLogger -----------------------
 // MockLogger is a logger that captures output for assertion in tests.
 type MockLogger struct {
 	buf    bytes.Buffer
@@ -232,7 +240,7 @@ func (m *MockLogger) Reset() {
 	m.buf.Reset()
 }
 
-// --- Mock for NodeCtx ---
+// ----------------------- MockNodeCtx -----------------------
 
 type MockNodeCtx struct {
 	types.NodeCtx
@@ -300,6 +308,9 @@ func (m *MockNodeCtx) NewMsg(msgType string, metaData types.Metadata, data strin
 func (m *MockNodeCtx) Config() types.ConfigMap         { return m.NodeDef.Configuration }
 func (m *MockNodeCtx) SelfDef() *types.NodeDef         { return &m.NodeDef }
 func (m *MockNodeCtx) SetOnAllNodesCompleted(f func()) {}
+func (m *MockNodeCtx) GetInstance() (any, error) {
+	return m, nil
+}
 func (m *MockNodeCtx) Logger() types.Logger {
 	return &TestLogger{}
 }
@@ -324,4 +335,241 @@ func (m *MockNodeCtx) SetChainInstance(instance types.ChainInstance) {
 // ChainInstance returns the configured chain instance.
 func (m *MockNodeCtx) ChainInstance() types.ChainInstance {
 	return m.chainInstance
+}
+
+// ----------------------- MockEndpoint -----------------------
+// MockEndpoint is a mock implementation of types.Endpoint.
+type MockEndpoint struct {
+	types.Node
+	RuntimePool types.RuntimePool
+}
+
+func (m *MockEndpoint) SetRuntimePool(pool any) error {
+	if p, ok := pool.(types.RuntimePool); ok {
+		m.RuntimePool = p
+	}
+	return nil
+}
+
+func (m *MockEndpoint) GetInstance() (any, error) {
+	return m, nil
+}
+
+// ----------------------- MockNode -----------------------
+// MockNode is a mock implementation of types.Node.
+type MockNode struct {
+	types.Node
+}
+
+// ----------------------- MockNodeManager -----------------------
+// MockNodeManager is a mock implementation of types.NodeManager.
+type MockNodeManager struct {
+	NodePrototypes map[string]types.Node
+}
+
+func (m *MockNodeManager) Register(node types.Node) error           { return nil }
+func (m *MockNodeManager) Unregister(nodeType types.NodeType) error { return nil }
+func (m *MockNodeManager) Get(nodeType types.NodeType) (types.Node, bool) {
+	if node, ok := m.NodePrototypes[string(nodeType)]; ok {
+		return node, true
+	}
+	return nil, false
+}
+func (m *MockNodeManager) GetComponents() map[types.NodeType]types.Node {
+	return nil
+}
+func (m *MockNodeManager) NewNode(nodeType types.NodeType) (types.Node, error) {
+	if node, ok := m.NodePrototypes[string(nodeType)]; ok {
+		return node, nil
+	}
+	return nil, errors.New("node not found")
+}
+
+// ----------------------- MockNodePool -----------------------
+// MockNodePool is a mock implementation of types.NodePool.
+type MockNodePool struct {
+	Nodes map[string]types.NodeCtx
+}
+
+func (m *MockNodePool) Get(id string) (types.SharedNodeCtx, bool) {
+	ctx, ok := m.Nodes[id]
+	if !ok {
+		return nil, false
+	}
+	return ctx.(types.SharedNodeCtx), true
+}
+
+func (m *MockNodePool) GetAll() []types.NodeCtx {
+	return nil
+}
+
+func (m *MockNodePool) GetEndpoints() []types.Endpoint {
+	return nil
+}
+
+func (m *MockNodePool) GetInstance(id string) (any, error) {
+	ctx, ok := m.Get(id)
+	if !ok {
+		return nil, errors.New("not found")
+	}
+	return ctx, nil
+}
+
+func (m *MockNodePool) Load(dsl []byte, mgr types.NodeManager) (types.NodePool, error) {
+	return m, nil
+}
+
+func (m *MockNodePool) NewFromNodeDef(def types.NodeDef, mgr types.NodeManager) (types.SharedNodeCtx, error) {
+	if _, ok := m.Nodes[def.ID]; ok {
+		return nil, errors.New("node already exists")
+	}
+	_, ok := mgr.Get(types.NodeType(def.Type))
+	if !ok {
+		return nil, errors.New("node not found")
+	}
+	ctx := NewMockNodeCtx()
+	m.Nodes[def.ID] = ctx
+	return ctx, nil
+}
+
+func (m *MockNodePool) GetNodeContext(id string) (types.NodeCtx, bool) {
+	ctx, ok := m.Nodes[id]
+	return ctx, ok
+}
+
+func (m *MockNodePool) LoadFromRuleChainDef(def *types.RuleChainDef, mgr types.NodeManager) (types.NodePool, error) {
+	for _, nodeDef := range def.Metadata.Nodes {
+		_, err := m.NewFromNodeDef(nodeDef, mgr)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return m, nil
+}
+func (m *MockNodePool) AddEndpoint(endpoint types.Endpoint) {}
+func (m *MockNodePool) Del(id string)                       {}
+func (m *MockNodePool) Stop()                               {}
+
+// ----------------------- MockRuntimePool -----------------------
+// MockRuntimePool is a mock implementation of types.RuntimePool.
+type MockRuntimePool struct{}
+
+func (m *MockRuntimePool) Get(id string) (types.Runtime, bool)  { return nil, false }
+func (m *MockRuntimePool) Put(id string, runtime types.Runtime) {}
+func (m *MockRuntimePool) Remove(id string)                     {}
+func (m *MockRuntimePool) ListByViewType(viewType string) []types.Runtime {
+	return nil
+}
+func (m *MockRuntimePool) ListIDs() []string {
+	return nil
+}
+func (m *MockRuntimePool) Register(id string, runtime types.Runtime) error { return nil }
+func (m *MockRuntimePool) Unregister(id string)                            {}
+
+// ----------------------- MockResourceProvider -----------------------
+// MockResourceProvider is a mock implementation of types.ResourceProvider.
+type MockResourceProvider struct {
+	Files map[string]struct {
+		Content string
+		IsDir   bool
+	}
+}
+
+func (m *MockResourceProvider) WalkDir(root string, fn fs.WalkDirFunc) error {
+	for path, file := range m.Files {
+		if strings.HasPrefix(path, root) {
+			parts := strings.Split(path, "/")
+			filename := parts[len(parts)-1]
+			d := &MockDirEntry{name: filename, isDir: file.IsDir}
+			if err := fn(path, d, nil); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (m *MockResourceProvider) Priority() int {
+	return 0
+}
+
+func (m *MockResourceProvider) Name() string {
+	return "mock"
+}
+
+func (m *MockResourceProvider) Open(name string) (fs.File, error) {
+	if file, ok := m.Files[name]; ok && !file.IsDir {
+		return &MockFSFile{name: name, content: file.Content}, nil
+	}
+	return nil, fs.ErrNotExist
+}
+
+func (m *MockResourceProvider) ReadDir(name string) ([]fs.DirEntry, error) {
+	var entries []fs.DirEntry
+	for path, file := range m.Files {
+		if strings.HasPrefix(path, name) {
+			parts := strings.Split(path, "/")
+			filename := parts[len(parts)-1]
+			entries = append(entries, &MockDirEntry{name: filename, isDir: file.IsDir})
+		}
+	}
+	return entries, nil
+}
+
+func (m *MockResourceProvider) ReadFile(name string) (*types.Resource, error) {
+	if file, ok := m.Files[name]; ok {
+		return &types.Resource{Content: []byte(file.Content), Source: types.FromExternal}, nil
+	}
+	return nil, fs.ErrNotExist
+}
+
+func (m *MockResourceProvider) Stat(name string) (fs.FileInfo, error) {
+	if _, ok := m.Files[name]; ok {
+		return &MockFileInfo{}, nil
+	}
+	return nil, fs.ErrNotExist
+}
+
+// ----------------------- MockFSFile -----------------------
+// MockFSFile is a mock implementation of fs.File.
+type MockFSFile struct {
+	name    string
+	content string
+	offset  int64
+}
+
+func (f *MockFSFile) Stat() (fs.FileInfo, error) { return &MockFileInfo{name: f.name}, nil }
+func (f *MockFSFile) Read(b []byte) (int, error) {
+	n := copy(b, f.content[f.offset:])
+	f.offset += int64(n)
+	return n, nil
+}
+func (f *MockFSFile) Close() error { return nil }
+
+// ----------------------- MockFileInfo -----------------------
+// MockFileInfo is a mock implementation of fs.FileInfo.
+type MockFileInfo struct {
+	name  string
+	isDir bool
+}
+
+func (m *MockFileInfo) Name() string       { return m.name }
+func (m *MockFileInfo) Size() int64        { return 0 }
+func (m *MockFileInfo) Mode() fs.FileMode  { return 0 }
+func (m *MockFileInfo) ModTime() time.Time { return time.Time{} }
+func (m *MockFileInfo) IsDir() bool        { return m.isDir }
+func (m *MockFileInfo) Sys() interface{}   { return nil }
+
+// ----------------------- MockDirEntry -----------------------
+// MockDirEntry is a mock implementation of fs.DirEntry.
+type MockDirEntry struct {
+	name  string
+	isDir bool
+}
+
+func (m *MockDirEntry) Name() string      { return m.name }
+func (m *MockDirEntry) IsDir() bool       { return m.isDir }
+func (m *MockDirEntry) Type() fs.FileMode { return 0 }
+func (m *MockDirEntry) Info() (fs.FileInfo, error) {
+	return &MockFileInfo{name: m.name, isDir: m.isDir}, nil
 }

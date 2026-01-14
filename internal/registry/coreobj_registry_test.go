@@ -21,8 +21,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/neohetj/matrix/internal/contract"
 	matrixlog "github.com/neohetj/matrix/internal/log"
-	"github.com/neohetj/matrix/pkg/message"
 	"github.com/neohetj/matrix/test/utils"
 	"github.com/stretchr/testify/assert"
 )
@@ -36,7 +36,7 @@ func TestMain(m *testing.M) {
 func TestDefaultCoreObjRegistry_Register(t *testing.T) {
 	t.Run("should register valid defs", func(t *testing.T) {
 		registry := NewCoreObjRegistry()
-		def1 := message.NewCoreObjDef(&struct{}{}, "TestObjectV1_0", "desc")
+		def1 := contract.NewDefaultCoreObjDef(&struct{}{}, "TestObjectV1_0", "desc")
 		registry.Register(def1)
 
 		retDef, ok := registry.Get("TestObjectV1_0")
@@ -52,7 +52,7 @@ func TestDefaultCoreObjRegistry_Register(t *testing.T) {
 		defer matrixlog.SetLogger(originalLogger)
 
 		registry := NewCoreObjRegistry()
-		def1 := message.NewCoreObjDef(&struct{}{}, "invalidSid", "desc")
+		def1 := contract.NewDefaultCoreObjDef(&struct{}{}, "invalidSid", "desc")
 		registry.Register(def1)
 
 		// Check if it was still registered
@@ -72,7 +72,7 @@ func TestDefaultCoreObjRegistry_Register(t *testing.T) {
 		defer matrixlog.SetLogger(originalLogger)
 
 		registry := NewCoreObjRegistry()
-		def1 := message.NewCoreObjDef(&struct{}{}, "GoodSidV1_0", "desc")
+		def1 := contract.NewDefaultCoreObjDef(&struct{}{}, "GoodSidV1_0", "desc")
 		registry.Register(def1)
 
 		logOutput := mockLog.String()

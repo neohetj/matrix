@@ -178,7 +178,7 @@ type defaultSharedNodeCtx struct {
 }
 
 // GetInstance obtains the shared resource instance from the node.
-func (c *defaultSharedNodeCtx) GetInstance() (interface{}, error) {
+func (c *defaultSharedNodeCtx) GetInstance() (any, error) {
 	return c.sharedNode.GetInstance()
 }
 
@@ -233,15 +233,15 @@ func (m *minimalNodeCtx) SetOnAllNodesCompleted(f func()) {}
 
 // --- Logging Methods (No-op for minimal context) ---
 
-func (m *minimalNodeCtx) Debug(msg string, fields ...interface{}) {}
-func (m *minimalNodeCtx) Info(msg string, fields ...interface{})  {}
-func (m *minimalNodeCtx) Warn(msg string, fields ...interface{})  {}
-func (m *minimalNodeCtx) Error(msg string, fields ...interface{}) {
+func (m *minimalNodeCtx) Debug(msg string, fields ...any) {}
+func (m *minimalNodeCtx) Info(msg string, fields ...any)  {}
+func (m *minimalNodeCtx) Warn(msg string, fields ...any)  {}
+func (m *minimalNodeCtx) Error(msg string, fields ...any) {
 	// For minimal context, we can log the error to the global logger as a fallback.
 	// This is better than silently swallowing it.
 	logger := m.Logger()
 	if logger != nil {
-		allFields := append([]interface{}{"nodeId", m.NodeID()}, fields...)
+		allFields := append([]any{"nodeId", m.NodeID()}, fields...)
 		logger.With(allFields...).Errorf(context.Background(), msg)
 	}
 }

@@ -149,7 +149,7 @@ import (
 
 func init() {
     registry.Default.CoreObjRegistry.Register(
-        message.NewCoreObjDef(
+        types.NewCoreObjDef(
             &UserProfile{}, // 传入一个结构体原型实例
             UserProfileV1_0_SID,
             "Defines the structure of a user profile",

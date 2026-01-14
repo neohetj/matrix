@@ -32,6 +32,7 @@ import (
 	"github.com/neohetj/matrix/internal/log"
 	"github.com/neohetj/matrix/internal/runtime"
 	"github.com/neohetj/matrix/pkg/config"
+	"github.com/neohetj/matrix/pkg/facotry"
 	"github.com/neohetj/matrix/pkg/trace"
 	"github.com/neohetj/matrix/pkg/types"
 
@@ -39,6 +40,15 @@ import (
 	_ "github.com/neohetj/matrix/pkg/components/endpoint"
 	_ "github.com/neohetj/matrix/pkg/components/external"
 )
+
+func init() {
+	types.NewNodeCtx = facotry.NewNodeCtx
+	types.NewMsg = facotry.NewMsg
+	types.NewDataT = facotry.NewDataT
+	types.NewSubMsg = facotry.NewSubMsg
+	types.NewCoreObj = facotry.NewCoreObj
+	types.NewCoreObjDef = facotry.NewCoreObjDef
+}
 
 // Registry is the default, global instance of the registry.
 var Registry = types.DefaultRegistry
