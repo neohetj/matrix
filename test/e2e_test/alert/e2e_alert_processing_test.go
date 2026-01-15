@@ -15,7 +15,6 @@ import (
 	"github.com/neohetj/matrix/pkg/config"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/neohetj/matrix/pkg/components/endpoint"
 	"github.com/neohetj/matrix/pkg/types"
 	"github.com/neohetj/matrix/test/utils"
 )
@@ -119,7 +118,7 @@ func TestHttpEndpointTrigger(t *testing.T) {
 	epCtx, ok := env.Engine.SharedNodePool().Get("ep_http_alert_trigger")
 	assert.True(t, ok, "endpoint not found in shared node pool")
 
-	epNode, ok := epCtx.GetNode().(endpoint.HttpEndpoint)
+	epNode, ok := epCtx.GetNode().(types.HttpEndpoint)
 	assert.True(t, ok, "node is not an HttpEndpoint")
 
 	// 5. Create HTTP Request
@@ -154,7 +153,7 @@ func TestHttpEndpointTriggerError(t *testing.T) {
 	// 3. Retrieve Endpoint
 	epCtx, ok := env.Engine.SharedNodePool().Get("ep_http_alert_trigger")
 	assert.True(t, ok)
-	epNode, ok := epCtx.GetNode().(endpoint.HttpEndpoint)
+	epNode, ok := epCtx.GetNode().(types.HttpEndpoint)
 	assert.True(t, ok)
 
 	// 4. Create Invalid Request (Missing required 'severity')

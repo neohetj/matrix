@@ -396,7 +396,7 @@ type NodeFuncObject struct {
 // NodeFuncManager is the interface for managing function nodes.
 type NodeFuncManager interface {
 	// Register adds a new function node definition.
-	Register(f *NodeFuncObject)
+	Register(funcs ...*NodeFuncObject)
 	// Get retrieves a function node definition by its ID.
 	Get(id string) (*NodeFuncObject, bool)
 	// List returns all registered function node objects.

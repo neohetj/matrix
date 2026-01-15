@@ -34,15 +34,17 @@ func NewNodeFuncManager() *DefaultNodeFuncManager {
 }
 
 // Register adds a new function node definition to the manager.
-func (m *DefaultNodeFuncManager) Register(f *types.NodeFuncObject) {
-	if f != nil {
-		// Validate business config types
-		for _, field := range f.FuncObject.Configuration.Business {
-			if !field.Type.IsSupported() {
-				panic(fmt.Sprintf("Function %s registration failed: invalid business config type '%s' for field '%s'", f.FuncObject.ID, field.Type, field.Name))
+func (m *DefaultNodeFuncManager) Register(funcs ...*types.NodeFuncObject) {
+	for _, f := range funcs {
+		if f != nil {
+			// Validate business config types
+			for _, field := range f.FuncObject.Configuration.Business {
+				if !field.Type.IsSupported() {
+					panic(fmt.Sprintf("Function %s registration failed: invalid business config type '%s' for field '%s'", f.FuncObject.ID, field.Type, field.Name))
+				}
 			}
+			m.functions.Store(f.FuncObject.ID, f)
 		}
-		m.functions.Store(f.FuncObject.ID, f)
 	}
 }
 

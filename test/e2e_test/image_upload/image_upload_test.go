@@ -14,8 +14,8 @@ import (
 
 	matrix "github.com/neohetj/matrix"
 	"github.com/neohetj/matrix/internal/registry"
-	"github.com/neohetj/matrix/pkg/components/endpoint"
 	"github.com/neohetj/matrix/pkg/config"
+	"github.com/neohetj/matrix/pkg/types"
 	"github.com/neohetj/matrix/test/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -79,7 +79,7 @@ func TestImageUpload(t *testing.T) {
 	epCtx, ok := env.Engine.SharedNodePool().Get("image_upload_endpoint")
 	require.True(t, ok, "endpoint 'image_upload_endpoint' not found")
 
-	epNode, ok := epCtx.GetNode().(endpoint.HttpEndpoint)
+	epNode, ok := epCtx.GetNode().(types.HttpEndpoint)
 	require.True(t, ok, "node is not an HttpEndpoint")
 
 	// 2. Create Multipart Request

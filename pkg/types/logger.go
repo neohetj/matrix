@@ -164,6 +164,14 @@ func IsFault(err error, code cnst.ErrCode) bool {
 	return false
 }
 
+// NewFault creates a new Fault with the given code and message.
+func NewFault(code cnst.ErrCode, message string) *Fault {
+	return &Fault{
+		Code:    code,
+		Message: message,
+	}
+}
+
 const (
 	// MetaError is the key for the raw error object in the metadata.
 	MetaError = "error"

@@ -23,55 +23,10 @@ var (
 	DefDataTItemCreationFailed = &types.Fault{Code: cnst.CodeDataTItemCreationFailed, Message: "failed to create new DataT item"}
 )
 
-// HttpEndpoint is a specific type of PassiveEndpoint for handling HTTP requests.
-type HttpEndpoint interface {
-	types.PassiveEndpoint
-	// HandleHttpRequest handles the incoming HTTP request.
-	// The implementation should write the response to the http.ResponseWriter.
-	// It should return an error if any issue occurs that needs to be handled by the adapter.
-	HandleHttpRequest(w http.ResponseWriter, r *http.Request, opts ...HandleOption) error
-	GetHttpPath() string
-	GetHttpMethod() string
-	Configuration() HttpEndpointNodeConfiguration
-
-	// GetInputMapping returns the configuration for mapping data from the HTTP request to the RuleMsg.
-	// This implements part of the SubChainTrigger interface (as DataContractProvider).
-	GetInputMapping() types.EndpointIOPacket
-	// GetOutputMapping returns the configuration for mapping data from the RuleMsg to the HTTP response.
-	// This implements part of the SubChainTrigger interface (as DataContractProvider).
-	GetOutputMapping() types.EndpointIOPacket
-	// GetTargetChainID returns the ID of the rule chain triggered by this endpoint.
-	// This implements the SubChainTrigger interface.
-	GetTargetChainID() string
-}
-
-// HandleOptions holds the optional parameters for handling an HTTP request.
-type HandleOptions struct {
-	ExecutionID string
-	Finalizer   types.SnapshotFinalizer
-}
-
-// HandleOption is a function that configures HandleOptions.
-type HandleOption func(*HandleOptions)
-
-// WithExecutionID sets the execution ID for the request.
-func WithExecutionID(id string) HandleOption {
-	return func(o *HandleOptions) {
-		o.ExecutionID = id
-	}
-}
-
-// WithFinalizer sets the snapshot finalizer for the request.
-func WithFinalizer(f types.SnapshotFinalizer) HandleOption {
-	return func(o *HandleOptions) {
-		o.Finalizer = f
-	}
-}
-
 // ErrorConverter defines a contract for converting Matrix's internal errors
 // into application-specific error formats.
 type ErrorConverter interface {
-	Convert(ep HttpEndpoint, chainErr types.FailureInfo, originalErr error) error
+	Convert(ep types.HttpEndpoint, chainErr types.FailureInfo, originalErr error) error
 }
 
 // httpEndpointNodePrototype is the shared prototype instance used for registration.
@@ -97,22 +52,11 @@ func init() {
 	)
 }
 
-// HttpEndpointNodeConfiguration holds the V2 configuration for the HttpEndpointNode.
-type HttpEndpointNodeConfiguration struct {
-	RuleChainID        string                `json:"ruleChainId"`
-	StartNodeID        string                `json:"startNodeId,omitempty"`
-	HttpMethod         string                `json:"httpMethod"`
-	HttpPath           string                `json:"httpPath"`
-	Description        string                `json:"description"`
-	EndpointDefinition types.HttpEndpointDef `json:"endpointDefinition"`
-	ErrorMappings      types.ErrorMapping    `json:"errorMappings,omitempty"`
-}
-
 // HttpEndpointNode is a component that acts as an entry point for HTTP requests.
 type HttpEndpointNode struct {
 	types.BaseNode
 	types.Instance
-	nodeConfig       HttpEndpointNodeConfiguration
+	nodeConfig       types.HttpEndpointNodeConfiguration
 	runtimePool      types.RuntimePool
 	faultCodeMap     map[string]int32
 	defaultErrorCode int32
@@ -213,7 +157,7 @@ func (n *HttpEndpointNode) GetInstance() (any, error) {
 }
 
 // Configuration returns the node's configuration for inspection.
-func (n *HttpEndpointNode) Configuration() HttpEndpointNodeConfiguration {
+func (n *HttpEndpointNode) Configuration() types.HttpEndpointNodeConfiguration {
 	return n.nodeConfig
 }
 
@@ -300,8 +244,8 @@ func (n *HttpEndpointNode) writeResponse(w http.ResponseWriter, statusCode int, 
 }
 
 // HandleHttpRequest is the core method that processes the incoming HTTP request.
-func (n *HttpEndpointNode) HandleHttpRequest(w http.ResponseWriter, r *http.Request, opts ...HandleOption) error {
-	options := &HandleOptions{}
+func (n *HttpEndpointNode) HandleHttpRequest(w http.ResponseWriter, r *http.Request, opts ...types.HandleOption) error {
+	options := &types.HandleOptions{}
 	for _, opt := range opts {
 		opt(options)
 	}

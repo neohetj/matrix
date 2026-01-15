@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"github.com/neohetj/matrix/internal/builtin/base"
+	_ "github.com/neohetj/matrix/internal/builtin/nodes/endpoint"
 	_ "github.com/neohetj/matrix/internal/builtin/nodes/loop"
 	_ "github.com/neohetj/matrix/internal/builtin/nodes/transform"
 	"github.com/neohetj/matrix/internal/registry"

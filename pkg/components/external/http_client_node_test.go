@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/neohetj/matrix/internal/registry"
+	"github.com/neohetj/matrix/pkg/facotry"
 	"github.com/neohetj/matrix/pkg/types"
 	"github.com/neohetj/matrix/pkg/utils"
 	tutils "github.com/neohetj/matrix/test/utils"
@@ -36,8 +37,14 @@ const (
 )
 
 func init() {
+	types.NewNodeCtx = facotry.NewNodeCtx
+	types.NewMsg = facotry.NewMsg
+	types.NewDataT = facotry.NewDataT
+	types.NewSubMsg = facotry.NewSubMsg
+	types.NewCoreObj = facotry.NewCoreObj
+	types.NewCoreObjDef = facotry.NewCoreObjDef
 	registry.Default.CoreObjRegistry.Register(
-		types.NewCoreObjDef(&map[string]interface{}{}, MapStringInterfaceSID, "Generic map object"),
+		types.NewCoreObjDef(&map[string]any{}, MapStringInterfaceSID, "Generic map object"),
 	)
 }
 

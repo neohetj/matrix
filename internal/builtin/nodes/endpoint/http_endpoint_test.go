@@ -1,4 +1,4 @@
-package endpoint
+package endpoint_test
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/julienschmidt/httprouter"
+	"github.com/neohetj/matrix/internal/builtin/nodes/endpoint"
 	"github.com/neohetj/matrix/internal/registry"
 	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/helper"
@@ -23,24 +24,13 @@ type MockCoreObjForTest struct {
 	ArrayParam  []string `json:"arrayParam"`
 }
 
-func init() {
-	// Register a mock CoreObj definition for the test.
-	registry.Default.CoreObjRegistry.Register(
-		types.NewCoreObjDef(
-			&MockCoreObjForTest{},
-			"MockCoreObjForTestV1",
-			"A mock object for testing http endpoint.",
-		),
-	)
-}
-
 // --- Test Helper Functions ---
 
 // newNodeForTest creates and initializes a new HttpEndpointNode for testing.
 // It fails the test if initialization fails.
-func newNodeForTest(t *testing.T, config types.ConfigMap) *HttpEndpointNode {
+func newNodeForTest(t *testing.T, config types.ConfigMap) *endpoint.HttpEndpointNode {
 	t.Helper()
-	node := &HttpEndpointNode{}
+	node := &endpoint.HttpEndpointNode{}
 	if err := node.Init(config); err != nil {
 		t.Fatalf("Failed to initialize node: %v", err)
 	}
@@ -75,10 +65,10 @@ func mockRequestWithBody(method, urlStr, body string) *http.Request {
 }
 
 // helperWrapper calls helper.MapHttpRequestToRuleMsg simulating the node's behavior
-func helperWrapper(node *HttpEndpointNode, r *http.Request) (types.RuleMsg, error) {
-	msg := types.NewMsg(node.nodeConfig.RuleChainID, "", make(types.Metadata), nil)
+func helperWrapper(node *endpoint.HttpEndpointNode, r *http.Request) (types.RuleMsg, error) {
+	msg := types.NewMsg(node.Configuration().RuleChainID, "", make(types.Metadata), nil)
 	ctx := registry.NewMinimalNodeCtx("test-node")
-	err := helper.MapHttpRequestToRuleMsg(ctx, msg, node.nodeConfig.EndpointDefinition.Request, r, node.nodeConfig.HttpPath)
+	err := helper.MapHttpRequestToRuleMsg(ctx, msg, node.Configuration().EndpointDefinition.Request, r, node.Configuration().HttpPath)
 	return msg, err
 }
 
@@ -88,7 +78,7 @@ func helperWrapper(node *HttpEndpointNode, r *http.Request) (types.RuleMsg, erro
 // 这个测试用例验证了当HTTP请求的URL中包含数组形式的查询参数时（如 `ids[]=id1&ids[]=id2`），
 // `convertRequestToRuleMsg` 函数能够正确地将这些参数解析并映射到 `RuleMsg` 的 `DataT` 结构中的目标数组字段。
 func TestConvertRequestToRuleMsg_QueryArrayParam(t *testing.T) {
-	// 1. Setup the HttpEndpointNode with a configuration that expects an array parameter.
+	// 1. Setup the endpoint.HttpEndpointNode with a configuration that expects an array parameter.
 	config := types.ConfigMap{
 		"ruleChainId": "testChain",
 		"httpMethod":  "GET",
@@ -376,12 +366,12 @@ func TestConvertRequestToRuleMsg_InvalidMappingFormat(t *testing.T) {
 		{
 			name:        "Invalid metadata format",
 			bindPath:    "metadata", // Missing key
-			expectedErr: DefInvalidMappingFormat,
+			expectedErr: endpoint.DefInvalidMappingFormat,
 		},
 		{
 			name:        "Invalid dataT format",
 			bindPath:    "dataT.myObj", // Missing field path
-			expectedErr: DefInvalidMappingFormat,
+			expectedErr: endpoint.DefInvalidMappingFormat,
 		},
 	}
 
@@ -561,9 +551,14 @@ func TestConvertRequestToRuleMsg_MissingDefineSID(t *testing.T) {
 		t.Fatalf("Expected an error but got nil")
 	}
 
-	// Updated expectation: The error message is now more detailed, coming from helper.SetInMsgByPath
-	if !strings.Contains(err.Error(), "no defineSid provided") && !strings.Contains(err.Error(), "invalid mapping format") {
-		t.Errorf("Expected error message to contain 'no defineSid provided' or 'invalid mapping format', but got '%s'", err.Error())
+	// Use Code checking
+	fault, ok := err.(*types.Fault)
+	if !ok {
+		t.Fatalf("Expected error to be of type *types.Fault, but got %T", err)
+	}
+
+	if fault.Code != cnst.CodeInvalidMappingFormat {
+		t.Errorf("Expected fault code %s, but got %s", cnst.CodeInvalidMappingFormat, fault.Code)
 	}
 
 	t.Log("Successfully verified that a missing defineSid for a DataT object returns a configuration error.")
@@ -680,7 +675,7 @@ func TestConvertRequestToRuleMsg_DataTDecodeFailure(t *testing.T) {
 // 这个测试用例验证了 HTTP 请求中的参数（如查询参数、头部信息）能否被正确地
 // 提取、转换，并设置到 RuleMsg 的 Metadata 字段中。
 func TestConvertRequestToRuleMsg_MetadataMapping(t *testing.T) {
-	node := &HttpEndpointNode{}
+	node := &endpoint.HttpEndpointNode{}
 	config := types.ConfigMap{
 		"ruleChainId": "testChain",
 		"httpMethod":  "GET",
@@ -823,7 +818,7 @@ func TestHttpEndpointNode_Init_ErrorHandling(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			node := &HttpEndpointNode{}
+			node := &endpoint.HttpEndpointNode{}
 			err := node.Init(tc.config)
 			if err == nil {
 				t.Fatalf("Expected an error but got none")
@@ -839,7 +834,7 @@ func TestHttpEndpointNode_Init_ErrorHandling(t *testing.T) {
 // 这个测试用例确保了 RuleMsg 中的 DataT 数据和 Metadata 能够被正确地映射到
 // HTTP 响应的 Body 和 Headers 中，同时验证了状态码的正确设置。
 func TestConvertResponse(t *testing.T) {
-	node := &HttpEndpointNode{}
+	node := &endpoint.HttpEndpointNode{}
 	config := types.ConfigMap{
 		"ruleChainId": "testChain",
 		"httpMethod":  "POST",
@@ -851,7 +846,7 @@ func TestConvertResponse(t *testing.T) {
 					Fields: []types.EndpointIOField{
 						{
 							Name:     "data.user.name",
-							BindPath: "rulemsg://dataT/userObj.singleParam",
+							BindPath: "rulemsg://dataT/userObj.singleParam?sid=MockCoreObjForTestV1",
 						},
 					},
 				},
@@ -873,10 +868,10 @@ func TestConvertResponse(t *testing.T) {
 	msg := types.NewMsg("testChain", "", types.Metadata{"traceId": "trace-xyz"}, nil)
 	dataT := msg.DataT()
 	item, _ := dataT.NewItem("MockCoreObjForTestV1", "userObj")
-	item.Body().(*MockCoreObjForTest).SingleParam = "cline"
+	item.Body().(*MockCoreObjForTest).SingleParam = "test"
 
 	ctx := registry.NewMinimalNodeCtx("test-node")
-	body, headers, statusCode, err := helper.MapRuleMsgToHttpResponse(ctx, msg, node.nodeConfig.EndpointDefinition.Response)
+	body, headers, statusCode, err := helper.MapRuleMsgToHttpResponse(ctx, msg, node.Configuration().EndpointDefinition.Response)
 	if err != nil {
 		t.Fatalf("convertResponse failed: %v", err)
 	}
@@ -891,7 +886,7 @@ func TestConvertResponse(t *testing.T) {
 	expectedBody := map[string]any{
 		"data": map[string]any{
 			"user": map[string]any{
-				"name": "cline",
+				"name": "test",
 			},
 		},
 	}

@@ -278,7 +278,7 @@ func (a RuleMsgAsset) setInDataT(msg types.RuleMsg, objID, fieldPath string, val
 	}
 
 	if fieldPath == "" {
-		ok, err := utils.SetCoreObjBody(obj, value)
+		ok, err := utils.SetCoreObjBody(obj, value, sid)
 		if err != nil {
 			errInfo := fmt.Errorf("failed to set dataT object '%s' body: %w", objID, err)
 			return types.InternalError.Wrap(errInfo)

@@ -90,6 +90,22 @@ func TestRuleMsgAssetSet_DataTMapTypes(t *testing.T) {
 	assert.Equal(t, interfaceMap, storedParams)
 }
 
+func TestRuleMsgAssetSet_DataTSliceTypes(t *testing.T) {
+	msg := types.NewMsg("test", "", nil, types.NewDataT())
+	ctx := asset.NewAssetContext(asset.WithRuleMsg(msg))
+
+	stringSlice := []string{"a", "b", "c"}
+	sliceAsset := asset.Asset[any]{URI: "rulemsg://dataT/urls?sid=" + cnst.SID_SLICE_STRING}
+	err := sliceAsset.Set(ctx, stringSlice)
+	assert.NoError(t, err)
+
+	obj, ok := msg.DataT().Get("urls")
+	assert.True(t, ok)
+	storedSlice, ok := obj.Body().(*[]string)
+	assert.True(t, ok)
+	assert.Equal(t, stringSlice, *storedSlice)
+}
+
 func TestRuleMsgAssetSet_DataTBasicTypes_FromNumeric(t *testing.T) {
 	msg := types.NewMsg("test", "", nil, types.NewDataT())
 	ctx := asset.NewAssetContext(asset.WithRuleMsg(msg))
@@ -188,6 +204,34 @@ func TestRuleMsgAssetSet_DataTStructPointer(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, mc.Status, stored.Status)
 	assert.Equal(t, mc.Summary, stored.Summary)
+}
+
+func TestRuleMsgAssetSet_DataTSliceOfStruct(t *testing.T) {
+	type TestMemoryContext struct {
+		Status  string `json:"status"`
+		Summary string `json:"summary"`
+	}
+
+	registry.Default.CoreObjRegistry.Register(
+		types.NewCoreObjDef(&[]TestMemoryContext{}, "TestMemoryContextSlice", "test memory context slice"),
+	)
+
+	msg := types.NewMsg("test", "", nil, types.NewDataT())
+	ctx := asset.NewAssetContext(asset.WithRuleMsg(msg))
+
+	mcSlice := []TestMemoryContext{
+		{Status: "success", Summary: "ok"},
+		{Status: "failed", Summary: "error"},
+	}
+	a := asset.Asset[any]{URI: "rulemsg://dataT/memory_slice?sid=TestMemoryContextSlice"}
+	err := a.Set(ctx, mcSlice)
+	assert.NoError(t, err)
+
+	obj, ok := msg.DataT().Get("memory_slice")
+	assert.True(t, ok)
+	storedSlice, ok := obj.Body().(*[]TestMemoryContext)
+	assert.True(t, ok)
+	assert.Equal(t, mcSlice, *storedSlice)
 }
 
 func derefMap[T any](t *testing.T, actual any) map[string]T {

@@ -14,94 +14,121 @@ import (
 // - basic type coercion (string/int64/float64/bool, including pointer targets)
 // - decoding map[string]any into a struct/map body
 // - direct map[string]string replacement for header-like bodies
-func SetCoreObjBody(obj types.CoreObj, value any) (bool, error) {
+func SetCoreObjBody(obj types.CoreObj, value any, sid string) (bool, error) {
 	if obj == nil {
 		return false, fmt.Errorf("nil core object")
 	}
-
-	if trySetBodyByType(obj, value) {
-		return true, nil
+	body := obj.Body()
+	if body == nil {
+		return false, fmt.Errorf("core object body is nil")
 	}
 
-	if headerMap, ok := value.(map[string]string); ok {
-		if target, ok := obj.Body().(*map[string]string); ok {
-			*target = headerMap
-			return true, nil
-		}
+	// 1. 尝试 SID 基础类型赋值
+	if ok, err := trySetBodyBySID(obj, value, sid); ok || err != nil {
+		return ok, err
 	}
 
+	// 2. 尝试 map 到 struct 的解码
 	if bodyMap, ok := value.(map[string]any); ok {
-		if err := Decode(bodyMap, obj.Body()); err != nil {
-			return true, err
+		if err := Decode(bodyMap, body); err != nil {
+			return false, fmt.Errorf("failed to decode map to body: %w", err)
 		}
 		return true, nil
+	}
+
+	// 3. 尝试直接赋值
+	valueType := reflect.TypeOf(value)
+	bodyType := reflect.TypeOf(body)
+
+	if valueType == bodyType {
+		err := obj.SetBody(value)
+		return err == nil, err
+	}
+
+	// 4. 处理 value 是 slice，而 body 是指向 slice 的指针的情况
+	if valueType.Kind() == reflect.Slice && bodyType.Kind() == reflect.Pointer && bodyType.Elem().Kind() == reflect.Slice {
+		if valueType == bodyType.Elem() {
+			// 创建一个新的 body slice 的指针，并将 value 复制过去
+			newSlicePtr := reflect.New(valueType)
+			newSlicePtr.Elem().Set(reflect.ValueOf(value))
+			err := obj.SetBody(newSlicePtr.Interface())
+			return err == nil, err
+		}
 	}
 
 	return false, nil
 }
 
-func trySetBodyByType(obj types.CoreObj, value any) bool {
-	currentBody := obj.Body()
-	if currentBody == nil {
-		return false
-	}
-
-	currentType := reflect.TypeOf(currentBody)
-	valueType := reflect.TypeOf(value)
-
-	if currentType.Kind() == reflect.Pointer {
-		elemKind := currentType.Elem().Kind()
-		isBasic := elemKind == reflect.String || elemKind == reflect.Int64 || elemKind == reflect.Float64 || elemKind == reflect.Bool
-		if !isBasic && valueType == currentType {
-			if err := obj.SetBody(value); err == nil {
-				return true
+func trySetBodyBySID(obj types.CoreObj, value any, sid string) (bool, error) {
+	switch sid {
+	case cnst.SID_STRING:
+		if v, ok := value.(string); ok {
+			return true, obj.SetBody(&v)
+		} else if v, ok := value.(*string); ok {
+			return true, obj.SetBody(v)
+		}
+		if converted, err := Convert(value, cnst.STRING); err == nil {
+			if v, ok := converted.(string); ok {
+				return true, obj.SetBody(&v)
 			}
 		}
-	} else if valueType == currentType {
-		if err := obj.SetBody(value); err == nil {
-			return true
+	case cnst.SID_INT64:
+		if v, ok := value.(int64); ok {
+			return true, obj.SetBody(&v)
+		} else if v, ok := value.(*int64); ok {
+			return true, obj.SetBody(v)
+		}
+		if converted, err := Convert(value, cnst.INT64); err == nil {
+			if v, ok := converted.(int64); ok {
+				return true, obj.SetBody(&v)
+			}
+		}
+	case cnst.SID_FLOAT64:
+		if v, ok := value.(float64); ok {
+			return true, obj.SetBody(&v)
+		} else if v, ok := value.(*float64); ok {
+			return true, obj.SetBody(v)
+		}
+		if converted, err := Convert(value, cnst.FLOAT); err == nil {
+			if v, ok := converted.(float64); ok {
+				return true, obj.SetBody(&v)
+			}
+		}
+	case cnst.SID_BOOL:
+		if v, ok := value.(bool); ok {
+			return true, obj.SetBody(&v)
+		} else if v, ok := value.(*bool); ok {
+			return true, obj.SetBody(v)
+		}
+		if converted, err := Convert(value, cnst.BOOL); err == nil {
+			if v, ok := converted.(bool); ok {
+				return true, obj.SetBody(&v)
+			}
+		}
+	case cnst.SID_MAP_STRING_STRING:
+		if v, ok := value.(map[string]string); ok {
+			return true, obj.SetBody(&v)
+		} else if v, ok := value.(*map[string]string); ok {
+			return true, obj.SetBody(v)
+		}
+	case cnst.SID_MAP_STRING_INTERFACE:
+		if v, ok := value.(map[string]any); ok {
+			return true, obj.SetBody(&v)
+		} else if v, ok := value.(*map[string]any); ok {
+			return true, obj.SetBody(v)
+		}
+	case cnst.SID_SLICE_STRING:
+		if v, ok := value.([]string); ok {
+			return true, obj.SetBody(&v)
+		} else if v, ok := value.(*[]string); ok {
+			return true, obj.SetBody(v)
+		}
+	case cnst.SID_SLICE_INT64:
+		if v, ok := value.([]int64); ok {
+			return true, obj.SetBody(&v)
+		} else if v, ok := value.(*[]int64); ok {
+			return true, obj.SetBody(v)
 		}
 	}
-
-	if coerced, ok := convertBasicTypeByKind(value, currentType); ok {
-		if err := obj.SetBody(coerced); err == nil {
-			return true
-		}
-	}
-
-	return false
-}
-
-func convertBasicTypeByKind(value any, targetType reflect.Type) (any, bool) {
-	isPointer := targetType.Kind() == reflect.Pointer
-	if isPointer {
-		targetType = targetType.Elem()
-	}
-
-	var targetMType cnst.MType
-	switch targetType.Kind() {
-	case reflect.String:
-		targetMType = cnst.STRING
-	case reflect.Int64:
-		targetMType = cnst.INT64
-	case reflect.Float64:
-		targetMType = cnst.FLOAT
-	case reflect.Bool:
-		targetMType = cnst.BOOL
-	default:
-		return nil, false
-	}
-
-	converted, err := Convert(value, targetMType)
-	if err != nil {
-		return nil, false
-	}
-
-	if isPointer {
-		ptr := reflect.New(targetType)
-		ptr.Elem().Set(reflect.ValueOf(converted).Convert(targetType))
-		return ptr.Interface(), true
-	}
-
-	return converted, true
+	return false, nil
 }

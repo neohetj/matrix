@@ -37,7 +37,6 @@ import (
 	"github.com/neohetj/matrix/pkg/types"
 
 	_ "github.com/neohetj/matrix/pkg/components/action"
-	_ "github.com/neohetj/matrix/pkg/components/endpoint"
 	_ "github.com/neohetj/matrix/pkg/components/external"
 )
 

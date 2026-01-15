@@ -41,6 +41,8 @@ const (
 	SID_BOOL                 = "Bool"
 	SID_MAP_STRING_STRING    = "MapStringString"
 	SID_MAP_STRING_INTERFACE = "MapStringInterface"
+	SID_SLICE_STRING         = "SliceString"
+	SID_SLICE_INT64          = "SliceInt64"
 )
 
 const LIST_PREFIX = "[]"

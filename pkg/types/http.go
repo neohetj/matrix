@@ -1,5 +1,65 @@
 package types
 
+import (
+	"net/http"
+)
+
+// HttpEndpoint is a specific type of PassiveEndpoint for handling HTTP requests.
+type HttpEndpoint interface {
+	PassiveEndpoint
+	// HandleHttpRequest handles the incoming HTTP request.
+	// The implementation should write the response to the http.ResponseWriter.
+	// It should return an error if any issue occurs that needs to be handled by the adapter.
+	HandleHttpRequest(w http.ResponseWriter, r *http.Request, opts ...HandleOption) error
+	GetHttpPath() string
+	GetHttpMethod() string
+	Configuration() HttpEndpointNodeConfiguration
+
+	// GetInputMapping returns the configuration for mapping data from the HTTP request to the RuleMsg.
+	// This implements part of the SubChainTrigger interface (as DataContractProvider).
+	GetInputMapping() EndpointIOPacket
+	// GetOutputMapping returns the configuration for mapping data from the RuleMsg to the HTTP response.
+	// This implements part of the SubChainTrigger interface (as DataContractProvider).
+	GetOutputMapping() EndpointIOPacket
+	// GetTargetChainID returns the ID of the rule chain triggered by this endpoint.
+	// This implements the SubChainTrigger interface.
+	GetTargetChainID() string
+}
+
+// HandleOptions holds the optional parameters for handling an HTTP request.
+type HandleOptions struct {
+	ExecutionID string
+	Finalizer   SnapshotFinalizer
+}
+
+// HandleOption is a function that configures HandleOptions.
+type HandleOption func(*HandleOptions)
+
+// WithExecutionID sets the execution ID for the request.
+func WithExecutionID(id string) HandleOption {
+	return func(o *HandleOptions) {
+		o.ExecutionID = id
+	}
+}
+
+// WithFinalizer sets the snapshot finalizer for the request.
+func WithFinalizer(f SnapshotFinalizer) HandleOption {
+	return func(o *HandleOptions) {
+		o.Finalizer = f
+	}
+}
+
+// HttpEndpointNodeConfiguration holds the V2 configuration for the HttpEndpointNode.
+type HttpEndpointNodeConfiguration struct {
+	RuleChainID        string          `json:"ruleChainId"`
+	StartNodeID        string          `json:"startNodeId,omitempty"`
+	HttpMethod         string          `json:"httpMethod"`
+	HttpPath           string          `json:"httpPath"`
+	Description        string          `json:"description"`
+	EndpointDefinition HttpEndpointDef `json:"endpointDefinition"`
+	ErrorMappings      ErrorMapping    `json:"errorMappings,omitempty"`
+}
+
 // -----------------Server/Endpoint------------------
 
 // HttpEndpointDef defines the structure of an HTTP endpoint using the new V2 structures.

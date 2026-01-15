@@ -121,9 +121,19 @@ func init() {
 			"基本类型：字符串到字符串的映射",
 		),
 		contract.NewDefaultCoreObjDef(
-			map[string]interface{}{},
+			map[string]any{},
 			cnst.SID_MAP_STRING_INTERFACE,
 			"基本类型：字符串到任意类型的映射",
+		),
+		contract.NewDefaultCoreObjDef(
+			[]string{},
+			cnst.SID_SLICE_STRING,
+			"基本类型：字符串切片",
+		),
+		contract.NewDefaultCoreObjDef(
+			[]int64{},
+			cnst.SID_SLICE_INT64,
+			"基本类型：64位整数切片",
 		),
 	)
 }
