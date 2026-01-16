@@ -26,6 +26,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/trace"
 	"github.com/neohetj/matrix/pkg/types"
 )
@@ -125,8 +126,16 @@ func (a *TraceAspect) After(ctx types.NodeCtx, msg types.RuleMsg, err error) {
 	}
 
 	// Additionally, check if a handled error was stored in the metadata.
+	// We only record it if the error originated from the current node or has no attribution.
 	if errMsg, ok := msg.Metadata()["error"]; ok {
-		logInProgress.Err = appendError(logInProgress.Err, fmt.Sprintf("Metadata error: %v", errMsg))
+		// Check if the error belongs to this node by comparing NodeID
+		errNodeId, idOk := msg.Metadata()[types.MetaErrorNodeID]
+
+		// If errNodeId is missing, we assume it's a new error (or legacy).
+		// If errNodeId is present, it MUST match the current node ID.
+		if !idOk || errNodeId == logInProgress.NodeID {
+			logInProgress.Err = appendError(logInProgress.Err, fmt.Sprintf("Metadata error: %v", errMsg))
+		}
 	}
 
 	// 4. Record the complete log synchronously.
@@ -201,8 +210,8 @@ func (a *TraceAspect) processImages(msg types.RuleMsg) types.RuleMsg {
 	}
 
 	if needsUpdate {
-		// Create a new message with updated data
-		return types.NewMsg(msg.ID(), string(newData), msg.Metadata(), msg.DataT())
+		// message with updated data
+		msg.SetData(string(newData), cnst.IMAGE)
 	}
 
 	return msg

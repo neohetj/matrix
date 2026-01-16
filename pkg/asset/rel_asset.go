@@ -58,7 +58,25 @@ func (a RelAsset) Handle(uri *url.URL, ctx *AssetContext) (any, error) {
 	return string(content), nil
 }
 
-// Set is not supported for rel:// URIs.
+// Set writes content to the file pointed by rel:// URI.
 func (a RelAsset) Set(uri *url.URL, ctx *AssetContext, value any) error {
-	return fmt.Errorf("setting values via rel:// is not supported")
+	path := uri.Host + uri.Path
+	if path == "" {
+		return fmt.Errorf("empty path in rel uri")
+	}
+
+	var data []byte
+	switch v := value.(type) {
+	case string:
+		data = []byte(v)
+	case []byte:
+		data = v
+	default:
+		return fmt.Errorf("unsupported value type for rel asset set: %T", value)
+	}
+
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to write file to %s: %w", path, err)
+	}
+	return nil
 }
