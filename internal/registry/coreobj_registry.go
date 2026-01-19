@@ -66,6 +66,13 @@ func (r *DefaultCoreObjRegistry) Get(sid string) (types.CoreObjDef, bool) {
 	return def, ok
 }
 
+// Unregister removes object definitions from the registry.
+func (r *DefaultCoreObjRegistry) Unregister(sids ...string) {
+	for _, sid := range sids {
+		r.definitions.Delete(sid)
+	}
+}
+
 // GetAll returns all registered object definitions.
 func (r *DefaultCoreObjRegistry) GetAll() []types.CoreObjDef {
 	var defs []types.CoreObjDef
