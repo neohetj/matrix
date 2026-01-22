@@ -56,6 +56,7 @@ type HttpEndpointNodeConfiguration struct {
 	HttpMethod         string          `json:"httpMethod"`
 	HttpPath           string          `json:"httpPath"`
 	Description        string          `json:"description"`
+	Async              bool            `json:"async,omitempty"`
 	EndpointDefinition HttpEndpointDef `json:"endpointDefinition"`
 	ErrorMappings      ErrorMapping    `json:"errorMappings,omitempty"`
 }

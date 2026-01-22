@@ -1,6 +1,7 @@
 package endpoint
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -93,6 +94,12 @@ func (n *HttpEndpointNode) Init(config types.ConfigMap) error {
 	n.defaultErrorCode = int32(http.StatusInternalServerError)
 	if n.nodeConfig.EndpointDefinition.Response.ErrorStatusCode != 0 {
 		n.defaultErrorCode = int32(n.nodeConfig.EndpointDefinition.Response.ErrorStatusCode)
+	}
+
+	if n.nodeConfig.Async {
+		if len(n.nodeConfig.EndpointDefinition.Response.Body.Fields) > 0 || n.nodeConfig.EndpointDefinition.Response.Body.MapAll != nil {
+			return types.InvalidConfiguration.Wrap(errors.New("async endpoint cannot have response mapping"))
+		}
 	}
 
 	return nil
@@ -288,6 +295,31 @@ func (n *HttpEndpointNode) HandleHttpRequest(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
+	if n.nodeConfig.Async {
+		return n.handleAsyncRequest(w, r, rt, msg, onEnd)
+	}
+	return n.handleSyncRequest(w, r, rt, nodeCtx, msg, onEnd)
+}
+
+func (n *HttpEndpointNode) handleAsyncRequest(w http.ResponseWriter, r *http.Request, rt types.Runtime, msg types.RuleMsg, onEnd func(types.RuleMsg, error)) error {
+	ctx := context.WithoutCancel(r.Context())
+	if err := rt.Execute(ctx, n.nodeConfig.StartNodeID, msg, onEnd); err != nil {
+		return &types.ServiceError{
+			ResponseCode: n.defaultErrorCode,
+			UserMessage:  "failed to start execution",
+			Cause:        err,
+		}
+	}
+
+	statusCode := n.nodeConfig.EndpointDefinition.Response.SuccessCode
+	if statusCode == 0 {
+		statusCode = http.StatusOK
+	}
+	n.writeResponse(w, statusCode, nil, nil, nil)
+	return nil
+}
+
+func (n *HttpEndpointNode) handleSyncRequest(w http.ResponseWriter, r *http.Request, rt types.Runtime, nodeCtx types.NodeCtx, msg types.RuleMsg, onEnd func(types.RuleMsg, error)) error {
 	finalMsg, execErr := rt.ExecuteAndWait(r.Context(), n.nodeConfig.StartNodeID, msg, onEnd)
 
 	if execErr != nil {
