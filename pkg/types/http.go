@@ -26,10 +26,17 @@ type HttpEndpoint interface {
 	GetTargetChainID() string
 }
 
+// ServiceErrorAspect defines an interface for intercepting and transforming ServiceErrors
+// before they are written to the HTTP response.
+type ServiceErrorAspect interface {
+	Handle(err *ServiceError) error
+}
+
 // HandleOptions holds the optional parameters for handling an HTTP request.
 type HandleOptions struct {
 	ExecutionID string
 	Finalizer   SnapshotFinalizer
+	ErrorAspect ServiceErrorAspect
 }
 
 // HandleOption is a function that configures HandleOptions.
@@ -46,6 +53,13 @@ func WithExecutionID(id string) HandleOption {
 func WithFinalizer(f SnapshotFinalizer) HandleOption {
 	return func(o *HandleOptions) {
 		o.Finalizer = f
+	}
+}
+
+// WithErrorAspect sets the error aspect for the request.
+func WithErrorAspect(aspect ServiceErrorAspect) HandleOption {
+	return func(o *HandleOptions) {
+		o.ErrorAspect = aspect
 	}
 }
 

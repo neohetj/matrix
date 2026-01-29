@@ -250,6 +250,24 @@ func (n *HttpEndpointNode) writeResponse(w http.ResponseWriter, statusCode int, 
 	json.NewEncoder(w).Encode(body)
 }
 
+func (n *HttpEndpointNode) handleError(w http.ResponseWriter, serviceErr *types.ServiceError, options *types.HandleOptions) {
+	var finalErr error = serviceErr
+	if options != nil && options.ErrorAspect != nil {
+		finalErr = options.ErrorAspect.Handle(serviceErr)
+	}
+
+	// Default to the original response code from the service error.
+	// This ensures that if the aspect returns a generic error (without a code),
+	// we still use the appropriate code (e.g., 400 vs 500) determined by the node.
+	code := int(serviceErr.ResponseCode)
+
+	// If the aspect returned a ServiceError, use its response code potentially overriding the original.
+	if se, ok := finalErr.(*types.ServiceError); ok {
+		code = int(se.ResponseCode)
+	}
+	n.writeResponse(w, code, nil, nil, finalErr)
+}
+
 // HandleHttpRequest is the core method that processes the incoming HTTP request.
 func (n *HttpEndpointNode) HandleHttpRequest(w http.ResponseWriter, r *http.Request, opts ...types.HandleOption) error {
 	options := &types.HandleOptions{}
@@ -267,11 +285,13 @@ func (n *HttpEndpointNode) HandleHttpRequest(w http.ResponseWriter, r *http.Requ
 	nodeCtx := registry.NewMinimalNodeCtx(n.ID())
 	// Process all parameter types
 	if err := helper.MapHttpRequestToRuleMsg(nodeCtx, msg, n.nodeConfig.EndpointDefinition.Request, r, n.nodeConfig.HttpPath); err != nil {
-		return &types.ServiceError{
+		serviceErr := &types.ServiceError{
 			ResponseCode: http.StatusBadRequest,
 			UserMessage:  err.Error(),
 			Cause:        err,
 		}
+		n.handleError(w, serviceErr, options)
+		return nil
 	}
 
 	var rt types.Runtime
@@ -283,10 +303,12 @@ func (n *HttpEndpointNode) HandleHttpRequest(w http.ResponseWriter, r *http.Requ
 	}
 
 	if !ok {
-		return &types.ServiceError{
+		serviceErr := &types.ServiceError{
 			ResponseCode: n.defaultErrorCode,
 			UserMessage:  fmt.Sprintf("runtime not found for rule chain: %s", n.nodeConfig.RuleChainID),
 		}
+		n.handleError(w, serviceErr, options)
+		return nil
 	}
 
 	onEnd := func(msg types.RuleMsg, err error) {
@@ -296,19 +318,21 @@ func (n *HttpEndpointNode) HandleHttpRequest(w http.ResponseWriter, r *http.Requ
 	}
 
 	if n.nodeConfig.Async {
-		return n.handleAsyncRequest(w, r, rt, msg, onEnd)
+		return n.handleAsyncRequest(w, r, rt, msg, onEnd, options)
 	}
-	return n.handleSyncRequest(w, r, rt, nodeCtx, msg, onEnd)
+	return n.handleSyncRequest(w, r, rt, nodeCtx, msg, onEnd, options)
 }
 
-func (n *HttpEndpointNode) handleAsyncRequest(w http.ResponseWriter, r *http.Request, rt types.Runtime, msg types.RuleMsg, onEnd func(types.RuleMsg, error)) error {
+func (n *HttpEndpointNode) handleAsyncRequest(w http.ResponseWriter, r *http.Request, rt types.Runtime, msg types.RuleMsg, onEnd func(types.RuleMsg, error), options *types.HandleOptions) error {
 	ctx := context.WithoutCancel(r.Context())
 	if err := rt.Execute(ctx, n.nodeConfig.StartNodeID, msg, onEnd); err != nil {
-		return &types.ServiceError{
+		serviceErr := &types.ServiceError{
 			ResponseCode: n.defaultErrorCode,
 			UserMessage:  "failed to start execution",
 			Cause:        err,
 		}
+		n.handleError(w, serviceErr, options)
+		return nil
 	}
 
 	statusCode := n.nodeConfig.EndpointDefinition.Response.SuccessCode
@@ -319,15 +343,17 @@ func (n *HttpEndpointNode) handleAsyncRequest(w http.ResponseWriter, r *http.Req
 	return nil
 }
 
-func (n *HttpEndpointNode) handleSyncRequest(w http.ResponseWriter, r *http.Request, rt types.Runtime, nodeCtx types.NodeCtx, msg types.RuleMsg, onEnd func(types.RuleMsg, error)) error {
+func (n *HttpEndpointNode) handleSyncRequest(w http.ResponseWriter, r *http.Request, rt types.Runtime, nodeCtx types.NodeCtx, msg types.RuleMsg, onEnd func(types.RuleMsg, error), options *types.HandleOptions) error {
 	finalMsg, execErr := rt.ExecuteAndWait(r.Context(), n.nodeConfig.StartNodeID, msg, onEnd)
 
 	if execErr != nil {
 		var serviceErr *types.ServiceError
-		if errors.As(execErr, &serviceErr) {
-			return serviceErr
+		if !errors.As(execErr, &serviceErr) {
+			serviceErr = &types.ServiceError{ResponseCode: n.defaultErrorCode, UserMessage: "internal server error", Cause: execErr}
 		}
-		return &types.ServiceError{ResponseCode: n.defaultErrorCode, UserMessage: "internal server error", Cause: execErr}
+
+		n.handleError(w, serviceErr, options)
+		return nil
 	}
 
 	if finalMsg != nil {

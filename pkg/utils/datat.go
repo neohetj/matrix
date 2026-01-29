@@ -18,6 +18,11 @@ func SetCoreObjBody(obj types.CoreObj, value any, sid string) (bool, error) {
 	if obj == nil {
 		return false, fmt.Errorf("nil core object")
 	}
+
+	if value == nil {
+		return true, nil
+	}
+
 	body := obj.Body()
 	if body == nil {
 		return false, fmt.Errorf("core object body is nil")

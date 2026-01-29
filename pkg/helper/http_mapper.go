@@ -90,6 +90,27 @@ func (p QueryProvider) GetValue(name string) (any, bool, error) {
 		}
 		return vals, true, nil
 	}
+
+	// Check for nested map syntax (e.g., filter[status]=...)
+	prefix := name + "["
+	nestedMap := make(map[string]any)
+	hasNested := false
+
+	for k, v := range q {
+		if strings.HasPrefix(k, prefix) && strings.HasSuffix(k, "]") {
+			// Extract inner key
+			innerKey := k[len(prefix) : len(k)-1]
+			if len(v) > 0 {
+				nestedMap[innerKey] = v[0]
+				hasNested = true
+			}
+		}
+	}
+
+	if hasNested {
+		return nestedMap, true, nil
+	}
+
 	return nil, false, nil
 }
 

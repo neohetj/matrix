@@ -125,7 +125,8 @@ const (
 	CodeRedisConnectFailed  ErrCode = "202502002"
 
 	// Component: External/DBClient (202503xxxx)
-	CodeDBConnectFailed ErrCode = "202503001"
+	CodeDBConnectFailed  ErrCode = "202503001"
+	CodeSqlConnectFailed ErrCode = "202503003"
 
 	// Component: External/HttpClient (202504xxxx)
 	CodeHttpClientBuildRequestFailed ErrCode = "202504001"

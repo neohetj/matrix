@@ -117,7 +117,12 @@ func (e *MatrixEngine) GetEngineConfig(key string) (any, bool) {
 
 // TraceManager returns the trace manager.
 // Note: This method is not part of the types.MatrixEngine interface.
-func (e *MatrixEngine) TraceManager() *trace.Manager { return e.traceManager }
+func (e *MatrixEngine) TraceManager() types.SnapshotFinalizer {
+	if e.traceManager == nil {
+		return nil
+	}
+	return e.traceManager
+}
 
 // Config returns the full matrix configuration.
 // Note: This method is not part of the types.MatrixEngine interface.

@@ -329,17 +329,17 @@ func DiscoverComponentPaths(
 	}
 
 	for name := range componentSet {
-		rulechainPath := filepath.ToSlash(filepath.Join(componentsRoot, name, "rulechains"))
+		rulechainPath := filepath.ToSlash(filepath.Join(componentsRoot, name, "dsl/rulechains"))
 		if _, err := dslLoader.Stat(rulechainPath); err == nil {
 			rulechainPaths = append(rulechainPaths, rulechainPath)
 		}
 
-		endpointPath := filepath.ToSlash(filepath.Join(componentsRoot, name, "endpoints"))
+		endpointPath := filepath.ToSlash(filepath.Join(componentsRoot, name, "dsl/endpoints"))
 		if _, err := dslLoader.Stat(endpointPath); err == nil {
 			endpointPaths = append(endpointPaths, endpointPath)
 		}
 
-		sharedPath := filepath.ToSlash(filepath.Join(componentsRoot, name, "shared"))
+		sharedPath := filepath.ToSlash(filepath.Join(componentsRoot, name, "dsl/shared"))
 		if _, err := dslLoader.Stat(sharedPath); err == nil {
 			sharedNodePaths = append(sharedNodePaths, sharedPath)
 		}
