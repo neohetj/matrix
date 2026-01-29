@@ -127,6 +127,9 @@ type NodeCtx interface {
 	// NodeID returns the unique identifier of the current node.
 	NodeID() string
 
+	// PreviousNodeID returns the unique identifier of the previous node that triggered this execution.
+	PreviousNodeID() string
+
 	// GetNode returns the current Node instance from Chain Instance.
 	GetNode() Node
 

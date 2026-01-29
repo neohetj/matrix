@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/neohetj/matrix/internal/contract"
 	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/types"
@@ -244,15 +245,17 @@ func (m *MockLogger) Reset() {
 
 type MockNodeCtx struct {
 	types.NodeCtx
-	Ctx              context.Context
-	SuccessMsg       types.RuleMsg
-	FailureMsg       types.RuleMsg
-	FailureErr       error
-	NodeDef          types.NodeDef
-	NodeIDValue      string
-	ChainIDValue     string
-	ChainConfigValue types.ConfigMap
-	chainInstance    types.ChainInstance
+	Ctx                 context.Context
+	SuccessMsg          types.RuleMsg
+	FailureMsg          types.RuleMsg
+	FailureErr          error
+	NodeDef             types.NodeDef
+	NodeIDValue         string
+	PreviousNodeIDValue string
+	ChainIDValue        string
+	ChainConfigValue    types.ConfigMap
+	chainInstance       types.ChainInstance
+	runtime             types.Runtime
 }
 
 type MockNodeCtxOption func(*MockNodeCtx)
@@ -289,9 +292,15 @@ func (m *MockNodeCtx) NodeID() string {
 	}
 	return m.NodeIDValue
 }
+func (m *MockNodeCtx) PreviousNodeID() string {
+	return m.PreviousNodeIDValue
+}
 func (m *MockNodeCtx) GetNode() types.Node { return nil }
 func (m *MockNodeCtx) GetRuntime() types.Runtime {
-	return nil
+	return m.runtime
+}
+func (m *MockNodeCtx) SetRuntime(r types.Runtime) {
+	m.runtime = r
 }
 func (m *MockNodeCtx) TellSuccess(msg types.RuleMsg) { m.SuccessMsg = msg }
 func (m *MockNodeCtx) TellFailure(msg types.RuleMsg, err error) {
@@ -340,7 +349,7 @@ func (m *MockNodeCtx) ChainInstance() types.ChainInstance {
 // ----------------------- MockEndpoint -----------------------
 // MockEndpoint is a mock implementation of types.Endpoint.
 type MockEndpoint struct {
-	types.Node
+	MockNode
 	RuntimePool types.RuntimePool
 }
 
@@ -355,10 +364,154 @@ func (m *MockEndpoint) GetInstance() (any, error) {
 	return m, nil
 }
 
+// ----------------------- MockScheduler -----------------------
+// MockScheduler implements types.Scheduler
+type MockScheduler struct {
+	mock.Mock
+}
+
+func (m *MockScheduler) Submit(task func()) error {
+	args := m.Called(task)
+	// Execute the task synchronously for testing purposes if configured to do so
+	if args.Bool(1) {
+		task()
+	}
+	return args.Error(0)
+}
+
+func (m *MockScheduler) Stop() {
+	m.Called()
+}
+
+// ----------------------- MockChainInstance -----------------------
+// MockChainInstance implements types.ChainInstance
+type MockChainInstance struct {
+	mock.Mock
+}
+
+func (m *MockChainInstance) GetNode(id string) (types.Node, bool) {
+	args := m.Called(id)
+	if args.Get(0) == nil {
+		return nil, args.Bool(1)
+	}
+	return args.Get(0).(types.Node), args.Bool(1)
+}
+
+func (m *MockChainInstance) GetNodeDef(id string) (*types.NodeDef, bool) {
+	args := m.Called(id)
+	if args.Get(0) == nil {
+		return nil, args.Bool(1)
+	}
+	return args.Get(0).(*types.NodeDef), args.Bool(1)
+}
+
+func (m *MockChainInstance) GetConnections(fromNodeID string) []types.Connection {
+	args := m.Called(fromNodeID)
+	return args.Get(0).([]types.Connection)
+}
+
+func (m *MockChainInstance) Definition() *types.RuleChainDef {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*types.RuleChainDef)
+}
+
+func (m *MockChainInstance) GetRootNodeIDs() []string {
+	args := m.Called()
+	return args.Get(0).([]string)
+}
+
+func (m *MockChainInstance) GetAllNodes() map[string]types.Node {
+	args := m.Called()
+	return args.Get(0).(map[string]types.Node)
+}
+
+func (m *MockChainInstance) Destroy() {
+	m.Called()
+}
+
 // ----------------------- MockNode -----------------------
 // MockNode is a mock implementation of types.Node.
 type MockNode struct {
-	types.Node
+	mock.Mock
+}
+
+func (m *MockNode) Init(config types.ConfigMap) error {
+	args := m.Called(config)
+	return args.Error(0)
+}
+
+func (m *MockNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
+	m.Called(ctx, msg)
+}
+
+func (m *MockNode) Destroy() {
+	m.Called()
+}
+
+func (m *MockNode) Type() types.NodeType {
+	args := m.Called()
+	return args.Get(0).(types.NodeType)
+}
+
+func (m *MockNode) ID() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+func (m *MockNode) SetID(id string) {
+	m.Called(id)
+}
+
+func (m *MockNode) SetName(name string) {
+	m.Called(name)
+}
+
+func (m *MockNode) Name() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+func (m *MockNode) DataContract() types.DataContract {
+	args := m.Called()
+	return args.Get(0).(types.DataContract)
+}
+
+func (m *MockNode) New() types.Node {
+	args := m.Called()
+	return args.Get(0).(types.Node)
+}
+
+func (m *MockNode) NodeMetadata() types.NodeMetadata {
+	args := m.Called()
+	return args.Get(0).(types.NodeMetadata)
+}
+
+func (m *MockNode) Errors() []*types.Fault {
+	args := m.Called()
+	return args.Get(0).([]*types.Fault)
+}
+
+func (m *MockNode) ConfigSchema() *openapi3.Schema {
+	args := m.Called()
+	return args.Get(0).(*openapi3.Schema)
+}
+
+// ----------------------- MockAspect -----------------------
+// MockAspect implements types.Aspect
+type MockAspect struct {
+	mock.Mock
+}
+
+func (m *MockAspect) Before(ctx types.NodeCtx, msg types.RuleMsg) (types.RuleMsg, error) {
+	args := m.Called(ctx, msg)
+	return args.Get(0).(types.RuleMsg), args.Error(1)
+}
+
+func (m *MockAspect) After(ctx types.NodeCtx, msg types.RuleMsg, err error) {
+	m.Called(ctx, msg, err)
 }
 
 // ----------------------- MockNodeManager -----------------------
@@ -449,6 +602,58 @@ func (m *MockNodePool) LoadFromRuleChainDef(def *types.RuleChainDef, mgr types.N
 func (m *MockNodePool) AddEndpoint(endpoint types.Endpoint) {}
 func (m *MockNodePool) Del(id string)                       {}
 func (m *MockNodePool) Stop()                               {}
+
+// ----------------------- MockRuntime -----------------------
+// MockRuntime implements types.Runtime
+type MockRuntime struct {
+	mock.Mock
+	ChainInstance types.ChainInstance
+}
+
+func (m *MockRuntime) Execute(ctx context.Context, fromNodeID string, msg types.RuleMsg, onEnd func(msg types.RuleMsg, err error)) error {
+	args := m.Called(ctx, fromNodeID, msg, onEnd)
+	return args.Error(0)
+}
+
+func (m *MockRuntime) ExecuteAndWait(ctx context.Context, fromNodeID string, msg types.RuleMsg, onEnd func(msg types.RuleMsg, err error)) (types.RuleMsg, error) {
+	args := m.Called(ctx, fromNodeID, msg, onEnd)
+	return args.Get(0).(types.RuleMsg), args.Error(1)
+}
+
+func (m *MockRuntime) Reload(newChainDef *types.RuleChainDef) error {
+	args := m.Called(newChainDef)
+	return args.Error(0)
+}
+
+func (m *MockRuntime) Destroy() {
+	m.Called()
+}
+
+func (m *MockRuntime) Definition() *types.RuleChainDef {
+	args := m.Called()
+	return args.Get(0).(*types.RuleChainDef)
+}
+
+func (m *MockRuntime) GetNodePool() types.NodePool {
+	args := m.Called()
+	return args.Get(0).(types.NodePool)
+}
+
+func (m *MockRuntime) GetEngine() types.MatrixEngine {
+	args := m.Called()
+	return args.Get(0).(types.MatrixEngine)
+}
+
+func (m *MockRuntime) GetChainInstance() types.ChainInstance {
+	if m.ChainInstance != nil {
+		return m.ChainInstance
+	}
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(types.ChainInstance)
+}
 
 // ----------------------- MockRuntimePool -----------------------
 // MockRuntimePool is a mock implementation of types.RuntimePool.

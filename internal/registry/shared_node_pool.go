@@ -211,6 +211,7 @@ func (m *minimalNodeCtx) ChainConfig() types.ConfigMap             { return nil 
 func (m *minimalNodeCtx) ChainID() string                          { return "" } // Not part of a chain
 func (m *minimalNodeCtx) Logger() types.Logger                     { return log.GetLogger() }
 func (m *minimalNodeCtx) NodeID() string                           { return m.nodeDef.ID }
+func (m *minimalNodeCtx) PreviousNodeID() string                   { return "" }
 func (m *minimalNodeCtx) GetNode() types.Node                      { return nil }
 func (m *minimalNodeCtx) TellSuccess(msg types.RuleMsg)            {}
 func (m *minimalNodeCtx) TellFailure(msg types.RuleMsg, err error) {}

@@ -132,6 +132,14 @@ func (ctx *DefaultNodeCtx) NodeID() string {
 	return ctx.selfDef.ID
 }
 
+// PreviousNodeID returns the unique identifier of the previous node that triggered this execution.
+func (ctx *DefaultNodeCtx) PreviousNodeID() string {
+	if ctx.parentCtx == nil {
+		return ""
+	}
+	return ctx.parentCtx.NodeID()
+}
+
 // GetNode returns the current Node instance from the Chain Instance.
 func (ctx *DefaultNodeCtx) GetNode() types.Node {
 	if ctx.chain == nil || ctx.selfDef == nil {

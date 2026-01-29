@@ -1,4 +1,4 @@
-package helper
+package helper_test
 
 import (
 	"errors"
@@ -11,6 +11,7 @@ import (
 
 	"github.com/neohetj/matrix/internal/registry"
 	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/helper"
 	"github.com/neohetj/matrix/pkg/types"
 	"github.com/neohetj/matrix/pkg/utils"
 	"github.com/stretchr/testify/assert"
@@ -24,27 +25,6 @@ func assertFaultCode(t *testing.T, err error, expectedCode cnst.ErrCode) {
 	} else {
 		assert.Fail(t, "Expected error to be of type *types.Fault")
 	}
-}
-
-// setupTestMsg creates a message with pre-populated dataT objects for testing.
-func setupTestMsg(t *testing.T) types.RuleMsg {
-	dataT := types.NewDataT()
-
-	headersObj, err := dataT.NewItem(cnst.SID_MAP_STRING_STRING, "headersObj")
-	require.NoError(t, err)
-	*(headersObj.Body().(*map[string]string)) = map[string]string{"X-Dynamic-Header": "dynamic-value"}
-
-	bodyObj, err := dataT.NewItem(cnst.SID_MAP_STRING_INTERFACE, "bodyObj")
-	require.NoError(t, err)
-	*(bodyObj.Body().(*map[string]interface{})) = map[string]interface{}{"user": "test", "id": 123}
-
-	queryObj, err := dataT.NewItem(cnst.SID_MAP_STRING_STRING, "queryObj")
-	require.NoError(t, err)
-	*(queryObj.Body().(*map[string]string)) = map[string]string{"q": "matrix", "limit": "10"}
-
-	msg := types.NewMsg("TEST", `{"key":"value"}`, make(map[string]string), dataT)
-	msg.Metadata()["requestId"] = "req-123"
-	return msg
 }
 
 func TestMapRuleMsgToHttpRequest_NewMappings(t *testing.T) {
@@ -63,7 +43,7 @@ func TestMapRuleMsgToHttpRequest_NewMappings(t *testing.T) {
 			},
 		}
 
-		req, cancel, err := MapRuleMsgToHttpRequest(ctx, msg, cfg, "5s")
+		req, cancel, err := helper.MapRuleMsgToHttpRequest(ctx, msg, cfg, "5s")
 		require.NoError(t, err)
 		defer cancel()
 
@@ -87,7 +67,7 @@ func TestMapRuleMsgToHttpRequest_NewMappings(t *testing.T) {
 			},
 		}
 
-		req, cancel, err := MapRuleMsgToHttpRequest(ctx, msg, cfg, "5s")
+		req, cancel, err := helper.MapRuleMsgToHttpRequest(ctx, msg, cfg, "5s")
 		require.NoError(t, err)
 		defer cancel()
 
@@ -107,7 +87,7 @@ func TestMapRuleMsgToHttpRequest_NewMappings(t *testing.T) {
 			},
 		}
 
-		req, cancel, err := MapRuleMsgToHttpRequest(ctx, msg, cfg, "5s")
+		req, cancel, err := helper.MapRuleMsgToHttpRequest(ctx, msg, cfg, "5s")
 		require.NoError(t, err)
 		defer cancel()
 
@@ -129,7 +109,7 @@ func TestMapRuleMsgToHttpRequest_NewMappings(t *testing.T) {
 			},
 		}
 
-		req, cancel, err := MapRuleMsgToHttpRequest(ctx, msg, cfg, "5s")
+		req, cancel, err := helper.MapRuleMsgToHttpRequest(ctx, msg, cfg, "5s")
 		require.NoError(t, err)
 		defer cancel()
 
@@ -147,7 +127,7 @@ func TestMapRuleMsgToHttpRequest_NewMappings(t *testing.T) {
 			},
 		}
 
-		req, cancel, err := MapRuleMsgToHttpRequest(ctx, msgWithData, cfg, "5s")
+		req, cancel, err := helper.MapRuleMsgToHttpRequest(ctx, msgWithData, cfg, "5s")
 		require.NoError(t, err)
 		defer cancel()
 
@@ -166,7 +146,7 @@ func TestMapRuleMsgToHttpRequest_NewMappings(t *testing.T) {
 			Body:        types.EndpointIOPacket{},
 		}
 
-		req, cancel, err := MapRuleMsgToHttpRequest(ctx, emptyMsg, cfg, "5s")
+		req, cancel, err := helper.MapRuleMsgToHttpRequest(ctx, emptyMsg, cfg, "5s")
 		require.NoError(t, err)
 		defer cancel()
 		assert.Empty(t, req.Header)
@@ -204,7 +184,7 @@ func TestProcessInbound_Errors(t *testing.T) {
 			},
 		}
 		provider := &testValueProvider{val: nil}
-		err := ProcessInbound(ctx, msg, packet, provider)
+		err := helper.ProcessInbound(ctx, msg, packet, provider)
 		assert.Error(t, err)
 		assertFaultCode(t, err, cnst.CodeRequiredFieldMissing)
 	})
@@ -216,7 +196,7 @@ func TestProcessInbound_Errors(t *testing.T) {
 			},
 		}
 		provider := &testValueProvider{val: "some-val"}
-		err := ProcessInbound(ctx, msg, packet, provider)
+		err := helper.ProcessInbound(ctx, msg, packet, provider)
 		assert.Error(t, err)
 		assertFaultCode(t, err, cnst.CodeFieldConversionFailed)
 	})
@@ -251,7 +231,7 @@ func TestMapHttpResponseToRuleMsg_NewMappings(t *testing.T) {
 
 		endTime := time.Now()
 		startTime := endTime.Add(-100 * time.Millisecond)
-		err := MapHttpResponseToRuleMsg(ctx, resp, outMsg, cfg, startTime, endTime, nil)
+		err := helper.MapHttpResponseToRuleMsg(ctx, resp, outMsg, cfg, startTime, endTime, nil)
 		require.NoError(t, err)
 
 		assert.Equal(t, "200", outMsg.Metadata()["meta.httpStatus"])
@@ -289,7 +269,7 @@ func TestMapHttpResponseToRuleMsg_NewMappings(t *testing.T) {
 
 		endTime := time.Now()
 		startTime := endTime.Add(-50 * time.Millisecond)
-		err := MapHttpResponseToRuleMsg(ctx, resp, outMsg, cfg, startTime, endTime, nil)
+		err := helper.MapHttpResponseToRuleMsg(ctx, resp, outMsg, cfg, startTime, endTime, nil)
 		require.NoError(t, err)
 
 		assert.Equal(t, "ok", outMsg.Metadata()["requestStatus"])
@@ -306,7 +286,7 @@ func TestMapHttpResponseToRuleMsg_NewMappings(t *testing.T) {
 		// Note: resp is nil when there is a request error
 		endTime := time.Now()
 		startTime := endTime.Add(-200 * time.Millisecond)
-		err := MapHttpResponseToRuleMsg(ctx, nil, outMsg, cfg, startTime, endTime, requestErr)
+		err := helper.MapHttpResponseToRuleMsg(ctx, nil, outMsg, cfg, startTime, endTime, requestErr)
 		require.NoError(t, err)
 
 		assert.Equal(t, "connection refused", outMsg.Metadata()["meta.httpError"])
