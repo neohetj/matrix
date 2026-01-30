@@ -172,31 +172,45 @@ func MapRuleMsgToHttpRequest(ctx types.NodeCtx, msg types.RuleMsg, cfg types.Htt
 	}
 
 	// 4. Headers
-	headersMap, err := ProcessOutbound(ctx, msg, cfg.Headers, RuleMsgProvider{Msg: msg})
+	headersAny, err := ProcessOutbound(ctx, msg, cfg.Headers, RuleMsgProvider{Msg: msg})
 	if err != nil {
 		cancel()
 		return nil, nil, types.InvalidParams.Wrap(fmt.Errorf("header processing failed: %w", err))
 	}
-	for k, v := range headersMap {
-		if k != "" { // Skip special keys if any
-			httpReq.Header.Set(k, fmt.Sprintf("%v", v))
+	if headersAny != nil {
+		if headersMap, ok := headersAny.(map[string]any); ok {
+			for k, v := range headersMap {
+				if k != "" { // Skip special keys if any
+					httpReq.Header.Set(k, fmt.Sprintf("%v", v))
+				}
+			}
+		} else {
+			cancel()
+			return nil, nil, types.InvalidParams.Wrap(fmt.Errorf("headers must evaluate to a map, got %T", headersAny))
 		}
 	}
 
 	// 5. Query Params
-	queryMap, err := ProcessOutbound(ctx, msg, cfg.QueryParams, RuleMsgProvider{Msg: msg})
+	queryAny, err := ProcessOutbound(ctx, msg, cfg.QueryParams, RuleMsgProvider{Msg: msg})
 	if err != nil {
 		cancel()
 		return nil, nil, types.InvalidParams.Wrap(fmt.Errorf("query param processing failed: %w", err))
 	}
 	q := httpReq.URL.Query()
-	for k, v := range queryMap {
-		if k != "" {
-			// Handle slice values for query params (e.g., ids[]=1&ids[]=2)
-			// But ProcessOutbound usually returns scalar or basic types.
-			// If v is a slice, we should iterate.
-			// For now simple string conversion:
-			q.Add(k, fmt.Sprintf("%v", v))
+	if queryAny != nil {
+		if queryMap, ok := queryAny.(map[string]any); ok {
+			for k, v := range queryMap {
+				if k != "" {
+					// Handle slice values for query params (e.g., ids[]=1&ids[]=2)
+					// But ProcessOutbound usually returns scalar or basic types.
+					// If v is a slice, we should iterate.
+					// For now simple string conversion:
+					q.Add(k, fmt.Sprintf("%v", v))
+				}
+			}
+		} else {
+			cancel()
+			return nil, nil, types.InvalidParams.Wrap(fmt.Errorf("query params must evaluate to a map, got %T", queryAny))
 		}
 	}
 	httpReq.URL.RawQuery = q.Encode()
@@ -233,27 +247,32 @@ func buildClientRequestBody(ctx types.NodeCtx, msg types.RuleMsg, packet types.E
 		return nil, "", nil
 	}
 
-	dataMap, err := ProcessOutbound(ctx, msg, packet, RuleMsgProvider{Msg: msg})
+	dataAny, err := ProcessOutbound(ctx, msg, packet, RuleMsgProvider{Msg: msg})
 	if err != nil {
 		return nil, "", err
 	}
 
-	// Check if we have a "raw" body from MapAll
-	if raw, ok := dataMap[""]; ok && len(packet.Fields) == 0 {
-		// Single raw value mapping
-		strVal := fmt.Sprintf("%v", raw)
-		// Try to guess content type or default to text/plain?
-		// For backward compatibility with "data" mapping
+	// Handle raw types (string, []byte) directly to support backward compatibility
+	// or raw body mapping.
+	switch v := dataAny.(type) {
+	case string:
 		contentType := "text/plain"
 		if msg.DataFormat() == cnst.JSON {
 			contentType = "application/json"
 		}
-		return strings.NewReader(strVal), contentType, nil
+		return strings.NewReader(v), contentType, nil
+	case []byte:
+		contentType := "application/octet-stream"
+		if msg.DataFormat() == cnst.JSON {
+			contentType = "application/json"
+		} else if msg.DataFormat() == cnst.TEXT {
+			contentType = "text/plain"
+		}
+		return strings.NewReader(string(v)), contentType, nil
 	}
 
-	// Otherwise treat as JSON object
-	// dataMap contains all fields constructed by ProcessOutbound (including nested ones via dot notation)
-	bytes, err := json.Marshal(dataMap)
+	// Otherwise treat as JSON object (or array if dataAny is slice)
+	bytes, err := json.Marshal(dataAny)
 	if err != nil {
 		return nil, "", types.InternalError.Wrap(fmt.Errorf("json marshal failed: %w", err))
 	}
@@ -365,7 +384,7 @@ func MapHttpRequestToRuleMsg(ctx types.NodeCtx, msg types.RuleMsg, reqDef types.
 
 // MapRuleMsgToHttpResponse maps a RuleMsg TO HTTP response parts (body, headers).
 // Used by: HttpEndpoint.
-func MapRuleMsgToHttpResponse(ctx types.NodeCtx, msg types.RuleMsg, respDef types.HttpResponseDef) (map[string]any, map[string]string, int, error) {
+func MapRuleMsgToHttpResponse(ctx types.NodeCtx, msg types.RuleMsg, respDef types.HttpResponseDef) (any, map[string]string, int, error) {
 	// Set default status code
 	statusCode := respDef.SuccessCode
 	if statusCode == 0 {
@@ -379,29 +398,24 @@ func MapRuleMsgToHttpResponse(ctx types.NodeCtx, msg types.RuleMsg, respDef type
 	// 1. Process Body
 	body, err := ProcessOutbound(ctx, msg, respDef.Body, RuleMsgProvider{Msg: msg})
 	if err != nil {
-		return nil, nil, 0, err // ProcessOutbound now returns *types.Fault
-	}
-	// Check for "MapAll" raw result override
-	if raw, ok := body[""]; ok && len(respDef.Body.Fields) == 0 {
-		if m, ok := raw.(map[string]any); ok {
-			body = m
-		} else {
-			delete(body, "")
-		}
+		return nil, nil, 0, err
 	}
 
 	// 2. Process Headers
-	headersRaw, err := ProcessOutbound(ctx, msg, respDef.Headers, RuleMsgProvider{Msg: msg})
+	headersAny, err := ProcessOutbound(ctx, msg, respDef.Headers, RuleMsgProvider{Msg: msg})
 	if err != nil {
-		return nil, nil, 0, err // ProcessOutbound now returns *types.Fault
+		return nil, nil, 0, err
 	}
 	headers := make(map[string]string)
-	for k, v := range headersRaw {
-		if k != "" {
-			headers[k] = fmt.Sprintf("%v", v)
-		} else if m, ok := v.(map[string]any); ok {
-			for hk, hv := range m {
-				headers[hk] = fmt.Sprintf("%v", hv)
+	if headersMap, ok := headersAny.(map[string]any); ok {
+		for k, v := range headersMap {
+			if k != "" {
+				headers[k] = fmt.Sprintf("%v", v)
+			} else if m, ok := v.(map[string]any); ok {
+				// Handle potential nested map from old logic if it existed (not likely with new logic)
+				for hk, hv := range m {
+					headers[hk] = fmt.Sprintf("%v", hv)
+				}
 			}
 		}
 	}

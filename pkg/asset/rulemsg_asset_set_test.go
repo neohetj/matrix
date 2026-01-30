@@ -106,6 +106,22 @@ func TestRuleMsgAssetSet_DataTSliceTypes(t *testing.T) {
 	assert.Equal(t, stringSlice, *storedSlice)
 }
 
+func TestRuleMsgAssetSet_DataTSliceAnyTypes(t *testing.T) {
+	msg := types.NewMsg("test", "", nil, types.NewDataT())
+	ctx := asset.NewAssetContext(asset.WithRuleMsg(msg))
+
+	anySlice := []any{"a", 123, true}
+	sliceAsset := asset.Asset[any]{URI: "rulemsg://dataT/mixed?sid=" + cnst.SID_SLICE_ANY}
+	err := sliceAsset.Set(ctx, anySlice)
+	assert.NoError(t, err)
+
+	obj, ok := msg.DataT().Get("mixed")
+	assert.True(t, ok)
+	storedSlice, ok := obj.Body().(*[]any)
+	assert.True(t, ok)
+	assert.Equal(t, anySlice, *storedSlice)
+}
+
 func TestRuleMsgAssetSet_DataTBasicTypes_FromNumeric(t *testing.T) {
 	msg := types.NewMsg("test", "", nil, types.NewDataT())
 	ctx := asset.NewAssetContext(asset.WithRuleMsg(msg))

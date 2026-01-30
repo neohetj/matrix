@@ -138,7 +138,7 @@ func GetConfigAsset[T any](ctx *asset.AssetContext, key string) (T, error) {
 		}
 
 		newURI := configAsset.BuildWithRemainingScopes(ctx)
-		rendered, err := asset.Asset[string]{URI: newURI}.Resolve(ctx)
+		rendered, err := asset.Asset[any]{URI: newURI}.Resolve(ctx)
 		if err != nil {
 			return zero, err
 		}

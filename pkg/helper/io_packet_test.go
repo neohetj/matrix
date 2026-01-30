@@ -22,8 +22,9 @@ func TestProcessOutbound(t *testing.T) {
 				{Name: "reqId", BindPath: "rulemsg://metadata/requestId"},
 			},
 		}
-		result, err := helper.ProcessOutbound(ctx, msg, packet, provider)
+		res, err := helper.ProcessOutbound(ctx, msg, packet, provider)
 		require.NoError(t, err)
+		result := res.(map[string]any)
 		assert.Equal(t, "req-123", result["reqId"])
 	})
 
@@ -33,8 +34,9 @@ func TestProcessOutbound(t *testing.T) {
 				{Name: "nonexistent", BindPath: "rulemsg://metadata/nonexistent", DefaultValue: "default"},
 			},
 		}
-		result, err := helper.ProcessOutbound(ctx, msg, packet, provider)
+		res, err := helper.ProcessOutbound(ctx, msg, packet, provider)
 		require.NoError(t, err)
+		result := res.(map[string]any)
 		assert.Equal(t, "default", result["nonexistent"])
 	})
 
@@ -44,8 +46,9 @@ func TestProcessOutbound(t *testing.T) {
 				{Name: "static", DefaultValue: "static-value"},
 			},
 		}
-		result, err := helper.ProcessOutbound(ctx, msg, packet, provider)
+		res, err := helper.ProcessOutbound(ctx, msg, packet, provider)
 		require.NoError(t, err)
+		result := res.(map[string]any)
 		assert.Equal(t, "static-value", result["static"])
 	})
 
@@ -55,8 +58,9 @@ func TestProcessOutbound(t *testing.T) {
 				{Name: "optional", BindPath: "rulemsg://metadata/optional"},
 			},
 		}
-		result, err := helper.ProcessOutbound(ctx, msg, packet, provider)
+		res, err := helper.ProcessOutbound(ctx, msg, packet, provider)
 		require.NoError(t, err)
+		result := res.(map[string]any)
 		_, found := result["optional"]
 		assert.False(t, found)
 	})
@@ -70,5 +74,27 @@ func TestProcessOutbound(t *testing.T) {
 		_, err := helper.ProcessOutbound(ctx, msg, packet, provider)
 		assert.Error(t, err)
 		assertFaultCode(t, err, cnst.CodeRequiredFieldMissing)
+	})
+
+	t.Run("MapAll with Slice", func(t *testing.T) {
+		// Setup message with a slice in DataT
+		sliceSid := cnst.SID_SLICE_ANY
+		dataT := msg.DataT()
+		item, _ := dataT.NewItem(sliceSid, "myList")
+		expectedSlice := []any{"item1", "item2"}
+		item.SetBody(&expectedSlice)
+
+		mapAllPath := "rulemsg://dataT/myList?sid=" + sliceSid
+		packet := types.EndpointIOPacket{
+			MapAll: &mapAllPath,
+		}
+
+		res, err := helper.ProcessOutbound(ctx, msg, packet, provider)
+		require.NoError(t, err)
+
+		// Expect result to be the slice pointer (since SetBody stores pointer)
+		resultSlice, ok := res.(*[]any)
+		assert.True(t, ok)
+		assert.Equal(t, expectedSlice, *resultSlice)
 	})
 }

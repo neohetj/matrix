@@ -57,32 +57,37 @@ func ProcessInbound(ctx types.NodeCtx, msg types.RuleMsg, packet types.EndpointI
 
 // ProcessOutbound handles mapping FROM RuleMsg TO an external target (like HTTP request parts).
 // Used by: HttpEndpoint (Response), HttpClient (Request).
-// It returns a map of values that should be sent to the external target.
-func ProcessOutbound(ctx types.NodeCtx, msg types.RuleMsg, packet types.EndpointIOPacket, provider ValueProvider) (result map[string]any, err error) {
-	result = make(map[string]any)
-	// 1. MapAll: Extract a whole object from RuleMsg and merge it into result
+// It returns a map of values or a single value (e.g. slice) that should be sent to the external target.
+func ProcessOutbound(ctx types.NodeCtx, msg types.RuleMsg, packet types.EndpointIOPacket, provider ValueProvider) (any, error) {
+	result := make(map[string]any)
+	var rootValue any
+
+	// 1. MapAll: Extract a whole object from RuleMsg
 	if packet.MapAll != nil && *packet.MapAll != "" {
 		val, found, err := provider.GetValue(*packet.MapAll)
 		if err != nil {
 			return nil, ExtractMapAllFailed.Wrap(fmt.Errorf("from provider: %w", err))
 		}
 		if found {
-			// If the value is a map, merge it. If it's something else (like []byte or string body),
-			// we might handle it differently depending on context.
-			// For generic "MapAll", we assume it provides a base set of fields.
+			// If the value is a map, merge it.
 			valMap, err := utils.ToMap(val)
 			if err == nil {
 				for k, v := range valMap {
 					result[k] = v
 				}
 			} else {
-				// If not a map, perhaps it's a raw body?
-				// For now, we put it under a special empty key or let the caller handle it?
-				// Strategy: If MapAll points to a non-map, it might be the WHOLE body content.
-				// We return it with a specific internal key "" to indicate "this is the raw value".
-				result[""] = val
+				// If it's NOT a map (e.g. Slice, primitive), treat as root value.
+				// But strict check: if we have fields defined, we cannot have a non-map root value.
+				if len(packet.Fields) > 0 {
+					return nil, ExtractMapAllFailed.Wrap(fmt.Errorf("MapAll points to non-object type %T, but Fields are defined", val))
+				}
+				rootValue = val
 			}
 		}
+	}
+
+	if rootValue != nil {
+		return rootValue, nil
 	}
 
 	// 2. Fields: Extract individual fields and override/add to result

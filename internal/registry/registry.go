@@ -135,5 +135,10 @@ func init() {
 			cnst.SID_SLICE_INT64,
 			"基本类型：64位整数切片",
 		),
+		contract.NewDefaultCoreObjDef(
+			[]any{},
+			cnst.SID_SLICE_ANY,
+			"基本类型：任意类型切片",
+		),
 	)
 }

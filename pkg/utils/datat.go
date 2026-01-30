@@ -134,6 +134,12 @@ func trySetBodyBySID(obj types.CoreObj, value any, sid string) (bool, error) {
 		} else if v, ok := value.(*[]int64); ok {
 			return true, obj.SetBody(v)
 		}
+	case cnst.SID_SLICE_ANY:
+		if v, ok := value.([]any); ok {
+			return true, obj.SetBody(&v)
+		} else if v, ok := value.(*[]any); ok {
+			return true, obj.SetBody(v)
+		}
 	}
 	return false, nil
 }
