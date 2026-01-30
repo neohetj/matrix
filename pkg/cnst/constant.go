@@ -25,6 +25,10 @@ const (
 
 	// ViewTypeHybrid represents a view that combines both logical relations and execution connections.
 	ViewTypeHybrid ViewType = "hybrid"
+
+	// MsgTypeStopPropagation represents a special message type for stopping execution propagation.
+	// When TellNext encounters a message of this type, it will not trigger subsequent nodes.
+	MsgTypeStopPropagation = "sys_stop_propagation"
 )
 
 const (

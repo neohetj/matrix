@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/neohetj/matrix/internal/runtime"
+	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/types"
 	"github.com/neohetj/matrix/test/utils"
 	"github.com/stretchr/testify/assert"
@@ -477,4 +478,48 @@ func TestTellNext_DiamondTopology(t *testing.T) {
 	mockNode2.AssertExpectations(t)
 	mockNode3.AssertExpectations(t)
 	mockNode4.AssertExpectations(t)
+}
+
+// TestTellNext_StopPropagation 测试停止传播机制
+// 验证：当消息类型为 MsgTypeStopPropagation 时，TellNext 即使存在后续连接，也不应该触发后续节点。
+func TestTellNext_StopPropagation(t *testing.T) {
+	// Arrange
+	mockScheduler := new(utils.MockScheduler)
+	mockChain := new(utils.MockChainInstance)
+	setupMockChain(mockChain)
+
+	r := createRuntime(t, mockScheduler)
+
+	currentNodeID := "node1"
+	nextNodeID := "node2"
+	selfDef := &types.NodeDef{ID: currentNodeID}
+
+	// 构造一个带有 StopPropagation 类型的消息
+	msg := new(utils.MockRuleMsg)
+	msg.On("Type").Return(cnst.MsgTypeStopPropagation)
+
+	// 虽然存在连接
+	connections := []types.Connection{
+		{FromID: currentNodeID, ToID: nextNodeID, Type: "Success"},
+	}
+	// GetConnections 可能不会被调用，如果 TellNext 提前返回
+	// 使用 Maybe() 允许它被调用或不被调用，或者我们断言它不被调用
+	mockChain.On("GetConnections", currentNodeID).Return(connections).Maybe()
+
+	// 追踪 onEnd 回调
+	var onEndCalled bool
+	onEnd := func(m types.RuleMsg, err error) {
+		onEndCalled = true
+		assert.Nil(t, err)
+	}
+
+	ctx := runtime.NewDefaultNodeCtx(context.Background(), r, mockChain, selfDef, nil, onEnd, nil, nil)
+
+	// Act
+	ctx.TellNext(msg, "Success")
+
+	// Assert
+	assert.True(t, onEndCalled)
+	// Scheduler 不应被调用，因为没有提交新任务
+	mockScheduler.AssertNotCalled(t, "Submit", mock.Anything)
 }

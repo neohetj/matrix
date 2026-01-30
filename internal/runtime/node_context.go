@@ -214,6 +214,11 @@ func (ctx *DefaultNodeCtx) HandleError(msg types.RuleMsg, err error) {
 // TellNext finds the next nodes based on relation types and submits them for execution.
 // If no next node is found for any of the given relation types, it signals its own completion.
 func (ctx *DefaultNodeCtx) TellNext(msg types.RuleMsg, relationTypes ...string) {
+	if msg.Type() == cnst.MsgTypeStopPropagation {
+		ctx.childDone(msg, nil)
+		return
+	}
+
 	if ctx.chain == nil || ctx.selfDef == nil {
 		ctx.childDone(msg, nil)
 		return
@@ -230,58 +235,69 @@ func (ctx *DefaultNodeCtx) TellNext(msg types.RuleMsg, relationTypes ...string) 
 	foundNext := false
 	for _, relationType := range relationTypes {
 		for _, conn := range connections {
-			if conn.Type == relationType {
-				nextNodeID := conn.ToID
-				if nextNode, nodeOk := ctx.chain.GetNode(nextNodeID); nodeOk {
-					if nextDef, defOk := ctx.chain.GetNodeDef(nextNodeID); defOk {
-						foundNext = true
-						// Increment parent's waiting counter before submitting the task
-						ctx.childReady()
+			// Skip connections that don't match the requested relation type
+			if conn.Type != relationType {
+				continue
+			}
 
-						// Create a new context for the child node
-						// The child's onEnd is the parent's childDone
-						nextCtx := NewDefaultNodeCtx(ctx.Context, ctx.runtime, ctx.chain, nextDef, ctx, ctx.onEnd, ctx.aspects, ctx.callback)
+			nextNodeID := conn.ToID
+			// Validate that the target node exists in the chain
+			nextNode, nodeOk := ctx.chain.GetNode(nextNodeID)
+			if !nodeOk {
+				ctx.Warn("Target node not found in chain", "nodeId", nextNodeID)
+				continue
+			}
+			nextDef, defOk := ctx.chain.GetNodeDef(nextNodeID)
+			if !defOk {
+				ctx.Warn("Target node definition not found in chain", "nodeId", nextNodeID)
+				continue
+			}
 
-						// Create a copy of the message for each parallel branch.
-						// This isolates metadata while sharing the main data object (DataT).
-						msgCopy := msg.Copy()
+			foundNext = true
+			// Increment parent's waiting counter before submitting the task
+			ctx.childReady()
 
-						ctx.runtime.scheduler.Submit(func() {
-							var onMsgErr error
-							var processedMsg = msgCopy
+			// Create a new context for the child node
+			// The child's onEnd is the parent's childDone
+			nextCtx := NewDefaultNodeCtx(ctx.Context, ctx.runtime, ctx.chain, nextDef, ctx, ctx.onEnd, ctx.aspects, ctx.callback)
 
-							// Defer the After aspect calls.
-							// It captures the final state of processedMsg and onMsgErr.
-							defer func() {
-								if r := recover(); r != nil {
-									onMsgErr = fmt.Errorf("node execution panic: %v", r)
-									nextCtx.Error("Recovered from panic in node execution", "panic", r)
-									nextCtx.childDone(processedMsg, onMsgErr)
-								}
-								for _, aspect := range nextCtx.aspects {
-									aspect.After(nextCtx, processedMsg, onMsgErr)
-								}
-							}()
+			// Create a copy of the message for each parallel branch.
+			// This isolates metadata while sharing the main data object (DataT).
+			msgCopy := msg.Copy()
 
-							// 1. Execute Before aspects
-							for _, aspect := range nextCtx.aspects {
-								var err error
-								processedMsg, err = aspect.Before(nextCtx, processedMsg)
-								if err != nil {
-									onMsgErr = err
-									// If Before aspect fails, skip OnMsg and signal completion immediately
-									nextCtx.childDone(processedMsg, onMsgErr)
-									return
-								}
-							}
+			ctx.runtime.scheduler.Submit(func() {
+				var onMsgErr error
+				var processedMsg = msgCopy
 
-							// 2. Execute the node's OnMsg
-							// The node itself is responsible for calling childDone via Tell... methods
-							nextNode.OnMsg(nextCtx, processedMsg)
-						})
+				// Defer the After aspect calls.
+				// It captures the final state of processedMsg and onMsgErr.
+				defer func() {
+					if r := recover(); r != nil {
+						onMsgErr = fmt.Errorf("node execution panic: %v", r)
+						nextCtx.Error("Recovered from panic in node execution", "panic", r)
+						nextCtx.childDone(processedMsg, onMsgErr)
+					}
+					for _, aspect := range nextCtx.aspects {
+						aspect.After(nextCtx, processedMsg, onMsgErr)
+					}
+				}()
+
+				// 1. Execute Before aspects
+				for _, aspect := range nextCtx.aspects {
+					var err error
+					processedMsg, err = aspect.Before(nextCtx, processedMsg)
+					if err != nil {
+						onMsgErr = err
+						// If Before aspect fails, skip OnMsg and signal completion immediately
+						nextCtx.childDone(processedMsg, onMsgErr)
+						return
 					}
 				}
-			}
+
+				// 2. Execute the node's OnMsg
+				// The node itself is responsible for calling childDone via Tell... methods
+				nextNode.OnMsg(nextCtx, processedMsg)
+			})
 		}
 	}
 
