@@ -10,6 +10,10 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+type MyStruct struct {
+	Name string
+}
+
 func TestSetCoreObjBody_SliceAny(t *testing.T) {
 	// Setup: Mock CoreObj
 	mockObj := new(testutils.MockCoreObj)
@@ -70,4 +74,38 @@ func TestSetCoreObjBody_SliceAny_Pointer(t *testing.T) {
 	}
 
 	mockObj.AssertExpectations(t)
+}
+
+func TestSetCoreObjBody_GenericSliceToStructSlice(t *testing.T) {
+	mockObj := new(testutils.MockCoreObj)
+	var structSlice []MyStruct
+	mockObj.On("Body").Return(&structSlice)
+
+	input := []any{
+		map[string]any{"Name": "test1"},
+		map[string]any{"Name": "test2"},
+	}
+
+	// SetBody should NOT be called because Decode modifies the body directly via pointer
+	// But we need to ensure mockObj.Body() is called.
+	// It is called at the beginning of SetCoreObjBody.
+
+	ok, err := utils.SetCoreObjBody(mockObj, input, "SomeSID")
+	if err != nil {
+		t.Fatalf("SetCoreObjBody failed: %v", err)
+	}
+	if !ok {
+		t.Fatalf("SetCoreObjBody returned false")
+	}
+
+	// Verify structSlice content
+	if len(structSlice) != 2 {
+		t.Fatalf("Expected 2 items, got %d", len(structSlice))
+	}
+	if structSlice[0].Name != "test1" {
+		t.Errorf("Expected Name test1, got %s", structSlice[0].Name)
+	}
+	if structSlice[1].Name != "test2" {
+		t.Errorf("Expected Name test2, got %s", structSlice[1].Name)
+	}
 }

@@ -21,6 +21,7 @@ package log
 
 import (
 	"context"
+	stdlog "log"
 	"sync"
 
 	"github.com/neohetj/matrix/pkg/types"
@@ -36,7 +37,7 @@ const (
 var (
 	// globalLogger is the default logger for the entire engine.
 	// It can be replaced by a host application using SetLogger.
-	globalLogger types.Logger = &NoopLogger{}
+	globalLogger types.Logger = &StdLogger{}
 	// mu protects globalLogger during concurrent SetLogger calls.
 	mu sync.RWMutex
 )
@@ -56,15 +57,25 @@ func GetLogger() types.Logger {
 	return globalLogger
 }
 
-// NoopLogger is a no-op logger to prevent panics when no logger is configured.
-type NoopLogger struct{}
+// StdLogger is a simple logger using standard library log.
+type StdLogger struct{}
 
-func (n *NoopLogger) Printf(ctx context.Context, format string, v ...any) {}
-func (n *NoopLogger) Debugf(ctx context.Context, format string, v ...any) {}
-func (n *NoopLogger) Infof(ctx context.Context, format string, v ...any)  {}
-func (n *NoopLogger) Warnf(ctx context.Context, format string, v ...any)  {}
-func (n *NoopLogger) Errorf(ctx context.Context, format string, v ...any) {}
-func (n *NoopLogger) With(fields ...any) types.Logger                     { return n }
+func (s *StdLogger) Printf(ctx context.Context, format string, v ...any) {
+	stdlog.Printf(format, v...)
+}
+func (s *StdLogger) Debugf(ctx context.Context, format string, v ...any) {
+	stdlog.Printf("[DEBUG] "+format, v...)
+}
+func (s *StdLogger) Infof(ctx context.Context, format string, v ...any) {
+	stdlog.Printf("[INFO] "+format, v...)
+}
+func (s *StdLogger) Warnf(ctx context.Context, format string, v ...any) {
+	stdlog.Printf("[WARN] "+format, v...)
+}
+func (s *StdLogger) Errorf(ctx context.Context, format string, v ...any) {
+	stdlog.Printf("[ERROR] "+format, v...)
+}
+func (s *StdLogger) With(fields ...any) types.Logger { return s }
 
 // getEffectiveLogger determines the correct logger to use based on the context.
 // It prioritizes the instance-specific logger and falls back to the global logger.

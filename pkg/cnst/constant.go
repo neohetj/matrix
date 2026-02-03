@@ -47,7 +47,7 @@ const (
 	SID_MAP_STRING_INTERFACE = "MapStringInterface"
 	SID_SLICE_STRING         = "SliceString"
 	SID_SLICE_INT64          = "SliceInt64"
-	SID_SLICE_ANY            = "SliceAny"
+	SID_SLICE_ANY            = "[]Any"
 )
 
 const LIST_PREFIX = "[]"
@@ -147,4 +147,9 @@ const (
 	CodeAssetEmptyURI            ErrCode = "200030005"
 	CodeAssetCannotSetForNonURI  ErrCode = "200030006"
 	CodeAssetNotFound            ErrCode = "200030007"
+
+	// Component: Pipeline (202505xxxx)
+	CodePipelineChannelNotFound ErrCode = "202505001"
+	CodePipelinePushTimeout     ErrCode = "202505002"
+	CodePipelineChannelFull     ErrCode = "202505003"
 )

@@ -1,7 +1,10 @@
 package utils
 
 import (
+	"encoding/json"
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -79,4 +82,53 @@ func TestReflectAnalysis(t *testing.T) {
 	f := v.FieldByName("StepByStepPlan")
 	t.Logf("Field StepByStepPlan type: %s", f.Type())
 	t.Logf("Field StepByStepPlan kind: %s", f.Kind())
+}
+
+type TestStructWithValidation struct {
+	Name string `json:"name"`
+}
+
+func (v *TestStructWithValidation) UnmarshalJSON(data []byte) error {
+	type Alias TestStructWithValidation
+	aux := &struct {
+		*Alias
+	}{
+		Alias: (*Alias)(v),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if v.Name == "invalid" {
+		return fmt.Errorf("validation error: name cannot be 'invalid'")
+	}
+	return nil
+}
+
+func TestDecode_JsonUnmarshaler(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		dataSuccess := map[string]interface{}{
+			"name": "valid",
+		}
+		targetSuccess := &TestStructWithValidation{}
+		if err := Decode(dataSuccess, targetSuccess); err != nil {
+			t.Fatalf("Decode failed: %v", err)
+		}
+		if targetSuccess.Name != "valid" {
+			t.Errorf("Expected 'valid', got '%s'", targetSuccess.Name)
+		}
+	})
+
+	t.Run("Validation Failure", func(t *testing.T) {
+		dataFail := map[string]interface{}{
+			"name": "invalid",
+		}
+		targetFail := &TestStructWithValidation{}
+		err := Decode(dataFail, targetFail)
+		if err == nil {
+			t.Fatal("Expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "validation error: name cannot be 'invalid'") {
+			t.Errorf("Expected error to contain validation message, got: %v", err)
+		}
+	})
 }

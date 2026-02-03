@@ -2,6 +2,7 @@
 package builder
 
 import (
+	"context"
 	"embed"
 	"errors"
 	"fmt"
@@ -162,9 +163,41 @@ func LoadEndpoints(
 
 			// If the created node is an endpoint, inject the runtime pool.
 			if endpoint, ok := ctx.GetNode().(types.Endpoint); ok {
+				log.GetLogger().Debugf(context.Background(), "LoadEndpoints: Found endpoint %s, type=%s", nodeDef.ID, endpoint.Type())
 				if err := endpoint.SetRuntimePool(runtimePool); err != nil {
 					fmt.Printf("warning: failed to set runtime pool for endpoint %s: %v\n", nodeDef.ID, err)
 					return nil // Or handle as a non-fatal error
+				}
+
+				// Register the endpoint as a trigger if it implements SubChainTrigger
+				if trigger, ok := ctx.GetNode().(types.SubChainTrigger); ok {
+					targetID := trigger.GetTargetChainID()
+					if targetID != "" {
+						source := types.TriggerSource{
+							SourceChainID: "", // External/Shared endpoint
+							NodeID:        ctx.GetNode().ID(),
+							NodeType:      string(ctx.GetNode().Type()),
+							IsEndpoint:    true,
+						}
+						runtimePool.RegisterTrigger(targetID, source)
+						log.GetLogger().Debugf(context.Background(), "LoadEndpoints: Registered trigger for chain %s from node %s", targetID, ctx.GetNode().ID())
+					}
+				}
+
+				// Register multiple triggers if it implements MultiChainTrigger
+				if multiTrigger, ok := ctx.GetNode().(types.MultiChainTrigger); ok {
+					for _, targetID := range multiTrigger.GetTargetChainIDs() {
+						if targetID != "" {
+							source := types.TriggerSource{
+								SourceChainID: "", // External/Shared endpoint
+								NodeID:        ctx.GetNode().ID(),
+								NodeType:      string(ctx.GetNode().Type()),
+								IsEndpoint:    true,
+							}
+							runtimePool.RegisterTrigger(targetID, source)
+							log.GetLogger().Debugf(context.Background(), "LoadEndpoints: Registered trigger for chain %s from multi-node %s", targetID, ctx.GetNode().ID())
+						}
+					}
 				}
 			}
 			return nil

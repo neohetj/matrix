@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"reflect"
 	"sync"
 
 	"github.com/neohetj/matrix/pkg/cnst"
@@ -209,6 +210,23 @@ func coerceBasicPointer[T any](val any) (T, bool) {
 	case map[string]any:
 		if v, ok := val.(*map[string]any); ok && v != nil {
 			return any(*v).(T), true
+		}
+
+		// Try converting struct to map
+		v := reflect.ValueOf(val)
+		if v.IsValid() {
+			if v.Kind() == reflect.Ptr {
+				v = v.Elem()
+			}
+			if v.Kind() == reflect.Struct {
+				bytes, err := json.Marshal(val)
+				if err == nil {
+					var result map[string]any
+					if err := json.Unmarshal(bytes, &result); err == nil {
+						return any(result).(T), true
+					}
+				}
+			}
 		}
 	case map[string]string:
 		if v, ok := val.(*map[string]string); ok && v != nil {

@@ -22,6 +22,9 @@ var flowNodePrototype = &FlowNode{
 	}),
 }
 
+// Enforce compile-time interface check
+var _ types.SubChainTrigger = (*FlowNode)(nil)
+
 func init() {
 	registry.Default.NodeManager.Register(flowNodePrototype)
 }
@@ -60,6 +63,21 @@ func (n *FlowNode) Init(configuration types.ConfigMap) error {
 		return types.InvalidConfiguration.Wrap(fmt.Errorf("'chainId' is not specified for node %s", n.ID()))
 	}
 	return nil
+}
+
+// GetInputMapping returns the configuration for mapping data from the parent message to the sub-chain message.
+func (n *FlowNode) GetInputMapping() types.EndpointIOPacket {
+	return types.EndpointIOPacket{}
+}
+
+// GetOutputMapping returns the configuration for mapping data from the sub-chain result back to the parent message.
+func (n *FlowNode) GetOutputMapping() types.EndpointIOPacket {
+	return types.EndpointIOPacket{}
+}
+
+// GetTargetChainID returns the ID of the sub-chain being triggered.
+func (n *FlowNode) GetTargetChainID() string {
+	return n.nodeConfig.ChainId
 }
 
 // OnMsg executes the sub-chain synchronously.

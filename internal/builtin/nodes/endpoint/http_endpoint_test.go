@@ -2,6 +2,8 @@ package endpoint_test
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -22,6 +24,26 @@ import (
 type MockCoreObjForTest struct {
 	SingleParam string   `json:"singleParam"`
 	ArrayParam  []string `json:"arrayParam"`
+}
+
+type ValidatedStruct struct {
+	Name string `json:"name"`
+}
+
+func (v *ValidatedStruct) UnmarshalJSON(data []byte) error {
+	type Alias ValidatedStruct
+	aux := &struct {
+		*Alias
+	}{
+		Alias: (*Alias)(v),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if v.Name == "invalid" {
+		return fmt.Errorf("name cannot be 'invalid'")
+	}
+	return nil
 }
 
 // --- Test Helper Functions ---
@@ -72,7 +94,49 @@ func helperWrapper(node *endpoint.HttpEndpointNode, r *http.Request) (types.Rule
 	return msg, err
 }
 
+// strPtr helps creating string pointer
+func strPtr(s string) *string {
+	return &s
+}
+
 // --- Test Cases ---
+
+// TestConvertRequestToRuleMsg_StructValidationFailure tests if struct validation logic in UnmarshalJSON is triggered.
+func TestConvertRequestToRuleMsg_StructValidationFailure(t *testing.T) {
+	// Register ValidatedStruct
+	registry.Default.CoreObjRegistry.Register(
+		types.NewCoreObjDef(&ValidatedStruct{}, "ValidatedStructV1", "Validated Struct"),
+	)
+
+	config := types.ConfigMap{
+		"ruleChainId": "testChain",
+		"httpMethod":  "POST",
+		"httpPath":    "/test",
+		"endpointDefinition": map[string]any{
+			"request": map[string]any{
+				"body": types.EndpointIOPacket{
+					MapAll: strPtr("rulemsg://dataT/valObj?sid=ValidatedStructV1"),
+				},
+			},
+		},
+	}
+	node := newNodeForTest(t, config)
+
+	// Invalid Body
+	body := `{"name": "invalid"}`
+	mockReq := mockRequestWithBody("POST", "http://localhost/test", body)
+
+	_, err := helperWrapper(node, mockReq)
+	if err == nil {
+		t.Fatalf("Expected validation error, got nil")
+	}
+
+	// Verify error contains "name cannot be 'invalid'"
+	// Since the error might be wrapped, check substring
+	if !strings.Contains(err.Error(), "name cannot be 'invalid'") {
+		t.Errorf("Expected error to contain 'name cannot be 'invalid'', got '%s'", err.Error())
+	}
+}
 
 // TestConvertRequestToRuleMsg_QueryArrayParam 测试 convertRequestToRuleMsg 函数处理数组类型的查询参数
 // 这个测试用例验证了当HTTP请求的URL中包含数组形式的查询参数时（如 `ids[]=id1&ids[]=id2`），
@@ -608,7 +672,6 @@ func TestConvertRequestToRuleMsg_EmptyOrInvalidBody(t *testing.T) {
 		}
 		node := newNodeForTest(t, config)
 		mockReq := mockRequestWithBody("POST", "http://localhost/test", `{"key": "value"`) // Invalid JSON
-
 		_, err := helperWrapper(node, mockReq)
 		if err == nil {
 			t.Fatal("Expected an error for invalid JSON body, but got nil")

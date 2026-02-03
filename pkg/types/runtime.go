@@ -233,11 +233,31 @@ type MatrixEngine interface {
 	Logger() Logger
 }
 
+// TriggerSource describes the origin of a trigger that initiates a rule chain execution.
+type TriggerSource struct {
+	SourceChainID string // ID of the chain containing the trigger node
+	NodeID        string // ID of the trigger node
+	NodeType      string // Type of the node (e.g., "action/flow", "endpoint/http")
+	IsEndpoint    bool   // True if it's an endpoint (self-triggering)
+}
+
 // RuntimePool holds a collection of named Runtime instances.
 type RuntimePool interface {
+	// Get retrieves a runtime by its ID.
 	Get(id string) (Runtime, bool)
+	// Register adds a new runtime to the pool.
 	Register(id string, runtime Runtime) error
+	// Unregister removes a runtime from the pool.
 	Unregister(id string)
+	// ListIDs returns a list of all registered runtime IDs.
 	ListIDs() []string
+	// ListByViewType returns a list of runtimes that match the given view type.
 	ListByViewType(viewType string) []Runtime
+
+	// GetTriggers returns a list of triggers that can initiate the specified chain.
+	GetTriggers(chainID string) []TriggerSource
+	// RegisterTrigger registers a new trigger for a target chain.
+	RegisterTrigger(targetChainID string, source TriggerSource)
+	// UnregisterTrigger removes a registered trigger.
+	UnregisterTrigger(targetChainID string, source TriggerSource)
 }

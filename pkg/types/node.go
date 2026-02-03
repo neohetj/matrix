@@ -228,6 +228,12 @@ type SubChainTrigger interface {
 	GetTargetChainID() string
 }
 
+// MultiChainTrigger is an interface for nodes that can trigger multiple sub-chains (e.g., pipeline).
+type MultiChainTrigger interface {
+	Node
+	GetTargetChainIDs() []string
+}
+
 // PassiveEndpoint is a marker interface for Endpoints that are triggered by external services.
 type PassiveEndpoint interface {
 	Endpoint

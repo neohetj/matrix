@@ -370,9 +370,9 @@ func TestDiscoverComponentPaths(t *testing.T) {
 				Content string
 				IsDir   bool
 			}{
-				"components/common/rulechains": {IsDir: true},
-				"components/comp1/endpoints":   {IsDir: true},
-				"components/comp2/shared":      {IsDir: true},
+				"components/common/dsl/rulechains": {IsDir: true},
+				"components/comp1/dsl/endpoints":   {IsDir: true},
+				"components/comp2/dsl/shared":      {IsDir: true},
 			},
 		}
 
@@ -382,8 +382,8 @@ func TestDiscoverComponentPaths(t *testing.T) {
 			[]string{"comp1", "comp2"},
 		)
 
-		assert.Equal(t, []string{"components/common/rulechains"}, rulechainPaths)
-		assert.Equal(t, []string{"components/comp1/endpoints"}, endpointPaths)
-		assert.Equal(t, []string{"components/comp2/shared"}, sharedNodePaths)
+		assert.Equal(t, []string{"components/common/dsl/rulechains"}, rulechainPaths)
+		assert.Equal(t, []string{"components/comp1/dsl/endpoints"}, endpointPaths)
+		assert.Equal(t, []string{"components/comp2/dsl/shared"}, sharedNodePaths)
 	})
 }

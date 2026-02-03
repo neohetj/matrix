@@ -1,6 +1,7 @@
 package asset_test
 
 import (
+	"net/url"
 	"os"
 	"testing"
 
@@ -17,10 +18,12 @@ type MockRuleMsg struct {
 	types.RuleMsg
 	data     types.Data
 	metadata types.Metadata
+	dataT    types.DataT
 }
 
 func (m *MockRuleMsg) Data() types.Data                 { return m.data }
 func (m *MockRuleMsg) Metadata() types.Metadata         { return m.metadata }
+func (m *MockRuleMsg) DataT() types.DataT               { return m.dataT }
 func (m *MockRuleMsg) DataFormat() cnst.MFormat         { return cnst.JSON } // Mock as needed
 func (m *MockRuleMsg) SetData(d string, f cnst.MFormat) { m.data = types.Data(d) }
 
@@ -65,6 +68,36 @@ type MockNodePool struct {
 func (m *MockNodePool) GetInstance(id string) (any, error) {
 	args := m.Called(id)
 	return args.Get(0), args.Error(1)
+}
+
+type MockDataT struct {
+	types.DataT
+	objects map[string]types.CoreObj
+}
+
+func (m *MockDataT) Get(id string) (types.CoreObj, bool) {
+	o, ok := m.objects[id]
+	return o, ok
+}
+
+type MockCoreObj struct {
+	types.CoreObj
+	body any
+}
+
+func (m *MockCoreObj) Body() any { return m.body }
+
+func TestAssetResolve_RuleMsg_DataT_StructToMap(t *testing.T) {
+	myObj := &MockCoreObj{body: &TestStruct{Name: "Foo"}}
+	dataT := &MockDataT{objects: map[string]types.CoreObj{"obj1": myObj}}
+	msg := &MockRuleMsg{dataT: dataT}
+
+	ctx := asset.NewAssetContext(asset.WithRuleMsg(msg))
+
+	a := asset.Asset[map[string]any]{URI: "rulemsg://dataT/obj1?sid=MapStringInterface"}
+	val, err := a.Resolve(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, "Foo", val["name"])
 }
 
 func TestAssetResolve_RuleMsg(t *testing.T) {
@@ -256,4 +289,37 @@ func TestDecodeAssetString(t *testing.T) {
 	if cfg.User.URI != data["user"] {
 		t.Fatalf("unexpected user uri: %s", cfg.User.URI)
 	}
+}
+
+type MockSchemeHandler struct {
+	Val any
+}
+
+func (m *MockSchemeHandler) Handle(uri *url.URL, ctx *asset.AssetContext) (any, error) {
+	return m.Val, nil
+}
+func (m *MockSchemeHandler) Set(uri *url.URL, ctx *asset.AssetContext, value any) error {
+	return nil
+}
+func (m *MockSchemeHandler) NormalizeAssetURI(uri string) string { return uri }
+
+type TestStruct struct {
+	Name string `json:"name"`
+	Age  int    `json:"age"`
+}
+
+func TestAssetResolve_StructToMapConversion(t *testing.T) {
+	mockHandler := &MockSchemeHandler{
+		Val: &TestStruct{Name: "Test", Age: 30},
+	}
+	asset.RegisterScheme("mockstruct", mockHandler)
+
+	a := asset.Asset[map[string]any]{URI: "mockstruct:///data"}
+	ctx := asset.NewAssetContext()
+
+	val, err := a.Resolve(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, "Test", val["name"])
+	// JSON unmarshal usually converts numbers to float64 for map[string]any
+	assert.Equal(t, float64(30), val["age"])
 }

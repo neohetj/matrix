@@ -33,15 +33,7 @@ func SetCoreObjBody(obj types.CoreObj, value any, sid string) (bool, error) {
 		return ok, err
 	}
 
-	// 2. 尝试 map 到 struct 的解码
-	if bodyMap, ok := value.(map[string]any); ok {
-		if err := Decode(bodyMap, body); err != nil {
-			return false, fmt.Errorf("failed to decode map to body: %w", err)
-		}
-		return true, nil
-	}
-
-	// 3. 尝试直接赋值
+	// 3. 尝试直接赋值 (Moved up for priority and performance)
 	valueType := reflect.TypeOf(value)
 	bodyType := reflect.TypeOf(body)
 
@@ -50,7 +42,7 @@ func SetCoreObjBody(obj types.CoreObj, value any, sid string) (bool, error) {
 		return err == nil, err
 	}
 
-	// 4. 处理 value 是 slice，而 body 是指向 slice 的指针的情况
+	// 4. 处理 value 是 slice，而 body 是指向 slice 的指针的情况 (Moved up)
 	if valueType.Kind() == reflect.Slice && bodyType.Kind() == reflect.Pointer && bodyType.Elem().Kind() == reflect.Slice {
 		if valueType == bodyType.Elem() {
 			// 创建一个新的 body slice 的指针，并将 value 复制过去
@@ -59,6 +51,14 @@ func SetCoreObjBody(obj types.CoreObj, value any, sid string) (bool, error) {
 			err := obj.SetBody(newSlicePtr.Interface())
 			return err == nil, err
 		}
+	}
+
+	// 2. 尝试 Decode (Map or Slice -> Struct/Slice)
+	if valueType.Kind() == reflect.Map || valueType.Kind() == reflect.Slice {
+		if err := Decode(value, body); err != nil {
+			return false, fmt.Errorf("failed to decode %v to body: %w", valueType.Kind(), err)
+		}
+		return true, nil
 	}
 
 	return false, nil

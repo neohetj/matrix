@@ -18,10 +18,13 @@ package registry
 
 import (
 	"context"
+	"reflect"
 	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/neohetj/matrix/internal/log"
+	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/types"
 )
 
@@ -52,6 +55,22 @@ func (r *DefaultCoreObjRegistry) Register(defs ...types.CoreObjDef) {
 		if !sidFormatRegex.MatchString(sid) {
 			logger.Warnf(context.Background(), "CoreObj SID '%s' does not conform to the recommended format 'TypeNameVmajor_minor'.", sid)
 		}
+
+		// Check for list type naming convention
+		obj := def.New()
+		if obj != nil {
+			t := reflect.TypeOf(obj)
+			// Handle pointer to slice
+			if t.Kind() == reflect.Pointer {
+				t = t.Elem()
+			}
+			if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
+				if !strings.HasPrefix(sid, cnst.LIST_PREFIX) {
+					logger.Warnf(context.Background(), "CoreObj SID '%s' is a list type but does not start with '%s'. Recommended format: '[]%s'", sid, cnst.LIST_PREFIX, sid)
+				}
+			}
+		}
+
 		r.definitions.Store(sid, def)
 	}
 }
