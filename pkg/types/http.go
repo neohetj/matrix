@@ -70,6 +70,8 @@ type HttpEndpointNodeConfiguration struct {
 	HttpMethod         string          `json:"httpMethod"`
 	HttpPath           string          `json:"httpPath"`
 	Description        string          `json:"description"`
+	Summary            string          `json:"summary,omitempty"`
+	Tags               []string        `json:"tags,omitempty"`
 	Async              bool            `json:"async,omitempty"`
 	EndpointDefinition HttpEndpointDef `json:"endpointDefinition"`
 	ErrorMappings      ErrorMapping    `json:"errorMappings,omitempty"`

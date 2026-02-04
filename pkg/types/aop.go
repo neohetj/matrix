@@ -57,14 +57,15 @@ const (
 
 // RuleNodeRunLog 存储单个节点的执行日志
 type RuleNodeRunLog struct {
-	Id      string  `json:"id"`
-	NodeID  string  `json:"nodeId"`
-	Name    string  `json:"name"`
-	StartTs int64   `json:"startTs"`
-	EndTs   int64   `json:"endTs"`
-	InMsg   RuleMsg `json:"inMsg"`
-	OutMsg  RuleMsg `json:"outMsg"`
-	Err     string  `json:"err,omitempty"`
+	Id          string  `json:"id"`
+	NodeID      string  `json:"nodeId"`
+	RuleChainID string  `json:"ruleChainId"`
+	Name        string  `json:"name"`
+	StartTs     int64   `json:"startTs"`
+	EndTs       int64   `json:"endTs"`
+	InMsg       RuleMsg `json:"inMsg"`
+	OutMsg      RuleMsg `json:"outMsg"`
+	Err         string  `json:"err,omitempty"`
 }
 
 // RuleChainRunSnapshot 存储整个规则链的执行快照

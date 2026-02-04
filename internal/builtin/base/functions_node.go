@@ -21,6 +21,7 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/neohetj/matrix/pkg/asset"
+	"github.com/neohetj/matrix/pkg/openapi"
 	"github.com/neohetj/matrix/pkg/types"
 	"github.com/neohetj/matrix/pkg/utils"
 )
@@ -214,7 +215,7 @@ func (n *FunctionsNode) ConfigSchema() *openapi3.Schema {
 	// These are dynamic fields defined in the function registration
 	for _, field := range f.FuncObject.Configuration.Business {
 		// Use generic helper to convert MType to OpenAPI schema
-		schema := utils.MTypeToOpenAPISchema(field.Type)
+		schema := openapi.MTypeToOpenAPISchema(field.Type)
 		schema.Description = field.Desc
 		schema.Title = field.Name
 

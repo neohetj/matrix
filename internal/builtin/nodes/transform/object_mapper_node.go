@@ -127,8 +127,22 @@ func (p *MessageValueProvider) GetValue(path string) (any, bool, error) {
 	}
 
 	// 如果值是字符串，尝试解析为JSON对象
-	if strVal, ok := val.(string); ok {
-		return cleanAndParseString(strVal), true, nil
+	var targetStr string
+	isString := false
+
+	switch v := val.(type) {
+	case string:
+		targetStr = v
+		isString = true
+	case *string:
+		if v != nil {
+			targetStr = *v
+			isString = true
+		}
+	}
+
+	if isString {
+		return cleanAndParseString(targetStr), true, nil
 	}
 
 	return val, true, nil

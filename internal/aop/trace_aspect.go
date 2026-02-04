@@ -59,10 +59,11 @@ func (a *TraceAspect) Before(ctx types.NodeCtx, msg types.RuleMsg) (types.RuleMs
 	inMsgCopy = a.processImages(inMsgCopy)
 
 	nodeLog := &types.RuleNodeRunLog{
-		Id:      uuid.New().String(),
-		NodeID:  ctx.NodeID(),
-		Name:    ctx.SelfDef().Name,
-		StartTs: time.Now().UnixNano(),
+		Id:          uuid.New().String(),
+		NodeID:      ctx.NodeID(),
+		RuleChainID: ctx.ChainID(),
+		Name:        ctx.SelfDef().Name,
+		StartTs:     time.Now().UnixNano(),
 	}
 
 	if deepCopyErr != nil {

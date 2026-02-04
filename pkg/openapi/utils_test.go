@@ -1,10 +1,11 @@
-package utils
+package openapi_test
 
 import (
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/openapi"
 )
 
 func TestReflectToOpenAPISchema(t *testing.T) {
@@ -20,7 +21,7 @@ func TestReflectToOpenAPISchema(t *testing.T) {
 	}
 
 	user := User{}
-	schema, err := ReflectToOpenAPISchema(user)
+	schema, err := openapi.ReflectToOpenAPISchema(user)
 	if err != nil {
 		t.Fatalf("ReflectToOpenAPISchema failed: %v", err)
 	}
@@ -102,7 +103,7 @@ func TestReflectToOpenAPISchema_Boundaries(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotSchema, err := ReflectToOpenAPISchema(tt.input)
+			gotSchema, err := openapi.ReflectToOpenAPISchema(tt.input)
 
 			if (err != nil) != (tt.wantErrString != "") {
 				t.Errorf("ReflectToOpenAPISchema() error = %v, wantErr %v", err, tt.wantErrString != "")
