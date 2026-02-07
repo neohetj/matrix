@@ -64,6 +64,7 @@ func reflectStructToOpenAPI(t reflect.Type) *openapi3.Schema {
 	schema := &openapi3.Schema{
 		Type:       &openapi3.Types{"object"},
 		Properties: make(map[string]*openapi3.SchemaRef),
+		Required:   make([]string, 0),
 	}
 
 	for i := 0; i < t.NumField(); i++ {
@@ -87,9 +88,20 @@ func reflectStructToOpenAPI(t reflect.Type) *openapi3.Schema {
 			for k, v := range anonymousSchema.Properties {
 				schema.Properties[k] = v
 			}
+			// Also merge required fields from anonymous struct
+			if len(anonymousSchema.Required) > 0 {
+				schema.Required = append(schema.Required, anonymousSchema.Required...)
+			}
 		} else {
 			schema.Properties[fieldName] = &openapi3.SchemaRef{
 				Value: reflectTypeToOpenAPI(field.Type),
+			}
+
+			// Check for required tags
+			bindingTag := field.Tag.Get("binding")
+			validateTag := field.Tag.Get("validate")
+			if strings.Contains(bindingTag, "required") || strings.Contains(validateTag, "required") {
+				schema.Required = append(schema.Required, fieldName)
 			}
 		}
 	}

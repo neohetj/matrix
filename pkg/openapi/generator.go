@@ -238,7 +238,9 @@ func (g *Generator) buildResponse(spec *openapi3.T, packet types.EndpointIOPacke
 }
 
 func (g *Generator) buildSchemaFromPacket(spec *openapi3.T, packet types.EndpointIOPacket) (*openapi3.SchemaRef, error) {
-	// Case 1: MapAll (Reference Mode)
+	var mapAllSchemaRef *openapi3.SchemaRef
+
+	// 1. Process MapAll (Reference Mode)
 	if packet.MapAll != nil && *packet.MapAll != "" {
 		uri := *packet.MapAll
 		sid := extractSID(uri)
@@ -251,18 +253,23 @@ func (g *Generator) buildSchemaFromPacket(spec *openapi3.T, packet types.Endpoin
 					}
 				} else {
 					// SID not found, maybe fallback to generic object
-					return &openapi3.SchemaRef{Value: &openapi3.Schema{Type: &openapi3.Types{"object"}, Description: "Unknown Type: " + sid}}, nil
+					mapAllSchemaRef = &openapi3.SchemaRef{Value: &openapi3.Schema{Type: &openapi3.Types{"object"}, Description: "Unknown Type: " + sid}}
 				}
 			}
-			return &openapi3.SchemaRef{Ref: "#/components/schemas/" + sid}, nil
+			if mapAllSchemaRef == nil {
+				mapAllSchemaRef = &openapi3.SchemaRef{Ref: "#/components/schemas/" + sid}
+			}
+		} else {
+			// If MapAll is generic (no SID), treat as generic object
+			mapAllSchemaRef = &openapi3.SchemaRef{Value: &openapi3.Schema{Type: &openapi3.Types{"object"}}}
 		}
-		// If MapAll is generic (no SID), treat as generic object
-		return &openapi3.SchemaRef{Value: &openapi3.Schema{Type: &openapi3.Types{"object"}}}, nil
 	}
 
-	// Case 2: Fields (Inline Mode)
+	// 2. Process Fields (Inline/Overlay Mode)
+	var fieldsSchema *openapi3.Schema
+
 	if len(packet.Fields) > 0 {
-		schema := &openapi3.Schema{
+		fieldsSchema = &openapi3.Schema{
 			Type:       &openapi3.Types{"object"},
 			Properties: make(map[string]*openapi3.SchemaRef),
 			Required:   make([]string, 0),
@@ -315,12 +322,34 @@ func (g *Generator) buildSchemaFromPacket(spec *openapi3.T, packet types.Endpoin
 				}
 			}
 
-			schema.Properties[field.Name] = fieldSchemaRef
+			fieldsSchema.Properties[field.Name] = fieldSchemaRef
 			if field.Required {
-				schema.Required = append(schema.Required, field.Name)
+				fieldsSchema.Required = append(fieldsSchema.Required, field.Name)
 			}
 		}
-		return &openapi3.SchemaRef{Value: schema}, nil
+	}
+
+	// 3. Merge Logic (MapAll + Fields)
+	if mapAllSchemaRef != nil && fieldsSchema != nil {
+		// Use AllOf to merge
+		// Base: mapAllSchemaRef
+		// Overlay: fieldsSchema (adds properties, overrides, and adds required fields)
+		return &openapi3.SchemaRef{
+			Value: &openapi3.Schema{
+				AllOf: []*openapi3.SchemaRef{
+					mapAllSchemaRef,
+					{Value: fieldsSchema},
+				},
+			},
+		}, nil
+	}
+
+	if mapAllSchemaRef != nil {
+		return mapAllSchemaRef, nil
+	}
+
+	if fieldsSchema != nil {
+		return &openapi3.SchemaRef{Value: fieldsSchema}, nil
 	}
 
 	// Empty body

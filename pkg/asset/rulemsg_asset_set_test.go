@@ -250,7 +250,7 @@ func TestRuleMsgAssetSet_DataTSliceOfStruct(t *testing.T) {
 	assert.Equal(t, mcSlice, *storedSlice)
 }
 
-func TestRuleMsgAssetSet_DataTStructValue_ShouldFail(t *testing.T) {
+func TestRuleMsgAssetSet_DataTStructValue(t *testing.T) {
 	type TestMemoryContext struct {
 		Status  string `json:"status"`
 		Summary string `json:"summary"`
@@ -270,9 +270,15 @@ func TestRuleMsgAssetSet_DataTStructValue_ShouldFail(t *testing.T) {
 	a := asset.Asset[any]{URI: "rulemsg://dataT/memory_val?sid=" + sid}
 	err := a.Set(ctx, mc)
 
-	// Assert that an error is returned for this unsupported assignment type
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unsupported type for whole object assignment")
+	// Assert that NO error is returned for this assignment type
+	assert.NoError(t, err)
+
+	obj, ok := msg.DataT().Get("memory_val")
+	assert.True(t, ok)
+	stored, ok := obj.Body().(*TestMemoryContext)
+	assert.True(t, ok)
+	assert.Equal(t, mc.Status, stored.Status)
+	assert.Equal(t, mc.Summary, stored.Summary)
 }
 
 func derefMap[T any](t *testing.T, actual any) map[string]T {

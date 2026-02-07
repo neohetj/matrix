@@ -9,6 +9,7 @@ import (
 
 	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/types"
+	"github.com/neohetj/matrix/pkg/utils"
 )
 
 var (
@@ -184,8 +185,46 @@ func (a Asset[T]) Resolve(ctx *AssetContext) (T, error) {
 	if tVal, ok := coerceBasicPointer[T](val); ok {
 		return tVal, nil
 	}
+	// Try structural conversion (for same-structure different-package types)
+	if tVal, ok := coerceStruct[T](ctx, val); ok {
+		return tVal, nil
+	}
 
 	return zero, AssetTypeMismatch.Wrap(fmt.Errorf("expected %T, got %T", zero, val))
+}
+
+func coerceStruct[T any](ctx *AssetContext, val any) (T, bool) {
+	var zero T
+	tType := reflect.TypeOf(&zero).Elem()
+	vVal := reflect.ValueOf(val)
+
+	if !vVal.IsValid() {
+		return zero, false
+	}
+
+	// 目标 T 必须是结构体指针
+	// 源值 val 必须是结构体指针
+	if tType.Kind() == reflect.Pointer && tType.Elem().Kind() == reflect.Struct {
+		// 检查 val 是否也是指针指向结构体
+		if vVal.Kind() == reflect.Pointer && vVal.Elem().Kind() == reflect.Struct {
+			// 创建新的 T (即 *Struct)
+			newT := reflect.New(tType.Elem()) // *Struct
+			// 尝试使用 mapstructure (通过 utils.Decode) 进行转换
+			// mapstructure 支持 struct -> struct
+			if err := utils.Decode(val, newT.Interface()); err == nil {
+				// 检测是否为同名不同包的类型，如果是则打印警告
+				if tType != vVal.Type() && tType.Elem().Name() == vVal.Type().Elem().Name() {
+					if ctx != nil && ctx.NodeCtx() != nil {
+						ctx.NodeCtx().Warn("Type coercion triggered for identical struct names (likely package mismatch)",
+							"expected", tType.String(),
+							"got", vVal.Type().String())
+					}
+				}
+				return newT.Interface().(T), true
+			}
+		}
+	}
+	return zero, false
 }
 
 func coerceBasicPointer[T any](val any) (T, bool) {

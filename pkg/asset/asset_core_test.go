@@ -29,12 +29,19 @@ func (m *MockRuleMsg) SetData(d string, f cnst.MFormat) { m.data = types.Data(d)
 
 type MockNodeCtx struct {
 	types.NodeCtx
+	mock.Mock
 	config  types.ConfigMap
 	runtime types.Runtime
 }
 
 func (m *MockNodeCtx) GetRuntime() types.Runtime { return m.runtime }
 func (m *MockNodeCtx) Config() types.ConfigMap   { return m.config }
+func (m *MockNodeCtx) Warn(msg string, fields ...any) {
+	m.Called(msg, fields)
+}
+func (m *MockNodeCtx) Debug(msg string, fields ...any) {}
+func (m *MockNodeCtx) Info(msg string, fields ...any)  {}
+func (m *MockNodeCtx) Error(msg string, fields ...any) {}
 
 type MockRuntime struct {
 	types.Runtime
@@ -322,4 +329,73 @@ func TestAssetResolve_StructToMapConversion(t *testing.T) {
 	assert.Equal(t, "Test", val["name"])
 	// JSON unmarshal usually converts numbers to float64 for map[string]any
 	assert.Equal(t, float64(30), val["age"])
+}
+
+type TestStruct2 struct {
+	Name string `json:"name"`
+	Age  int    `json:"age"`
+}
+
+func TestAssetResolve_StructToStructConversion(t *testing.T) {
+	mockHandler := &MockSchemeHandler{
+		Val: &TestStruct{Name: "Test", Age: 30}, // Returns TestStruct
+	}
+	asset.RegisterScheme("mockstruct2", mockHandler)
+
+	// Resolve as TestStruct2
+	a := asset.Asset[*TestStruct2]{URI: "mockstruct2:///data"}
+	ctx := asset.NewAssetContext()
+
+	val, err := a.Resolve(ctx)
+	assert.NoError(t, err)
+	assert.NotNil(t, val)
+	assert.Equal(t, "Test", val.Name)
+	assert.Equal(t, 30, val.Age)
+}
+
+// Local definition with same name as types.NodeMetadata
+// Must match all fields of types.NodeMetadata because utils.Decode uses ErrorUnused: true
+type NodeMetadata struct {
+	Type        string   `json:"type"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Dimension   string   `json:"dimension"`
+	Tags        []string `json:"tags"`
+	Version     string   `json:"version"`
+	Icon        string   `json:"icon,omitempty"`
+	NodeReads   []any    `json:"nodeReads,omitempty"`
+	NodeWrites  []any    `json:"nodeWrites,omitempty"`
+}
+
+func TestAssetResolve_TypeCoercionLog(t *testing.T) {
+	// Source is types.NodeMetadata
+	srcVal := &types.NodeMetadata{
+		Type: "testType",
+		Name: "testName",
+	}
+
+	mockHandler := &MockSchemeHandler{
+		Val: srcVal,
+	}
+	asset.RegisterScheme("mocklog", mockHandler)
+
+	// Target is asset_test.NodeMetadata (same name, different pkg)
+	a := asset.Asset[*NodeMetadata]{URI: "mocklog:///data"}
+
+	// Setup Mock Context with Logger
+	mockNodeCtx := new(MockNodeCtx)
+	// Expect Warn to be called
+	mockNodeCtx.On("Warn",
+		"Type coercion triggered for identical struct names (likely package mismatch)",
+		mock.Anything, // fields
+	).Return()
+
+	ctx := asset.NewAssetContext(asset.WithNodeCtx(mockNodeCtx))
+
+	val, err := a.Resolve(ctx)
+	assert.NoError(t, err)
+	assert.NotNil(t, val)
+	assert.Equal(t, "testType", val.Type)
+
+	mockNodeCtx.AssertExpectations(t)
 }

@@ -47,6 +47,55 @@ func TestSetCoreObjBody_SliceAny(t *testing.T) {
 	mockObj.AssertExpectations(t)
 }
 
+func TestSetCoreObjBody_PointerToMapToStruct(t *testing.T) {
+	mockObj := new(testutils.MockCoreObj)
+	var myStruct MyStruct
+	mockObj.On("Body").Return(&myStruct)
+
+	input := map[string]any{"Name": "testMap"}
+	inputPtr := &input
+
+	// SetBody shouldn't be called directly for Decode, but Body() is.
+	// The Decode happens in place.
+
+	ok, err := utils.SetCoreObjBody(mockObj, inputPtr, "SomeSID")
+	if err != nil {
+		t.Fatalf("SetCoreObjBody failed: %v", err)
+	}
+	if !ok {
+		t.Fatalf("SetCoreObjBody returned false")
+	}
+
+	if myStruct.Name != "testMap" {
+		t.Errorf("Expected Name testMap, got %s", myStruct.Name)
+	}
+}
+
+func TestSetCoreObjBody_PointerToStructToMap(t *testing.T) {
+	mockObj := new(testutils.MockCoreObj)
+	// Initialize map because mapstructure might need it to be non-nil or it allocates?
+	// reflect.New(map type) gives a pointer to a nil map.
+	// mapstructure handles it?
+	// Let's use a pointer to a map variable.
+	var mapBody map[string]any
+	mockObj.On("Body").Return(&mapBody)
+
+	input := MyStruct{Name: "testStruct"}
+	inputPtr := &input
+
+	ok, err := utils.SetCoreObjBody(mockObj, inputPtr, "SomeSID")
+	if err != nil {
+		t.Fatalf("SetCoreObjBody failed: %v", err)
+	}
+	if !ok {
+		t.Fatalf("SetCoreObjBody returned false")
+	}
+
+	if mapBody["Name"] != "testStruct" {
+		t.Errorf("Expected Name testStruct, got %v", mapBody["Name"])
+	}
+}
+
 func TestSetCoreObjBody_SliceAny_Pointer(t *testing.T) {
 	mockObj := new(testutils.MockCoreObj)
 	var sliceAny []any

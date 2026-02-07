@@ -75,6 +75,14 @@ func (n *ChannelPushNode) Init(config types.ConfigMap) error {
 	return nil
 }
 
+func (n *ChannelPushNode) DataContract() types.DataContract {
+	// Reads all data to push to channel, and passes through the msg to next node
+	return types.DataContract{
+		Reads:  []string{"rulemsg://*"},
+		Writes: []string{"rulemsg://*"},
+	}
+}
+
 func (n *ChannelPushNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 	// 1. Get Config (prefer dynamic over static if needed, but here we use static mostly)
 	// For full dynamic support, we could still use helper.GetConfigAsset if keys are expressions.

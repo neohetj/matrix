@@ -53,12 +53,53 @@ func SetCoreObjBody(obj types.CoreObj, value any, sid string) (bool, error) {
 		}
 	}
 
+	// 4.1 处理 value 是 struct，而 body 是指向 struct 的指针的情况
+	if valueType.Kind() == reflect.Struct && bodyType.Kind() == reflect.Pointer && bodyType.Elem().Kind() == reflect.Struct {
+		if valueType == bodyType.Elem() {
+			// 创建一个新的 body struct 的指针，并将 value 复制过去
+			newPtr := reflect.New(valueType)
+			newPtr.Elem().Set(reflect.ValueOf(value))
+			err := obj.SetBody(newPtr.Interface())
+			return err == nil, err
+		}
+	}
+
 	// 2. 尝试 Decode (Map or Slice -> Struct/Slice)
 	if valueType.Kind() == reflect.Map || valueType.Kind() == reflect.Slice {
 		if err := Decode(value, body); err != nil {
 			return false, fmt.Errorf("failed to decode %v to body: %w", valueType.Kind(), err)
 		}
 		return true, nil
+	}
+
+	// 5. Special handling for Pointer to Slice -> Decode
+	// This handles cases where value is *[]Struct and body is *[]Any
+	if valueType.Kind() == reflect.Pointer && valueType.Elem().Kind() == reflect.Slice {
+		// Try to decode the slice value (dereferenced) into the body
+		if err := Decode(reflect.ValueOf(value).Elem().Interface(), body); err == nil {
+			return true, nil
+		}
+	}
+
+	// 6. Special handling for Pointer to Map -> Decode
+	// This handles cases where value is *map[string]any and body is Struct or Map
+	if valueType.Kind() == reflect.Pointer && valueType.Elem().Kind() == reflect.Map {
+		// Try to decode the map value (dereferenced) into the body
+		if err := Decode(reflect.ValueOf(value).Elem().Interface(), body); err == nil {
+			return true, nil
+		}
+	}
+
+	// 7. Special handling for Struct or Pointer to Struct -> Decode
+	// This handles cases where value is Struct or *Struct and body is Struct or Map
+	if valueType.Kind() == reflect.Struct || (valueType.Kind() == reflect.Pointer && valueType.Elem().Kind() == reflect.Struct) {
+		valToDecode := value
+		if valueType.Kind() == reflect.Pointer {
+			valToDecode = reflect.ValueOf(value).Elem().Interface()
+		}
+		if err := Decode(valToDecode, body); err == nil {
+			return true, nil
+		}
 	}
 
 	return false, nil

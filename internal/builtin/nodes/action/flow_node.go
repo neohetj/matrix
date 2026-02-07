@@ -81,6 +81,13 @@ func (n *FlowNode) GetTargetChainID() string {
 }
 
 // OnMsg executes the sub-chain synchronously.
+func (n *FlowNode) DataContract() types.DataContract {
+	return types.DataContract{
+		Reads:  []string{"rulemsg://*"},
+		Writes: []string{"rulemsg://*"},
+	}
+}
+
 func (n *FlowNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 	// 1. Look up the target runtime from the global default runtime pool.
 	targetRuntime, ok := ctx.GetRuntime().GetEngine().RuntimePool().Get(n.nodeConfig.ChainId)

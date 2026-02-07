@@ -319,3 +319,68 @@ func TestGetParam_SliceConversion(t *testing.T) {
 		}
 	})
 }
+
+type MockProfile struct {
+	Name string
+}
+
+func TestSetParam_SlicePointer_RealAsset(t *testing.T) {
+	// This test attempts to reproduce the "unsupported type for whole object assignment" error
+	// when passing a pointer to a slice (*[]T) to SetParam.
+	mockey.PatchConvey("TestSetParam with Slice Pointer (Real Asset)", t, func() {
+		sid := "mock_profile_list"
+		objID := "profile_list"
+
+		// Mock ResolveParamBinding
+		mockey.Mock(helper.ResolveParamBinding).Return(objID, sid, nil).Build()
+
+		// 1. Setup RuleMsg with a DataT object containing a slice body
+		// The definition uses []Any to simulate a generic container or mismatching type
+		// This ensures valueType != bodyType, forcing it to fall through to Decode checks.
+		// Since value is a pointer (*[]MockProfile), Kind() is Ptr, not Slice, so Decode is skipped if not handled.
+		def := contract.NewDefaultCoreObjDef([]any{}, sid, "Mock Profile List")
+		coreObj := contract.NewDefaultCoreObj(objID, def)
+
+		dataT := contract.NewDataT()
+		dataT.Set(objID, coreObj)
+
+		msg := contract.NewDefaultRuleMsg("test_req", "", nil, dataT)
+		nodeCtx := utils.NewMockNodeCtx()
+		assetCtx := asset.NewAssetContext(asset.WithNodeCtx(nodeCtx), asset.WithRuleMsg(msg))
+
+		// 2. Prepare input value: *[]MockProfile
+		valSlice := []MockProfile{{Name: "test_profile"}}
+		val := &valSlice
+
+		// 3. Act
+		// We use the real Asset implementation (no mocking of Asset.Set)
+		// This relies on RuleMsgAsset being registered and functioning.
+		ret, err := helper.SetParam(assetCtx, "param_profile_list", val)
+
+		// 4. Assert
+		assert.NoError(t, err)
+		assert.Equal(t, val, ret)
+
+		// Verify the value was actually set in the CoreObj
+		storedBody := coreObj.Body()
+		// Since we defined the CoreObj as []any, the body is *[]interface{}
+		// SetCoreObjBody should have decoded *[]MockProfile into *[]interface{}
+		storedList, ok := storedBody.(*[]interface{})
+		assert.True(t, ok, "Stored body should be *[]interface{}")
+		if ok {
+			assert.Equal(t, 1, len(*storedList))
+			if len(*storedList) > 0 {
+				// Let's check the first element.
+				elem := (*storedList)[0]
+				if p, ok := elem.(MockProfile); ok {
+					assert.Equal(t, "test_profile", p.Name)
+				} else if m, ok := elem.(map[string]interface{}); ok {
+					assert.Equal(t, "test_profile", m["Name"])
+				} else {
+					// Fallback for debugging
+					t.Logf("Element type: %T", elem)
+				}
+			}
+		}
+	})
+}

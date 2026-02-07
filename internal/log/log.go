@@ -21,6 +21,7 @@ package log
 
 import (
 	"context"
+	"fmt"
 	stdlog "log"
 	"sync"
 
@@ -58,24 +59,46 @@ func GetLogger() types.Logger {
 }
 
 // StdLogger is a simple logger using standard library log.
-type StdLogger struct{}
+type StdLogger struct {
+	fields []any
+}
+
+func (s *StdLogger) format(format string, v ...any) string {
+	msg := fmt.Sprintf(format, v...)
+	if len(s.fields) > 0 {
+		for i := 0; i < len(s.fields); i += 2 {
+			k := s.fields[i]
+			var val any = "<missing>"
+			if i+1 < len(s.fields) {
+				val = s.fields[i+1]
+			}
+			msg += fmt.Sprintf(" %v=%v", k, val)
+		}
+	}
+	return msg
+}
 
 func (s *StdLogger) Printf(ctx context.Context, format string, v ...any) {
-	stdlog.Printf(format, v...)
+	stdlog.Print(s.format(format, v...))
 }
 func (s *StdLogger) Debugf(ctx context.Context, format string, v ...any) {
-	stdlog.Printf("[DEBUG] "+format, v...)
+	stdlog.Print("[DEBUG] " + s.format(format, v...))
 }
 func (s *StdLogger) Infof(ctx context.Context, format string, v ...any) {
-	stdlog.Printf("[INFO] "+format, v...)
+	stdlog.Print("[INFO] " + s.format(format, v...))
 }
 func (s *StdLogger) Warnf(ctx context.Context, format string, v ...any) {
-	stdlog.Printf("[WARN] "+format, v...)
+	stdlog.Print("[WARN] " + s.format(format, v...))
 }
 func (s *StdLogger) Errorf(ctx context.Context, format string, v ...any) {
-	stdlog.Printf("[ERROR] "+format, v...)
+	stdlog.Print("[ERROR] " + s.format(format, v...))
 }
-func (s *StdLogger) With(fields ...any) types.Logger { return s }
+func (s *StdLogger) With(fields ...any) types.Logger {
+	newFields := make([]any, len(s.fields)+len(fields))
+	copy(newFields, s.fields)
+	copy(newFields[len(s.fields):], fields)
+	return &StdLogger{fields: newFields}
+}
 
 // getEffectiveLogger determines the correct logger to use based on the context.
 // It prioritizes the instance-specific logger and falls back to the global logger.

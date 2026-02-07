@@ -151,6 +151,13 @@ func schemaFromStruct(t reflect.Type) *openapi3.Schema {
 
 			if requiredTag := field.Tag.Get("required"); requiredTag == "true" {
 				schema.Required = append(schema.Required, fieldName)
+			} else {
+				// Also check binding/validate tags
+				bindingTag := field.Tag.Get("binding")
+				validateTag := field.Tag.Get("validate")
+				if strings.Contains(bindingTag, "required") || strings.Contains(validateTag, "required") {
+					schema.Required = append(schema.Required, fieldName)
+				}
 			}
 		}
 	case reflect.Slice, reflect.Array:
