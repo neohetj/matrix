@@ -52,4 +52,23 @@ func TestNodeFuncManager_Register(t *testing.T) {
 			manager.Register(invalidFunc)
 		}, "Registration should panic for invalid type")
 	})
+	t.Run("NotEditable Without Default", func(t *testing.T) {
+		invalidFunc := &types.NodeFuncObject{
+			FuncObject: types.FuncObject{
+				ID: "invalid_not_editable",
+				Configuration: types.FuncObjConfiguration{
+					Business: []types.DynamicConfigField{
+						{
+							ID:          "field1",
+							Type:        cnst.STRING,
+							NotEditable: true,
+						},
+					},
+				},
+			},
+		}
+		assert.Panics(t, func() {
+			manager.Register(invalidFunc)
+		}, "Registration should panic when notEditable field has no default")
+	})
 }

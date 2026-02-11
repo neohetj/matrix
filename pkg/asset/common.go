@@ -3,6 +3,7 @@ package asset
 import (
 	"fmt"
 	"net/url"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -130,6 +131,12 @@ func ReplacePlaceholders(template string, resolver func(path string) (any, error
 		if resolveErr != nil {
 			err = resolveErr
 			return match
+		}
+
+		// Dereference pointer values to avoid rendering addresses.
+		v := reflect.ValueOf(value)
+		if v.IsValid() && v.Kind() == reflect.Pointer && !v.IsNil() {
+			value = v.Elem().Interface()
 		}
 
 		// Convert the found value to a string for replacement.

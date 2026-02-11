@@ -199,6 +199,18 @@ func (n *PipelineEndpointNode) processData(ctx context.Context, stage PipelineSt
 			fmt.Printf("Stage %s processing error: %v\n", stage.Name, err)
 			return
 		}
+		if result == nil {
+			fmt.Printf("Stage %s returned nil result, skip output push\n", stage.Name)
+			return
+		}
+		// If upstream runtime finished without err but carries unified error metadata,
+		// treat it as failed and stop propagation to downstream stages.
+		if metadata := result.Metadata(); metadata != nil {
+			if errMsg, ok := metadata[types.MetaError]; ok && errMsg != "" {
+				fmt.Printf("Stage %s completed with metadata error: %s\n", stage.Name, errMsg)
+				return
+			}
+		}
 		// Output handling
 		// If stage has an output channel, push the result there.
 		if stage.OutputChannel != "" {

@@ -94,12 +94,13 @@ type NodeMetadata struct {
 // DynamicConfigField defines a single dynamic configuration field for a component.
 // This is used for self-description, allowing for dynamic UI generation and validation.
 type DynamicConfigField struct {
-	ID       string     `json:"id"`
-	Name     string     `json:"name"`
-	Type     cnst.MType `json:"type"`
-	Desc     string     `json:"description"`
-	Required bool       `json:"required"`
-	Default  any        `json:"defaultValue,omitempty"`
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Type        cnst.MType `json:"type"`
+	Desc        string     `json:"description"`
+	Required    bool       `json:"required"`
+	Default     any        `json:"defaultValue,omitempty"`
+	NotEditable bool       `json:"notEditable,omitempty"`
 }
 
 // RuleContext is the interface for the context of a message processing.

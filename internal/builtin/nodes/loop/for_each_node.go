@@ -188,6 +188,7 @@ func (n *ForEachNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 		ctx.HandleError(msg, FaultSourceNotFound.Wrap(fmt.Errorf("failed to extract iteration loopSource with expression '%s': %w", n.nodeConfig.LoopSource, err)))
 		return
 	}
+	ctx.Info("forEach loopSource extracted", "loopSource", n.nodeConfig.LoopSource, "sourceType", fmt.Sprintf("%T", sourceRaw))
 
 	var itemCount int
 	var itemsVal reflect.Value
@@ -202,7 +203,7 @@ func (n *ForEachNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 		}
 	} else {
 		var fault *types.Fault
-		itemCount, itemsVal, fault = n.getItemsCountAndVal(sourceRaw)
+		itemCount, itemsVal, fault = n.getItemsCountAndVal(ctx, sourceRaw, n.nodeConfig.LoopSource)
 		if fault != nil {
 			ctx.HandleError(msg, fault)
 			return
@@ -221,6 +222,7 @@ func (n *ForEachNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 
 			go func(index int, currentItem any) {
 				defer wg.Done()
+				ctx.Info("forEach iteration start (async)", "iteration", index, "chainId", n.nodeConfig.ChainId)
 				iterMsg, fault := n.prepareIterMsg(ctx, msg, nil, currentItem)
 				if fault != nil {
 					ctx.Error("Async sub-chain mapping failed", "iteration", index, "error", fault)
@@ -228,7 +230,9 @@ func (n *ForEachNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 				}
 				if _, err := n.executeSubChain(ctx, iterMsg, index, itemCount, targetRuntime); err != nil {
 					ctx.Error("Async sub-chain execution failed", "iteration", index, "error", err)
+					return
 				}
+				ctx.Info("forEach iteration completed (async)", "iteration", index, "chainId", n.nodeConfig.ChainId)
 			}(i, item)
 		}
 		wg.Wait()
@@ -246,6 +250,7 @@ func (n *ForEachNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 
 		for i := 0; i < itemCount; i++ {
 			item := n.getCurrentItem(isRange, itemsVal, i)
+			ctx.Info("forEach iteration start", "iteration", i, "chainId", n.nodeConfig.ChainId)
 			iterMsg, fault := n.prepareIterMsg(ctx, msg, sharedIterMsg, item)
 			if fault != nil {
 				ctx.HandleError(msg, fault)
@@ -269,6 +274,7 @@ func (n *ForEachNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 				}
 				continue
 			}
+			ctx.Info("forEach iteration completed", "iteration", i, "chainId", n.nodeConfig.ChainId)
 
 			// Check for break signal
 			breakKey := fmt.Sprintf("%s_%s", MetadataKeyBreak, n.nodeConfig.ChainId)
@@ -471,10 +477,12 @@ func (n *ForEachNode) getItemCount(source any) (int, *types.Fault) {
 	return count, nil
 }
 
-func (n *ForEachNode) getItemsCountAndVal(source any) (int, reflect.Value, *types.Fault) {
+func (n *ForEachNode) getItemsCountAndVal(ctx types.NodeCtx, source any, loopSource string) (int, reflect.Value, *types.Fault) {
 	itemsVal, err := utils.SliceValue(source)
 	if err != nil {
+		ctx.Error("forEach loopSource is not slice", "loopSource", loopSource, "sourceType", fmt.Sprintf("%T", source), "error", err)
 		return 0, reflect.Value{}, FaultInvalidType.Wrap(err)
 	}
+	ctx.Info("forEach loopSource slice resolved", "loopSource", loopSource, "sourceType", fmt.Sprintf("%T", source), "itemCount", itemsVal.Len())
 	return itemsVal.Len(), itemsVal, nil
 }

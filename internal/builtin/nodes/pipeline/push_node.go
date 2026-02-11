@@ -7,6 +7,7 @@ import (
 	"github.com/neohetj/matrix/internal/registry"
 	"github.com/neohetj/matrix/pkg/asset"
 	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/helper"
 	"github.com/neohetj/matrix/pkg/types"
 	"github.com/neohetj/matrix/pkg/utils"
 )
@@ -84,20 +85,32 @@ func (n *ChannelPushNode) DataContract() types.DataContract {
 }
 
 func (n *ChannelPushNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
-	// 1. Get Config (prefer dynamic over static if needed, but here we use static mostly)
-	// For full dynamic support, we could still use helper.GetConfigAsset if keys are expressions.
-	// But assuming simple config for now as per init.
+	// 1. Get Config (support template rendering)
 	pipelineID := n.nodeConfig.PipelineID
 	channelName := n.nodeConfig.ChannelName
 	blocking := n.nodeConfig.Blocking
 	timeoutMs := n.nodeConfig.Timeout
 
-	// If pipelineID/channelName are empty, maybe try dynamic lookup?
-	// The original code used GetConfigAsset which supports template rendering.
-	// If we want to support templates in these fields, we should use RenderConfigAsset.
-	// But if we want to follow standard pattern, we use the struct.
-	// Let's stick to the struct for performance, unless dynamic behavior is explicitly required.
-	// The design doc example showed simple strings.
+	assetCtx := asset.NewAssetContext(
+		asset.WithNodeCtx(ctx),
+		asset.WithRuleMsg(msg),
+	)
+
+	if rendered, err := asset.RenderTemplate(pipelineID, assetCtx); err == nil {
+		if v, vErr := helper.RenderAsset[string](rendered); vErr == nil && v != "" {
+			pipelineID = v
+		}
+	}
+	if rendered, err := asset.RenderTemplate(channelName, assetCtx); err == nil {
+		if v, vErr := helper.RenderAsset[string](rendered); vErr == nil && v != "" {
+			channelName = v
+		}
+	}
+
+	if pipelineID == "" || channelName == "" {
+		ctx.HandleError(msg, fmt.Errorf("pipelineId/channelName is empty"))
+		return
+	}
 
 	// 3. Resolve Channel
 	cmURI := n.nodeConfig.ChannelManager

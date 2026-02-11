@@ -31,13 +31,29 @@ type RuleChainAttrs struct {
 	Imports    []string      `json:"imports,omitempty"`
 }
 
+// RuleChainOnErrorStrategy defines error handling strategy for a rule chain.
+type RuleChainOnErrorStrategy string
+
+const (
+	RuleChainOnErrorStrategyHalt     RuleChainOnErrorStrategy = "halt"
+	RuleChainOnErrorStrategyContinue RuleChainOnErrorStrategy = "continue"
+	RuleChainOnErrorStrategyRedirect RuleChainOnErrorStrategy = "redirect"
+)
+
+// RuleChainOnError defines onError behavior for a rule chain.
+type RuleChainOnError struct {
+	Handler  string                   `json:"handler,omitempty"`
+	Strategy RuleChainOnErrorStrategy `json:"strategy,omitempty"`
+}
+
 // RuleChainData holds the core data of a rule chain.
 type RuleChainData struct {
-	ID            string         `json:"id"`
-	Name          string         `json:"name"`
-	Description   string         `json:"description"`
-	Configuration ConfigMap      `json:"configuration,omitempty"`
-	Attrs         RuleChainAttrs `json:"attrs,omitempty"`
+	ID            string            `json:"id"`
+	Name          string            `json:"name"`
+	Description   string            `json:"description"`
+	Configuration ConfigMap         `json:"configuration,omitempty"`
+	Attrs         RuleChainAttrs    `json:"attrs,omitempty"`
+	OnError       *RuleChainOnError `json:"onError,omitempty"`
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface to set default values for RuleChainData.

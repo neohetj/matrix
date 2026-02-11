@@ -38,3 +38,10 @@ func (m *MockRuntimePoolForPipeline) ListIDs() []string {
 }
 func (m *MockRuntimePoolForPipeline) Register(id string, runtime types.Runtime) error { return nil }
 func (m *MockRuntimePoolForPipeline) Unregister(id string)                            {}
+func (m *MockRuntimePoolForPipeline) GetTriggers(chainID string) []types.TriggerSource {
+	return nil
+}
+func (m *MockRuntimePoolForPipeline) RegisterTrigger(targetChainID string, source types.TriggerSource) {
+}
+func (m *MockRuntimePoolForPipeline) UnregisterTrigger(targetChainID string, source types.TriggerSource) {
+}

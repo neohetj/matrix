@@ -353,6 +353,21 @@ func TestAssetResolve_StructToStructConversion(t *testing.T) {
 	assert.Equal(t, 30, val.Age)
 }
 
+func TestAssetResolve_PointerStringToString(t *testing.T) {
+	asset.InitRegistry()
+
+	ptrVal := "mock_value"
+	mockHandler := &MockSchemeHandler{Val: &ptrVal}
+	asset.RegisterScheme("mockstrptr", mockHandler)
+
+	a := asset.Asset[string]{URI: "mockstrptr:///data"}
+	ctx := asset.NewAssetContext()
+
+	val, err := a.Resolve(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, ptrVal, val)
+}
+
 // Local definition with same name as types.NodeMetadata
 // Must match all fields of types.NodeMetadata because utils.Decode uses ErrorUnused: true
 type NodeMetadata struct {

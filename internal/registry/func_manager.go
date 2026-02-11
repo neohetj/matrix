@@ -37,10 +37,13 @@ func NewNodeFuncManager() *DefaultNodeFuncManager {
 func (m *DefaultNodeFuncManager) Register(funcs ...*types.NodeFuncObject) {
 	for _, f := range funcs {
 		if f != nil {
-			// Validate business config types
+			// Validate business config definitions
 			for _, field := range f.FuncObject.Configuration.Business {
 				if !field.Type.IsSupported() {
 					panic(fmt.Sprintf("Function %s registration failed: invalid business config type '%s' for field '%s'", f.FuncObject.ID, field.Type, field.Name))
+				}
+				if field.NotEditable && field.Default == nil {
+					panic(fmt.Sprintf("Function %s registration failed: field '%s' is notEditable but missing defaultValue", f.FuncObject.ID, field.ID))
 				}
 			}
 			m.functions.Store(f.FuncObject.ID, f)

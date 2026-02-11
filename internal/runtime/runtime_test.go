@@ -14,11 +14,12 @@
  * limitations under the License.
  */
 
-package runtime
+package runtime_test
 
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -26,11 +27,15 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/neohetj/matrix"
 	_ "github.com/neohetj/matrix/internal/builtin"
 	"github.com/neohetj/matrix/internal/parser"
+	runtime "github.com/neohetj/matrix/internal/runtime"
 	"github.com/neohetj/matrix/internal/scheduler"
 	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/types"
+	testutils "github.com/neohetj/matrix/test/utils"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestRuntime_Execute_LogFunc(t *testing.T) {
@@ -85,7 +90,7 @@ func TestRuntime_Execute_LogFunc(t *testing.T) {
 		t.Fatalf("Failed to decode rule chain: %v", err)
 	}
 
-	runtime, err := NewDefaultRuntime(s, chainDef)
+	runtime, err := runtime.NewDefaultRuntime(s, chainDef)
 	if err != nil {
 		t.Fatalf("Failed to create runtime: %v", err)
 	}
@@ -154,7 +159,7 @@ func TestRuntime_ExecuteAndWait_LogFunc(t *testing.T) {
 		t.Fatalf("Failed to decode rule chain: %v", err)
 	}
 
-	runtime, err := NewDefaultRuntime(s, chainDef)
+	runtime, err := runtime.NewDefaultRuntime(s, chainDef)
 	if err != nil {
 		t.Fatalf("Failed to create runtime: %v", err)
 	}
@@ -201,7 +206,7 @@ func TestRuntime_Reload(t *testing.T) {
 	}`
 	chainDefV1, _ := p.DecodeRuleChain([]byte(dslV1))
 
-	runtime, err := NewDefaultRuntime(s, chainDefV1)
+	runtime, err := runtime.NewDefaultRuntime(s, chainDefV1)
 	if err != nil {
 		t.Fatalf("Failed to create runtime v1: %v", err)
 	}
@@ -325,7 +330,7 @@ func TestRuntime_AOP(t *testing.T) {
 	aspect := &testAspect{}
 	callback := &testCallback{}
 
-	runtime, err := NewDefaultRuntime(s, chainDef, WithAspects(aspect), WithCallback(callback))
+	runtime, err := runtime.NewDefaultRuntime(s, chainDef, runtime.WithAspects(aspect), runtime.WithCallback(callback))
 	if err != nil {
 		t.Fatalf("Failed to create runtime: %v", err)
 	}
@@ -390,7 +395,7 @@ func TestRuntime_ForkJoin(t *testing.T) {
 
 	// We use a callback to inspect the state of the message at each node's completion.
 	callback := &testCallback{}
-	runtime, err := NewDefaultRuntime(s, chainDef, WithCallback(callback))
+	runtime, err := runtime.NewDefaultRuntime(s, chainDef, runtime.WithCallback(callback))
 	if err != nil {
 		t.Fatalf("Failed to create runtime: %v", err)
 	}
@@ -435,4 +440,215 @@ func TestRuntime_ForkJoin(t *testing.T) {
 	if len(callback.completedNodes["join"]) != 2 {
 		t.Errorf("Expected join node to be completed twice, but got %d", len(callback.completedNodes["join"]))
 	}
+}
+
+func buildErrorChainDSL(onError string) string {
+	onErrorSection := ""
+	if onError != "" {
+		onErrorSection = fmt.Sprintf(",\n\t\t\t\"onError\": %s", onError)
+	}
+	return `
+	{
+		"ruleChain": {
+			"id": "error_chain",
+			"name": "Error Chain"` + onErrorSection + `
+		},
+		"metadata": {
+			"nodes": [
+				{
+					"id": "error_node",
+					"type": "functions",
+					"configuration": {
+						"functionName": "non_existing_function"
+					}
+				}
+			],
+			"connections": []
+		}
+	}`
+}
+
+func TestRuntime_OnError_DefaultHalt(t *testing.T) {
+	p := parser.NewJsonParser()
+	s, _ := scheduler.NewAntsScheduler(10)
+	defer s.Stop()
+
+	chainDef, err := p.DecodeRuleChain([]byte(buildErrorChainDSL("")))
+	if err != nil {
+		t.Fatalf("Failed to decode rule chain: %v", err)
+	}
+
+	runtime, err := runtime.NewDefaultRuntime(s, chainDef)
+	if err != nil {
+		t.Fatalf("Failed to create runtime: %v", err)
+	}
+
+	msg := types.NewMsg("TEST_ON_ERROR_HALT", "{}", types.Metadata{}, nil).WithDataFormat(cnst.JSON)
+
+	finalMsg, execErr := runtime.ExecuteAndWait(context.Background(), "", msg, nil)
+	if execErr == nil {
+		t.Fatal("Expected execution error in default halt mode, got nil")
+	}
+	if finalMsg == nil {
+		t.Fatal("Expected final message not nil in default halt mode")
+	}
+	if finalMsg.Metadata()[types.MetaError] == "" {
+		t.Fatalf("Expected metadata %s to be set", types.MetaError)
+	}
+}
+
+func TestRuntime_OnError_Continue(t *testing.T) {
+	p := parser.NewJsonParser()
+	s, _ := scheduler.NewAntsScheduler(10)
+	defer s.Stop()
+
+	onError := `{
+				"strategy": "continue"
+			}`
+	chainDef, err := p.DecodeRuleChain([]byte(buildErrorChainDSL(onError)))
+	if err != nil {
+		t.Fatalf("Failed to decode rule chain: %v", err)
+	}
+
+	runtime, err := runtime.NewDefaultRuntime(s, chainDef)
+	if err != nil {
+		t.Fatalf("Failed to create runtime: %v", err)
+	}
+
+	msg := types.NewMsg("TEST_ON_ERROR_CONTINUE", "{}", types.Metadata{}, nil).WithDataFormat(cnst.JSON)
+
+	finalMsg, execErr := runtime.ExecuteAndWait(context.Background(), "", msg, nil)
+	if execErr != nil {
+		t.Fatalf("Expected nil error in continue strategy, got: %v", execErr)
+	}
+	if finalMsg == nil {
+		t.Fatal("Expected final message not nil in continue strategy")
+	}
+	if finalMsg.Metadata()[types.MetaError] == "" {
+		t.Fatalf("Expected metadata %s to be set in continue strategy", types.MetaError)
+	}
+}
+
+func TestRuntime_OnError_Redirect(t *testing.T) {
+	p := parser.NewJsonParser()
+	s, _ := scheduler.NewAntsScheduler(10)
+	defer s.Stop()
+
+	onError := `{
+				"strategy": "redirect",
+				"handler": "error_handler_chain"
+			}`
+	chainDef, err := p.DecodeRuleChain([]byte(buildErrorChainDSL(onError)))
+	if err != nil {
+		t.Fatalf("Failed to decode rule chain: %v", err)
+	}
+
+	mockPool := &testutils.MockRuntimePool{}
+	mockEngine := &testutils.MockEngine{}
+	mockHandlerRuntime := &testutils.MockRuntime{}
+
+	handlerResult := types.NewMsg("HANDLED", "{}", types.Metadata{"handled": "true"}, nil).WithDataFormat(cnst.JSON)
+	mockHandlerRuntime.
+		On("ExecuteAndWait", mock.Anything, "", mock.Anything, mock.Anything).
+		Return(handlerResult, nil).
+		Once()
+	mockPool.
+		On("Get", "error_handler_chain").
+		Return(mockHandlerRuntime, true).
+		Once()
+	mockEngine.
+		On("RuntimePool").
+		Return(mockPool)
+	mockEngine.
+		On("NodeManager").
+		Return(types.DefaultRegistry.GetNodeManager())
+	mockEngine.
+		On("SharedNodePool").
+		Return(types.DefaultRegistry.GetSharedNodePool())
+	mockEngine.
+		On("Logger").
+		Return(&testutils.TestLogger{})
+	mockEngine.
+		On("NodeFuncManager").
+		Return(types.DefaultRegistry.GetNodeFuncManager())
+
+	runtime, err := runtime.NewDefaultRuntime(s, chainDef, runtime.WithEngine(mockEngine))
+	if err != nil {
+		t.Fatalf("Failed to create runtime: %v", err)
+	}
+
+	msg := types.NewMsg("TEST_ON_ERROR_REDIRECT", "{}", types.Metadata{}, nil).WithDataFormat(cnst.JSON)
+
+	finalMsg, execErr := runtime.ExecuteAndWait(context.Background(), "", msg, nil)
+	if execErr != nil {
+		t.Fatalf("Expected nil error in redirect strategy, got: %v", execErr)
+	}
+	if finalMsg == nil {
+		t.Fatal("Expected final message not nil in redirect strategy")
+	}
+	if finalMsg.Metadata()["handled"] != "true" {
+		t.Fatalf("Expected redirected handler result metadata handled=true, got: %v", finalMsg.Metadata()["handled"])
+	}
+
+	mockHandlerRuntime.AssertExpectations(t)
+	mockPool.AssertExpectations(t)
+	mockEngine.AssertExpectations(t)
+}
+
+func TestRuntime_OnError_RedirectFallbackToHalt(t *testing.T) {
+	p := parser.NewJsonParser()
+	s, _ := scheduler.NewAntsScheduler(10)
+	defer s.Stop()
+
+	onError := `{
+				"strategy": "redirect",
+				"handler": "missing_handler_chain"
+			}`
+	chainDef, err := p.DecodeRuleChain([]byte(buildErrorChainDSL(onError)))
+	if err != nil {
+		t.Fatalf("Failed to decode rule chain: %v", err)
+	}
+
+	mockPool := &testutils.MockRuntimePool{}
+	mockEngine := &testutils.MockEngine{}
+	mockPool.
+		On("Get", "missing_handler_chain").
+		Return(nil, false).
+		Once()
+	mockEngine.
+		On("RuntimePool").
+		Return(mockPool)
+	mockEngine.
+		On("NodeManager").
+		Return(types.DefaultRegistry.GetNodeManager())
+	mockEngine.
+		On("SharedNodePool").
+		Return(types.DefaultRegistry.GetSharedNodePool())
+	mockEngine.
+		On("Logger").
+		Return(&testutils.TestLogger{})
+	mockEngine.
+		On("NodeFuncManager").
+		Return(types.DefaultRegistry.GetNodeFuncManager())
+
+	runtime, err := runtime.NewDefaultRuntime(s, chainDef, runtime.WithEngine(mockEngine))
+	if err != nil {
+		t.Fatalf("Failed to create runtime: %v", err)
+	}
+
+	msg := types.NewMsg("TEST_ON_ERROR_REDIRECT_FALLBACK", "{}", types.Metadata{}, nil).WithDataFormat(cnst.JSON)
+
+	finalMsg, execErr := runtime.ExecuteAndWait(context.Background(), "", msg, nil)
+	if execErr == nil {
+		t.Fatal("Expected non-nil error when redirect handler is missing (fallback halt)")
+	}
+	if finalMsg == nil {
+		t.Fatal("Expected final message not nil when redirect fallback happens")
+	}
+	if finalMsg.Metadata()[types.MetaError] == "" {
+		t.Fatalf("Expected metadata %s to preserve original error context", types.MetaError)
+	}
+
+	mockPool.AssertExpectations(t)
+	mockEngine.AssertExpectations(t)
 }

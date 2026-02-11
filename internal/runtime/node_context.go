@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -40,6 +41,9 @@ type DefaultNodeCtx struct {
 	waitingCount int32
 	aspects      []types.Aspect
 	callback     types.CallbackFunc
+	// pendingErr holds the error from TellFailure so that TellNext can propagate it
+	// when no Failure connection is found, instead of silently swallowing the error.
+	pendingErr error
 }
 
 // NewDefaultNodeCtx creates a new node context.
@@ -173,9 +177,12 @@ func (ctx *DefaultNodeCtx) TellFailure(msg types.RuleMsg, err error) {
 		ctx.Info("Routing message to 'Failure' output due to error", "error", err)
 	}
 
+	// Store the error so TellNext can propagate it via childDone when no Failure
+	// connection is found, instead of silently swallowing the error.
+	ctx.pendingErr = err
+
 	// The error is logged and added to metadata by HandleError.
 	// This method's responsibility is to route the message to the failure path.
-	// The original error is passed to childDone to be available for AOP aspects.
 	ctx.TellNext(msg, "Failure")
 }
 
@@ -227,7 +234,22 @@ func (ctx *DefaultNodeCtx) TellNext(msg types.RuleMsg, relationTypes ...string) 
 	// Get all connections for the current node
 	connections := ctx.chain.GetConnections(ctx.selfDef.ID)
 	if len(connections) == 0 {
-		// No connections from this node, so it's a leaf
+		// No connections from this node, so it's a leaf.
+		// For Failure routing, preserve error propagation semantics.
+		if slices.Contains(relationTypes, "Failure") {
+			if ctx.pendingErr != nil {
+				err := ctx.pendingErr
+				ctx.pendingErr = nil
+				ctx.childDone(msg, err)
+				return
+			}
+			if msg.Metadata() != nil {
+				if errMsg, ok := msg.Metadata()[types.MetaError]; ok && errMsg != "" {
+					ctx.childDone(msg, fmt.Errorf("%s", errMsg))
+					return
+				}
+			}
+		}
 		ctx.childDone(msg, nil)
 		return
 	}
@@ -303,6 +325,31 @@ func (ctx *DefaultNodeCtx) TellNext(msg types.RuleMsg, relationTypes ...string) 
 
 	// If no subsequent nodes were found for the given relation types, this path is complete.
 	if !foundNext {
+		requestedFailure := slices.Contains(relationTypes, "Failure")
+
+		// Only propagate error when this is a Failure routing request.
+		// For non-failure relations (e.g. Success), keep legacy behavior and
+		// complete without error.
+		if requestedFailure {
+			// When a Failure route has no matching connection, propagate the error
+			// instead of silently swallowing it. This ensures errors bubble up to
+			// the onEnd callback (and ultimately to Pipeline/Endpoint layers).
+			if ctx.pendingErr != nil {
+				err := ctx.pendingErr
+				ctx.pendingErr = nil
+				ctx.childDone(msg, err)
+				return
+			}
+			// Fallback: check if the message metadata carries an error marker
+			// (set by HandleError). This covers edge cases where TellFailure
+			// was not the caller but the message still indicates a failure.
+			if msg.Metadata() != nil {
+				if errMsg, ok := msg.Metadata()[types.MetaError]; ok && errMsg != "" {
+					ctx.childDone(msg, fmt.Errorf("%s", errMsg))
+					return
+				}
+			}
+		}
 		ctx.childDone(msg, nil)
 	}
 }

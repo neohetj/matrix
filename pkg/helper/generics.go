@@ -86,17 +86,25 @@ func RenderConfigAsset[T any](ctx *asset.AssetContext, key string) (T, error) {
 	}
 
 	// 3. Convert to target type T
-	if v, ok := any(rendered).(T); ok {
+	return RenderAsset[T](rendered)
+}
+
+// RenderAsset converts a rendered value to target type T.
+func RenderAsset[T any](value any) (T, error) {
+	var zero T
+
+	// 1. Direct type assertion
+	if v, ok := value.(T); ok {
 		return v, nil
 	}
 
-	// 4. Try conversion if T is not string
+	// 2. Try conversion via inferred type
 	targetType, ok := utils.InferMType(zero)
 	if !ok {
 		return zero, fmt.Errorf("unsupported type %T for auto conversion", zero)
 	}
 
-	converted, err := utils.Convert(rendered, targetType)
+	converted, err := utils.Convert(value, targetType)
 	if err != nil {
 		return zero, err
 	}
@@ -170,7 +178,7 @@ func GetConfigAsset[T any](ctx *asset.AssetContext, key string) (T, error) {
 func BuildConfigAssetURI[T any](ctx *asset.AssetContext, key string) (string, error) {
 	var zero T
 
-	defaultValue, definedType := ResolveConfigFieldMeta(ctx, key)
+	defaultValue, definedType, notEditable := ResolveConfigFieldMeta(ctx, key)
 	if definedType == "" {
 		if mt, ok := utils.InferMType(zero); ok {
 			if mt == cnst.INT64 {
@@ -188,18 +196,24 @@ func BuildConfigAssetURI[T any](ctx *asset.AssetContext, key string) (string, er
 	if definedType != "" {
 		builder = builder.Type(definedType)
 	}
+	if notEditable {
+		if defaultValue == "" {
+			return "", fmt.Errorf("config field '%s' is not editable and must define a default value", key)
+		}
+		builder = builder.Scope("-")
+	}
 
 	return builder.Build(), nil
 }
 
-func ResolveConfigFieldMeta(ctx *asset.AssetContext, key string) (defaultValue string, definedType string) {
+func ResolveConfigFieldMeta(ctx *asset.AssetContext, key string) (defaultValue string, definedType string, notEditable bool) {
 	nodeCtx := ctx.NodeCtx()
 	if nodeCtx == nil {
-		return defaultValue, definedType
+		return defaultValue, definedType, notEditable
 	}
 	fn, ok := nodeCtx.GetNode().(*base.FunctionsNode)
 	if !ok {
-		return defaultValue, definedType
+		return defaultValue, definedType, notEditable
 	}
 
 	var mgr types.NodeFuncManager
@@ -207,12 +221,12 @@ func ResolveConfigFieldMeta(ctx *asset.AssetContext, key string) (defaultValue s
 		mgr = r.GetEngine().NodeFuncManager()
 	}
 	if mgr == nil {
-		return defaultValue, definedType
+		return defaultValue, definedType, notEditable
 	}
 
 	funcDef, found := mgr.Get(fn.FuncConfig.FunctionName)
 	if !found || funcDef.FuncObject.Configuration.Business == nil {
-		return defaultValue, definedType
+		return defaultValue, definedType, notEditable
 	}
 
 	for _, field := range funcDef.FuncObject.Configuration.Business {
@@ -223,10 +237,10 @@ func ResolveConfigFieldMeta(ctx *asset.AssetContext, key string) (defaultValue s
 		if field.Default != nil {
 			defaultValue = fmt.Sprintf("%v", field.Default)
 		}
-		return defaultValue, string(field.Type)
+		return defaultValue, string(field.Type), field.NotEditable
 	}
 
-	return defaultValue, definedType
+	return defaultValue, definedType, notEditable
 }
 
 func ResolveParamBinding(ctx *asset.AssetContext, name string, io string) (string, string, error) {

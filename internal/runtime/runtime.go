@@ -18,9 +18,11 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/neohetj/matrix/internal/log"
 
@@ -134,13 +136,16 @@ func (r *DefaultRuntime) Execute(ctx context.Context, fromNodeID string, msg typ
 		return fmt.Errorf("runtime is not initialized or has been destroyed")
 	}
 
+	onErrorCfg := r.resolveOnErrorConfig()
+
 	// Wrap the original onEnd callback to include the OnChainCompleted hook.
 	wrappedOnEnd := func(finalMsg types.RuleMsg, finalErr error) {
+		resolvedMsg, resolvedErr := r.handleOnErrorStrategy(ctx, msg, finalMsg, finalErr, onErrorCfg)
 		if r.callback != nil {
-			r.callback.OnChainCompleted(finalMsg, finalErr)
+			r.callback.OnChainCompleted(resolvedMsg, resolvedErr)
 		}
 		if onEnd != nil {
-			onEnd(finalMsg, finalErr)
+			onEnd(resolvedMsg, resolvedErr)
 		}
 	}
 
@@ -232,6 +237,81 @@ func (r *DefaultRuntime) Execute(ctx context.Context, fromNodeID string, msg typ
 	// The Execute function returns quickly. The actual result is handled by the onEnd callback,
 	// which should be triggered by the NodeCtx's Tell... methods.
 	return nil
+}
+
+func (r *DefaultRuntime) resolveOnErrorConfig() *types.RuleChainOnError {
+	if r.chainDef == nil {
+		return nil
+	}
+	return r.chainDef.RuleChain.OnError
+}
+
+func (r *DefaultRuntime) resolveOnErrorStrategy(cfg *types.RuleChainOnError) types.RuleChainOnErrorStrategy {
+	if cfg == nil || cfg.Strategy == "" {
+		return types.RuleChainOnErrorStrategyHalt
+	}
+	switch cfg.Strategy {
+	case types.RuleChainOnErrorStrategyContinue, types.RuleChainOnErrorStrategyRedirect:
+		return cfg.Strategy
+	default:
+		return types.RuleChainOnErrorStrategyHalt
+	}
+}
+
+func (r *DefaultRuntime) ensureErrorMetadata(msg types.RuleMsg, err error) types.RuleMsg {
+	if msg == nil || err == nil {
+		return msg
+	}
+	md := msg.Metadata()
+	if md == nil {
+		md = types.Metadata{}
+	}
+	md[types.MetaError] = err.Error()
+	md[types.MetaErrorTimestamp] = time.Now().UTC().Format(time.RFC3339)
+	var fault *types.Fault
+	if errors.As(err, &fault) {
+		md[types.MetaErrorCode] = string(fault.Code)
+	}
+	msg.SetMetadata(md)
+	return msg
+}
+
+func (r *DefaultRuntime) handleOnErrorStrategy(ctx context.Context, inMsg types.RuleMsg, finalMsg types.RuleMsg, finalErr error, cfg *types.RuleChainOnError) (types.RuleMsg, error) {
+	if finalErr == nil {
+		return finalMsg, nil
+	}
+
+	effectiveMsg := finalMsg
+	if effectiveMsg == nil {
+		effectiveMsg = inMsg
+	}
+	effectiveMsg = r.ensureErrorMetadata(effectiveMsg, finalErr)
+
+	strategy := r.resolveOnErrorStrategy(cfg)
+	switch strategy {
+	case types.RuleChainOnErrorStrategyContinue:
+		return effectiveMsg, nil
+	case types.RuleChainOnErrorStrategyRedirect:
+		if cfg == nil || cfg.Handler == "" {
+			return effectiveMsg, finalErr
+		}
+		if r.engine == nil || r.engine.RuntimePool() == nil {
+			return effectiveMsg, finalErr
+		}
+		handlerRT, ok := r.engine.RuntimePool().Get(cfg.Handler)
+		if !ok {
+			return effectiveMsg, finalErr
+		}
+		redirectMsg, redirectErr := handlerRT.ExecuteAndWait(ctx, "", effectiveMsg, nil)
+		if redirectErr != nil {
+			return effectiveMsg, finalErr
+		}
+		return redirectMsg, nil
+	case types.RuleChainOnErrorStrategyHalt:
+		fallthrough
+	default:
+		return effectiveMsg, finalErr
+	}
 }
 
 // buildChainInstance creates a live instance of the rule chain from its definition.

@@ -143,5 +143,30 @@ func convertValue(val any, targetType cnst.MType) (any, error) {
 		return nil, ExpectedFileType.Wrap(fmt.Errorf("got %T", val))
 	}
 
+	// Dereference pointer if needed
+	if val != nil {
+		if ptr, ok := val.(*bool); ok {
+			if ptr != nil {
+				val = *ptr
+			}
+		} else if ptr, ok := val.(*string); ok {
+			if ptr != nil {
+				val = *ptr
+			}
+		} else if ptr, ok := val.(*int); ok {
+			if ptr != nil {
+				val = *ptr
+			}
+		} else if ptr, ok := val.(*int64); ok {
+			if ptr != nil {
+				val = *ptr
+			}
+		} else if ptr, ok := val.(*float64); ok {
+			if ptr != nil {
+				val = *ptr
+			}
+		}
+	}
+
 	return utils.Convert(val, targetType)
 }

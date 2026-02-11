@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -115,4 +116,73 @@ func TestPipelineEndpointNode_StartAndProcess(t *testing.T) {
 
 	mockRuntime.AssertExpectations(t)
 	node.Stop()
+}
+
+func TestPipelineEndpointNode_ProcessData_RuntimeErrorBlocksOutput(t *testing.T) {
+	node := &PipelineEndpointNode{}
+	node.BaseNode = *types.NewBaseNode(PipelineEndpointNodeType, types.NodeMetadata{})
+	node.SetID("test-pipeline-node")
+	node.activeChannels = map[string]chan types.RuleMsg{
+		"out": make(chan types.RuleMsg, 1),
+	}
+
+	mockRuntime := new(utils.MockRuntime)
+	mockRuntime.On("Execute", mock.Anything, "", mock.Anything, mock.Anything).
+		Return(nil).
+		Run(func(args mock.Arguments) {
+			onEnd := args.Get(3).(func(types.RuleMsg, error))
+			onEnd(nil, errors.New("stage failed"))
+		})
+
+	mockPool := new(MockRuntimePoolForPipeline)
+	mockPool.On("Get", "mock-chain").Return(mockRuntime, true)
+	node.SetRuntimePool(mockPool)
+
+	stage := PipelineStageConfig{
+		Name:          "Stage1",
+		Processor:     ProcessorConfig{ID: "mock-chain", Type: "chain"},
+		OutputChannel: "out",
+	}
+	inMsg := types.NewMsg("input", "", nil, types.NewDataT())
+
+	node.processData(context.Background(), stage, inMsg)
+
+	assert.Equal(t, 0, len(node.activeChannels["out"]))
+	mockRuntime.AssertExpectations(t)
+	mockPool.AssertExpectations(t)
+}
+
+func TestPipelineEndpointNode_ProcessData_MetadataErrorBlocksOutput(t *testing.T) {
+	node := &PipelineEndpointNode{}
+	node.BaseNode = *types.NewBaseNode(PipelineEndpointNodeType, types.NodeMetadata{})
+	node.SetID("test-pipeline-node")
+	node.activeChannels = map[string]chan types.RuleMsg{
+		"out": make(chan types.RuleMsg, 1),
+	}
+
+	mockRuntime := new(utils.MockRuntime)
+	mockRuntime.On("Execute", mock.Anything, "", mock.Anything, mock.Anything).
+		Return(nil).
+		Run(func(args mock.Arguments) {
+			onEnd := args.Get(3).(func(types.RuleMsg, error))
+			result := types.NewMsg("result", "", types.Metadata{types.MetaError: "failed in metadata"}, types.NewDataT())
+			onEnd(result, nil)
+		})
+
+	mockPool := new(MockRuntimePoolForPipeline)
+	mockPool.On("Get", "mock-chain").Return(mockRuntime, true)
+	node.SetRuntimePool(mockPool)
+
+	stage := PipelineStageConfig{
+		Name:          "Stage1",
+		Processor:     ProcessorConfig{ID: "mock-chain", Type: "chain"},
+		OutputChannel: "out",
+	}
+	inMsg := types.NewMsg("input", "", nil, types.NewDataT())
+
+	node.processData(context.Background(), stage, inMsg)
+
+	assert.Equal(t, 0, len(node.activeChannels["out"]))
+	mockRuntime.AssertExpectations(t)
+	mockPool.AssertExpectations(t)
 }

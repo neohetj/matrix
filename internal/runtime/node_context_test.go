@@ -133,6 +133,93 @@ func TestTellNext_NoMatchingRelation(t *testing.T) {
 	mockChain.AssertExpectations(t)
 }
 
+// TestTellFailure_NoFailureConnection_BubblesError 测试 Failure 路由无连接时错误冒泡。
+func TestTellFailure_NoFailureConnection_BubblesError(t *testing.T) {
+	// Arrange
+	mockScheduler := new(utils.MockScheduler)
+	mockChain := new(utils.MockChainInstance)
+	setupMockChain(mockChain)
+
+	r := createRuntime(t, mockScheduler)
+
+	currentNodeID := "node1"
+	selfDef := &types.NodeDef{ID: currentNodeID, Name: "Node 1", Type: "functions"}
+
+	// 只有 Success 连接，没有 Failure 连接
+	connections := []types.Connection{
+		{FromID: currentNodeID, ToID: "node2", Type: "Success"},
+	}
+	mockChain.On("GetConnections", currentNodeID).Return(connections)
+
+	msg := new(utils.MockRuleMsg)
+	msg.On("Type").Return("test").Maybe()
+	expectedErr := errors.New("expected failure")
+
+	var (
+		onEndCalled bool
+		onEndErr    error
+	)
+	onEnd := func(m types.RuleMsg, err error) {
+		onEndCalled = true
+		onEndErr = err
+	}
+
+	ctx := runtime.NewDefaultNodeCtx(context.Background(), r, mockChain, selfDef, nil, onEnd, nil, nil)
+
+	// Act
+	ctx.TellFailure(msg, expectedErr)
+
+	// Assert
+	assert.True(t, onEndCalled)
+	assert.Error(t, onEndErr)
+	assert.Equal(t, expectedErr.Error(), onEndErr.Error())
+	mockScheduler.AssertNotCalled(t, "Submit", mock.Anything)
+	mockChain.AssertExpectations(t)
+}
+
+// TestTellNext_FailureNoConnection_UsesMetadataError 测试 Failure 路由无连接且无 pendingErr 时，使用 metadata 错误兜底冒泡。
+func TestTellNext_FailureNoConnection_UsesMetadataError(t *testing.T) {
+	// Arrange
+	mockScheduler := new(utils.MockScheduler)
+	mockChain := new(utils.MockChainInstance)
+	setupMockChain(mockChain)
+
+	r := createRuntime(t, mockScheduler)
+
+	currentNodeID := "node1"
+	selfDef := &types.NodeDef{ID: currentNodeID}
+
+	connections := []types.Connection{
+		{FromID: currentNodeID, ToID: "node2", Type: "Success"},
+	}
+	mockChain.On("GetConnections", currentNodeID).Return(connections)
+
+	msg := new(utils.MockRuleMsg)
+	msg.On("Type").Return("test").Maybe()
+	msg.On("Metadata").Return(types.Metadata{types.MetaError: "metadata failure"}).Maybe()
+
+	var (
+		onEndCalled bool
+		onEndErr    error
+	)
+	onEnd := func(m types.RuleMsg, err error) {
+		onEndCalled = true
+		onEndErr = err
+	}
+
+	ctx := runtime.NewDefaultNodeCtx(context.Background(), r, mockChain, selfDef, nil, onEnd, nil, nil)
+
+	// Act
+	ctx.TellNext(msg, "Failure")
+
+	// Assert
+	assert.True(t, onEndCalled)
+	assert.Error(t, onEndErr)
+	assert.Equal(t, "metadata failure", onEndErr.Error())
+	mockScheduler.AssertNotCalled(t, "Submit", mock.Anything)
+	mockChain.AssertExpectations(t)
+}
+
 // TestTellNext_Success 测试成功流转的情况
 // 验证：找到下一个节点，提交任务到调度器，并在任务中执行下一个节点的 OnMsg。
 func TestTellNext_Success(t *testing.T) {

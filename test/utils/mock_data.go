@@ -21,8 +21,13 @@ func (m *MockRuleMsg) Ts() int64 {
 	return args.Get(0).(int64)
 }
 func (m *MockRuleMsg) Type() string {
-	args := m.Called()
-	return args.String(0)
+	for _, c := range m.ExpectedCalls {
+		if c.Method == "Type" {
+			args := m.Called()
+			return args.String(0)
+		}
+	}
+	return ""
 }
 func (m *MockRuleMsg) DataFormat() cnst.MFormat {
 	args := m.Called()
