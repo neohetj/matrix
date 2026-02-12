@@ -17,13 +17,12 @@
 package aop
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"os"
 	"strings"
 	"time"
-
-	"context"
 
 	"github.com/google/uuid"
 	"github.com/neohetj/matrix/pkg/cnst"

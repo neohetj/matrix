@@ -10,6 +10,7 @@ import (
 	_ "github.com/lib/pq" // Register Postgres driver
 
 	"github.com/neohetj/matrix/internal/builtin/base"
+	"github.com/neohetj/matrix/pkg/asset"
 	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/types"
 	"github.com/neohetj/matrix/pkg/utils"
@@ -68,6 +69,12 @@ func (n *SqlClientNode) Init(cfg types.ConfigMap) error {
 	if err := utils.Decode(cfg, &n.nodeConfig); err != nil {
 		return fmt.Errorf("failed to decode sql client node config: %w", err)
 	}
+
+	uri, err := asset.RenderTemplate(n.nodeConfig.URI, asset.NewAssetContext())
+	if err != nil {
+		return fmt.Errorf("failed to render uri template: %s, error: %w", n.nodeConfig.URI, err)
+	}
+	n.nodeConfig.URI = uri
 
 	initFunc := func() (*sqlx.DB, error) {
 		if n.client != nil {

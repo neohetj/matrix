@@ -29,8 +29,8 @@ import (
 )
 
 var (
-	// sidFormatRegex enforces the convention of TypeNameVmajor_minor, e.g., EmailContentV1_0.
-	sidFormatRegex = regexp.MustCompile(`^[A-Z][a-zA-Z0-9]+V\d+_\d+$`)
+	// sidFormatRegex enforces the convention of TypeName_Vmajor or TypeName_Vmajor_minor, e.g., EmailContent_V1 or EmailContent_V1_0.
+	sidFormatRegex = regexp.MustCompile(`^[A-Z][a-zA-Z0-9]+_V\d+(_\d+)?$`)
 )
 
 // DefaultCoreObjRegistry is the default thread-safe implementation of the CoreObjRegistry interface.
@@ -53,7 +53,10 @@ func (r *DefaultCoreObjRegistry) Register(defs ...types.CoreObjDef) {
 		}
 		sid := def.SID()
 		if !sidFormatRegex.MatchString(sid) {
-			logger.Warnf(context.Background(), "CoreObj SID '%s' does not conform to the recommended format 'TypeNameVmajor_minor'.", sid)
+			// Ignore check for list type
+			if !strings.HasPrefix(sid, cnst.LIST_PREFIX) {
+				logger.Warnf(context.Background(), "CoreObj SID '%s' does not conform to the recommended format 'TypeName_Vmajor_minor'.", sid)
+			}
 		}
 
 		// Check for list type naming convention

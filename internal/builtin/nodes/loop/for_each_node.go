@@ -261,7 +261,8 @@ func (n *ForEachNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 			if err != nil {
 				ctx.Error("Sync sub-chain execution failed", "iteration", i, "error", err, "continueOnError", n.nodeConfig.ContinueOnError)
 				if !n.nodeConfig.ContinueOnError {
-					ctx.TellFailure(finalIterMsg, fmt.Errorf("forEach loop failed at iteration %d: %w", i, err))
+					n.mergeErrorMetadata(finalIterMsg, msg)
+					ctx.TellFailure(msg, fmt.Errorf("forEach loop failed at iteration %d: %w", i, err))
 					return
 				}
 				continue
@@ -269,7 +270,8 @@ func (n *ForEachNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 			if errMsg, ok := finalIterMsg.Metadata()[types.MetaError]; ok {
 				ctx.Error("Sync sub-chain execution failed (metadata error)", "iteration", i, "error", errMsg, "continueOnError", n.nodeConfig.ContinueOnError)
 				if !n.nodeConfig.ContinueOnError {
-					ctx.TellFailure(finalIterMsg, fmt.Errorf("forEach loop failed at iteration %d: %s", i, errMsg))
+					n.mergeErrorMetadata(finalIterMsg, msg)
+					ctx.TellFailure(msg, fmt.Errorf("forEach loop failed at iteration %d: %s", i, errMsg))
 					return
 				}
 				continue
@@ -450,6 +452,37 @@ func (n *ForEachNode) extractFromItem(item any, path string) (any, bool) {
 		}
 	}
 	return nil, false
+}
+
+func (n *ForEachNode) mergeErrorMetadata(subMsg, parentMsg types.RuleMsg) {
+	if subMsg == nil || parentMsg == nil {
+		return
+	}
+
+	subMeta := subMsg.Metadata()
+	if subMeta == nil {
+		return
+	}
+
+	parentMeta := parentMsg.Metadata()
+	if parentMeta == nil {
+		parentMeta = make(types.Metadata)
+		parentMsg.SetMetadata(parentMeta)
+	}
+
+	errorMetaKeys := []string{
+		types.MetaError,
+		types.MetaErrorCode,
+		types.MetaErrorTimestamp,
+		types.MetaErrorNodeID,
+		types.MetaErrorNodeName,
+	}
+
+	for _, key := range errorMetaKeys {
+		if val, ok := subMeta[key]; ok && val != "" {
+			parentMeta[key] = val
+		}
+	}
 }
 
 // executeSubChain adds metadata to the message and executes the sub-chain.
