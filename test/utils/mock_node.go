@@ -19,6 +19,7 @@ type MockNodeCtx struct {
 	FailureMsg          types.RuleMsg
 	FailureErr          error
 	NodeDef             types.NodeDef
+	NodeValue           types.Node
 	NodeIDValue         string
 	PreviousNodeIDValue string
 	ChainIDValue        string
@@ -47,6 +48,12 @@ func WithTestNodeConfig(config map[string]any) MockNodeCtxOption {
 		ctx.NodeDef.Configuration = types.ConfigMap(config)
 	}
 }
+
+func WithNodeValue(node types.Node) MockNodeCtxOption {
+	return func(ctx *MockNodeCtx) {
+		ctx.NodeValue = node
+	}
+}
 func (m *MockNodeCtx) GetContext() context.Context { return m.Ctx }
 func (m *MockNodeCtx) SetContext(ctx context.Context) {
 	m.Ctx = ctx
@@ -64,7 +71,7 @@ func (m *MockNodeCtx) NodeID() string {
 func (m *MockNodeCtx) PreviousNodeID() string {
 	return m.PreviousNodeIDValue
 }
-func (m *MockNodeCtx) GetNode() types.Node { return nil }
+func (m *MockNodeCtx) GetNode() types.Node { return m.NodeValue }
 func (m *MockNodeCtx) GetRuntime() types.Runtime {
 	return m.runtime
 }
@@ -241,8 +248,14 @@ func (m *MockNodeManager) NewNode(nodeType types.NodeType) (types.Node, error) {
 
 // ----------------------- MockNodePool -----------------------
 // MockNodePool is a mock implementation of types.NodePool.
+//
+// 兼容两种模式：
+// 1) 传统 mock 模式：外部通过方法行为断言。
+// 2) 直喂数据模式：直接往 Nodes/AllNodes/Endpoints 填值。
 type MockNodePool struct {
-	Nodes map[string]types.NodeCtx
+	Nodes     map[string]types.NodeCtx
+	AllNodes  []types.NodeCtx
+	Endpoints []types.Endpoint
 }
 
 func (m *MockNodePool) Get(id string) (types.SharedNodeCtx, bool) {
@@ -254,10 +267,23 @@ func (m *MockNodePool) Get(id string) (types.SharedNodeCtx, bool) {
 }
 
 func (m *MockNodePool) GetAll() []types.NodeCtx {
-	return nil
+	if len(m.AllNodes) > 0 {
+		return append([]types.NodeCtx(nil), m.AllNodes...)
+	}
+	if len(m.Nodes) == 0 {
+		return nil
+	}
+	all := make([]types.NodeCtx, 0, len(m.Nodes))
+	for _, n := range m.Nodes {
+		all = append(all, n)
+	}
+	return all
 }
 
 func (m *MockNodePool) GetEndpoints() []types.Endpoint {
+	if len(m.Endpoints) > 0 {
+		return append([]types.Endpoint(nil), m.Endpoints...)
+	}
 	return nil
 }
 
@@ -303,3 +329,42 @@ func (m *MockNodePool) LoadFromRuleChainDef(def *types.RuleChainDef, mgr types.N
 func (m *MockNodePool) AddEndpoint(endpoint types.Endpoint) {}
 func (m *MockNodePool) Del(id string)                       {}
 func (m *MockNodePool) Stop()                               {}
+
+// ----------------------- Feed Helpers -----------------------
+
+// NewMockEndpointCtxWithNodeDef 构造一个可被 SharedNodePool.GetAll 直接消费的 endpoint NodeCtx。
+func NewMockEndpointCtxWithNodeDef(id, name, nodeType string, config types.ConfigMap) *MockNodeCtx {
+	ep := &LiteEndpointNode{id: id, name: name, nodeType: types.NodeType(nodeType)}
+	return NewMockNodeCtx(
+		WithNodeValue(ep),
+		func(ctx *MockNodeCtx) {
+			ctx.NodeIDValue = id
+			ctx.NodeDef = types.NodeDef{ID: id, Name: name, Type: nodeType, Configuration: config}
+		},
+	)
+}
+
+// LiteEndpointNode 是一个无需 mock.On 的最小 endpoint 实现。
+type LiteEndpointNode struct {
+	id       string
+	name     string
+	nodeType types.NodeType
+}
+
+func (n *LiteEndpointNode) New() types.Node                            { return &LiteEndpointNode{nodeType: n.nodeType} }
+func (n *LiteEndpointNode) Type() types.NodeType                       { return n.nodeType }
+func (n *LiteEndpointNode) Init(config types.ConfigMap) error          { return nil }
+func (n *LiteEndpointNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {}
+func (n *LiteEndpointNode) Destroy()                                   {}
+func (n *LiteEndpointNode) NodeMetadata() types.NodeMetadata {
+	return types.NodeMetadata{Type: string(n.nodeType), Name: n.name}
+}
+func (n *LiteEndpointNode) DataContract() types.DataContract { return types.DataContract{} }
+func (n *LiteEndpointNode) ID() string                       { return n.id }
+func (n *LiteEndpointNode) SetID(id string)                  { n.id = id }
+func (n *LiteEndpointNode) Name() string                     { return n.name }
+func (n *LiteEndpointNode) SetName(name string)              { n.name = name }
+func (n *LiteEndpointNode) Errors() []*types.Fault           { return nil }
+func (n *LiteEndpointNode) ConfigSchema() *openapi3.Schema   { return nil }
+func (n *LiteEndpointNode) GetInstance() (any, error)        { return n, nil }
+func (n *LiteEndpointNode) SetRuntimePool(pool any) error    { return nil }

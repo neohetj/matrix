@@ -54,14 +54,22 @@ type TraceConfig struct {
 	EnableAop bool `json:"EnableAop" yaml:"enableAop"`
 }
 
+// FixedEndpointConfig defines fixed endpoint conflict behavior against DSL endpoints.
+type FixedEndpointConfig struct {
+	// OverrideDSLOnConflict controls whether fixed endpoints override conflicting DSL endpoints.
+	// nil means true for backward compatibility.
+	OverrideDSLOnConflict *bool `json:"OverrideDSLOnConflict,omitempty" yaml:"overrideDslOnConflict,omitempty"`
+}
+
 // MatrixConfig is the main configuration object for the Matrix engine.
 // It can be unmarshaled from a YAML file (via json tags).
 type MatrixConfig struct {
-	Loader            LoaderConfig    `json:"Loader" yaml:"loader"`
-	Scheduler         SchedulerConfig `json:"Scheduler" yaml:"scheduler"`
-	Trace             TraceConfig     `json:"Trace" yaml:"trace"`
-	EnabledComponents []string        `json:"EnabledComponents" yaml:"enabledComponents"`
-	Business          types.ConfigMap `json:"Business" yaml:"business"`
+	Loader            LoaderConfig        `json:"Loader" yaml:"loader"`
+	Scheduler         SchedulerConfig     `json:"Scheduler" yaml:"scheduler"`
+	Trace             TraceConfig         `json:"Trace" yaml:"trace"`
+	FixedEndpoint     FixedEndpointConfig `json:"FixedEndpoint" yaml:"fixedEndpoint"`
+	EnabledComponents []string            `json:"EnabledComponents" yaml:"enabledComponents"`
+	Business          types.ConfigMap     `json:"Business" yaml:"business"`
 }
 
 // GetEngineConfig retrieves a value from the Business config map.
@@ -75,6 +83,15 @@ func (c *MatrixConfig) GetEngineConfig(key string) (any, bool) {
 	}
 	// Fallback to Env
 	return os.LookupEnv(key)
+}
+
+// ShouldFixedEndpointOverrideDSLOnConflict returns fixed-vs-DSL conflict behavior.
+// Default is true when overrideDslOnConflict is not configured.
+func (c MatrixConfig) ShouldFixedEndpointOverrideDSLOnConflict() bool {
+	if c.FixedEndpoint.OverrideDSLOnConflict == nil {
+		return true
+	}
+	return *c.FixedEndpoint.OverrideDSLOnConflict
 }
 
 // NewConfig creates a new Config object with sensible defaults.

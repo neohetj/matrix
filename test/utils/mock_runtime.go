@@ -132,11 +132,20 @@ func (m *MockRuntime) GetChainInstance() types.ChainInstance {
 
 // ----------------------- MockRuntimePool -----------------------
 // MockRuntimePool is a mock implementation of types.RuntimePool.
+//
+// 兼容两种用法：
+// 1) 传统 testify/mock：通过 On(...).Return(...) 配置期望。
+// 2) 直喂数据模式：不配置 On 时，直接从 Runtimes 读取。
 type MockRuntimePool struct {
 	mock.Mock
+	Runtimes map[string]types.Runtime
 }
 
 func (m *MockRuntimePool) Get(id string) (types.Runtime, bool) {
+	if len(m.ExpectedCalls) == 0 {
+		rt, ok := m.Runtimes[id]
+		return rt, ok
+	}
 	args := m.Called(id)
 	if args.Get(0) == nil {
 		return nil, args.Bool(1)
@@ -145,15 +154,33 @@ func (m *MockRuntimePool) Get(id string) (types.Runtime, bool) {
 }
 
 func (m *MockRuntimePool) Register(id string, runtime types.Runtime) error {
+	if len(m.ExpectedCalls) == 0 {
+		if m.Runtimes == nil {
+			m.Runtimes = map[string]types.Runtime{}
+		}
+		m.Runtimes[id] = runtime
+		return nil
+	}
 	args := m.Called(id, runtime)
 	return args.Error(0)
 }
 
 func (m *MockRuntimePool) Unregister(id string) {
+	if len(m.ExpectedCalls) == 0 {
+		delete(m.Runtimes, id)
+		return
+	}
 	m.Called(id)
 }
 
 func (m *MockRuntimePool) ListIDs() []string {
+	if len(m.ExpectedCalls) == 0 {
+		ids := make([]string, 0, len(m.Runtimes))
+		for id := range m.Runtimes {
+			ids = append(ids, id)
+		}
+		return ids
+	}
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
@@ -162,6 +189,9 @@ func (m *MockRuntimePool) ListIDs() []string {
 }
 
 func (m *MockRuntimePool) ListByViewType(viewType string) []types.Runtime {
+	if len(m.ExpectedCalls) == 0 {
+		return nil
+	}
 	args := m.Called(viewType)
 	if args.Get(0) == nil {
 		return nil
@@ -170,6 +200,9 @@ func (m *MockRuntimePool) ListByViewType(viewType string) []types.Runtime {
 }
 
 func (m *MockRuntimePool) GetTriggers(chainID string) []types.TriggerSource {
+	if len(m.ExpectedCalls) == 0 {
+		return nil
+	}
 	args := m.Called(chainID)
 	if args.Get(0) == nil {
 		return nil
@@ -178,55 +211,98 @@ func (m *MockRuntimePool) GetTriggers(chainID string) []types.TriggerSource {
 }
 
 func (m *MockRuntimePool) RegisterTrigger(targetChainID string, source types.TriggerSource) {
+	if len(m.ExpectedCalls) == 0 {
+		return
+	}
 	m.Called(targetChainID, source)
 }
 
 func (m *MockRuntimePool) UnregisterTrigger(targetChainID string, source types.TriggerSource) {
+	if len(m.ExpectedCalls) == 0 {
+		return
+	}
 	m.Called(targetChainID, source)
 }
 
 // ----------------------- MockEngine -----------------------
 // MockEngine mocks the MatrixEngine interface.
+//
+// 兼容两种用法：
+// 1) 传统 testify/mock：通过 On(...).Return(...) 配置。
+// 2) 直喂数据模式：不配置 On 时，直接返回字段值。
 type MockEngine struct {
 	mock.Mock
+	EngineConfig         map[string]any
+	RuntimePoolValue     types.RuntimePool
+	SharedNodePoolValue  types.NodePool
+	NodeManagerValue     types.NodeManager
+	NodeFuncManagerValue types.NodeFuncManager
+	BizConfigValue       types.ConfigMap
+	LoaderValue          types.ResourceProvider
+	LoggerValue          types.Logger
 }
 
 func (m *MockEngine) GetEngineConfig(key string) (any, bool) {
+	if len(m.ExpectedCalls) == 0 {
+		v, ok := m.EngineConfig[key]
+		return v, ok
+	}
 	args := m.Called(key)
 	return args.Get(0), args.Bool(1)
 }
 
 func (m *MockEngine) RuntimePool() types.RuntimePool {
+	if len(m.ExpectedCalls) == 0 {
+		return m.RuntimePoolValue
+	}
 	args := m.Called()
 	return args.Get(0).(types.RuntimePool)
 }
 
 func (m *MockEngine) SharedNodePool() types.NodePool {
+	if len(m.ExpectedCalls) == 0 {
+		return m.SharedNodePoolValue
+	}
 	args := m.Called()
 	return args.Get(0).(types.NodePool)
 }
 
 func (m *MockEngine) NodeManager() types.NodeManager {
+	if len(m.ExpectedCalls) == 0 {
+		return m.NodeManagerValue
+	}
 	args := m.Called()
 	return args.Get(0).(types.NodeManager)
 }
 
 func (m *MockEngine) NodeFuncManager() types.NodeFuncManager {
+	if len(m.ExpectedCalls) == 0 {
+		return m.NodeFuncManagerValue
+	}
 	args := m.Called()
 	return args.Get(0).(types.NodeFuncManager)
 }
 
 func (m *MockEngine) BizConfig() types.ConfigMap {
+	if len(m.ExpectedCalls) == 0 {
+		return m.BizConfigValue
+	}
 	args := m.Called()
 	return args.Get(0).(types.ConfigMap)
 }
 
 func (m *MockEngine) Loader() types.ResourceProvider {
+	if len(m.ExpectedCalls) == 0 {
+		return m.LoaderValue
+	}
 	args := m.Called()
 	return args.Get(0).(types.ResourceProvider)
 }
 
 func (m *MockEngine) Logger() types.Logger {
+	if len(m.ExpectedCalls) == 0 {
+		return m.LoggerValue
+	}
 	args := m.Called()
 	return args.Get(0).(types.Logger)
 }

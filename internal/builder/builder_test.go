@@ -128,8 +128,8 @@ func TestLoadDefs(t *testing.T) {
 				Content string
 				IsDir   bool
 			}{
-				"rulechains/chain1.json": {Content: `{"ruleChain":{"id":"chain1"}, "metadata":{}}`},
-				"rulechains/chain2.json": {Content: `{"ruleChain":{"id":"chain2"}, "metadata":{}}`},
+				"rulechains/chain1.json": {Content: `{"ruleChain":{"id":"chain1"}, "metadata":{"nodes":[{"id":"n1","type":"x"}]}}`},
+				"rulechains/chain2.json": {Content: `{"ruleChain":{"id":"chain2"}, "metadata":{"nodes":[{"id":"n2","type":"y"}]}}`},
 			},
 		}
 		defs, err := builder.LoadDefs(provider, []string{"rulechains"})
@@ -137,6 +137,8 @@ func TestLoadDefs(t *testing.T) {
 		assert.Len(t, defs, 2)
 		assert.Contains(t, defs, "chain1")
 		assert.Contains(t, defs, "chain2")
+		assert.Equal(t, "rulechains/chain1.json", defs["chain1"].Metadata.Nodes[0].SourcePath)
+		assert.Equal(t, "rulechains/chain2.json", defs["chain2"].Metadata.Nodes[0].SourcePath)
 	})
 
 	// 测试点：检测到重复的规则链 ID，预期返回错误
@@ -200,6 +202,30 @@ func TestLoadEndpoints(t *testing.T) {
 		assert.True(t, ok)
 	})
 
+	t.Run("source path set", func(t *testing.T) {
+		provider := &utils.MockResourceProvider{
+			Files: map[string]struct {
+				Content string
+				IsDir   bool
+			}{
+				"endpoints/ep_source.json": {Content: `{"id":"ep_source","type":"endpoint"}`},
+			},
+		}
+		nodeMgr := &utils.MockNodeManager{
+			NodePrototypes: map[string]types.Node{
+				"endpoint": &utils.MockEndpoint{},
+			},
+		}
+		pool := &captureNodePool{}
+		runtimePool := &utils.MockRuntimePool{}
+
+		err := builder.LoadEndpoints(provider, []string{"endpoints"}, nodeMgr, pool, runtimePool)
+		assert.NoError(t, err)
+		if assert.Len(t, pool.newNodeDefs, 1) {
+			assert.Equal(t, "endpoints/ep_source.json", pool.newNodeDefs[0].SourcePath)
+		}
+	})
+
 	// 测试点：处理无效的 Endpoint 定义文件，应忽略且不报错
 	t.Run("invalid node def", func(t *testing.T) {
 		provider := &utils.MockResourceProvider{
@@ -245,6 +271,32 @@ func TestLoadSharedNodes(t *testing.T) {
 		assert.NoError(t, err)
 		_, ok := nodePool.GetNodeContext("shared1")
 		assert.True(t, ok)
+	})
+
+	t.Run("source path set", func(t *testing.T) {
+		provider := &utils.MockResourceProvider{
+			Files: map[string]struct {
+				Content string
+				IsDir   bool
+			}{
+				"shared/source_nodes.json": {Content: `{"metadata":{"nodes":[{"id":"shared_src","type":"some_node"}]}}`},
+			},
+		}
+		nodeMgr := &utils.MockNodeManager{
+			NodePrototypes: map[string]types.Node{
+				"some_node": &utils.MockNode{},
+			},
+		}
+		pool := &captureNodePool{}
+
+		err := builder.LoadSharedNodes(provider, []string{"shared"}, nodeMgr, pool)
+		assert.NoError(t, err)
+		if assert.Len(t, pool.loadFromRuleChainDefs, 1) {
+			nodes := pool.loadFromRuleChainDefs[0].Metadata.Nodes
+			if assert.Len(t, nodes, 1) {
+				assert.Equal(t, "shared/source_nodes.json", nodes[0].SourcePath)
+			}
+		}
 	})
 
 	// 测试点：处理无效的共享节点定义文件，应忽略
@@ -358,7 +410,84 @@ func TestMerger(t *testing.T) {
 		_, err := merger.Merge("a")
 		assert.Error(t, err)
 	})
+
+	t.Run("source path preserved", func(t *testing.T) {
+		defs := builder.DefMap{
+			"base": {
+				Metadata: types.MetadataData{
+					Nodes: []types.NodeDef{
+						{ID: "shared", SourcePath: "rulechains/base.json"},
+						{ID: "base_only", SourcePath: "rulechains/base.json"},
+					},
+				},
+			},
+			"overlay": {
+				RuleChain: types.RuleChainData{
+					Attrs: types.RuleChainAttrs{Imports: []string{"base"}},
+				},
+				Metadata: types.MetadataData{
+					Nodes: []types.NodeDef{
+						{ID: "shared", SourcePath: "rulechains/overlay.json"},
+						{ID: "overlay_only", SourcePath: "rulechains/overlay.json"},
+					},
+				},
+			},
+			"single": {
+				Metadata: types.MetadataData{
+					Nodes: []types.NodeDef{
+						{ID: "single_node", SourcePath: "rulechains/single.json"},
+					},
+				},
+			},
+		}
+		merger := builder.NewMerger(defs)
+
+		singleMerged, err := merger.Merge("single")
+		assert.NoError(t, err)
+		if assert.Len(t, singleMerged.Metadata.Nodes, 1) {
+			assert.Equal(t, "rulechains/single.json", singleMerged.Metadata.Nodes[0].SourcePath)
+		}
+
+		merged, err := merger.Merge("overlay")
+		assert.NoError(t, err)
+		pathByNodeID := make(map[string]string, len(merged.Metadata.Nodes))
+		for _, n := range merged.Metadata.Nodes {
+			pathByNodeID[n.ID] = n.SourcePath
+		}
+		assert.Equal(t, "rulechains/overlay.json", pathByNodeID["shared"])
+		assert.Equal(t, "rulechains/base.json", pathByNodeID["base_only"])
+		assert.Equal(t, "rulechains/overlay.json", pathByNodeID["overlay_only"])
+	})
 }
+
+type captureNodePool struct {
+	newNodeDefs           []types.NodeDef
+	loadFromRuleChainDefs []*types.RuleChainDef
+}
+
+func (p *captureNodePool) Load(dsl []byte, nodeMgr types.NodeManager) (types.NodePool, error) {
+	return p, nil
+}
+
+func (p *captureNodePool) LoadFromRuleChainDef(def *types.RuleChainDef, nodeMgr types.NodeManager) (types.NodePool, error) {
+	p.loadFromRuleChainDefs = append(p.loadFromRuleChainDefs, def)
+	return p, nil
+}
+
+func (p *captureNodePool) NewFromNodeDef(def types.NodeDef, nodeMgr types.NodeManager) (types.SharedNodeCtx, error) {
+	p.newNodeDefs = append(p.newNodeDefs, def)
+	return utils.NewMockNodeCtx(func(ctx *utils.MockNodeCtx) {
+		ctx.NodeDef = def
+	}), nil
+}
+
+func (p *captureNodePool) Get(id string) (types.SharedNodeCtx, bool) { return nil, false }
+func (p *captureNodePool) GetInstance(id string) (any, error)        { return nil, nil }
+func (p *captureNodePool) Del(id string)                             {}
+func (p *captureNodePool) Stop()                                     {}
+func (p *captureNodePool) GetAll() []types.NodeCtx                   { return nil }
+func (p *captureNodePool) AddEndpoint(endpoint types.Endpoint)       {}
+func (p *captureNodePool) GetEndpoints() []types.Endpoint            { return nil }
 
 // TestDiscoverComponentPaths 测试组件目录结构发现
 // 该测试验证是否能正确识别组件内的特定目录（如 rulechains, endpoints, shared）

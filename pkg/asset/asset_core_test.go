@@ -8,7 +8,8 @@ import (
 	"github.com/neohetj/matrix/pkg/asset"
 	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/types"
-	"github.com/neohetj/matrix/pkg/utils"
+	matrixutils "github.com/neohetj/matrix/pkg/utils"
+	tutils "github.com/neohetj/matrix/test/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -32,10 +33,16 @@ type MockNodeCtx struct {
 	mock.Mock
 	config  types.ConfigMap
 	runtime types.Runtime
+	selfDef *types.NodeDef
+	chainID string
+	nodeID  string
 }
 
 func (m *MockNodeCtx) GetRuntime() types.Runtime { return m.runtime }
 func (m *MockNodeCtx) Config() types.ConfigMap   { return m.config }
+func (m *MockNodeCtx) SelfDef() *types.NodeDef   { return m.selfDef }
+func (m *MockNodeCtx) ChainID() string           { return m.chainID }
+func (m *MockNodeCtx) NodeID() string            { return m.nodeID }
 func (m *MockNodeCtx) Warn(msg string, fields ...any) {
 	m.Called(msg, fields)
 }
@@ -55,9 +62,13 @@ func (m *MockRuntime) GetNodePool() types.NodePool   { return m.pool } // Assumi
 type MockEngine struct {
 	types.MatrixEngine
 	bizConfig types.ConfigMap
+	loader    types.ResourceProvider
 }
 
 func (m *MockEngine) BizConfig() types.ConfigMap { return m.bizConfig }
+func (m *MockEngine) Loader() types.ResourceProvider {
+	return m.loader
+}
 
 func (m *MockEngine) GetEngineConfig(path string) (any, bool) {
 	if m.bizConfig == nil {
@@ -215,6 +226,44 @@ func TestAssetResolve_Rel(t *testing.T) {
 	assert.Equal(t, "hello world", v1)
 }
 
+func TestAssetResolve_Rel_StrictSourcePath(t *testing.T) {
+	asset.InitRegistry()
+
+	provider := &tutils.MockResourceProvider{
+		Files: map[string]struct {
+			Content string
+			IsDir   bool
+		}{
+			"code/dsl/prompts/suggest/suggest_hashtags_prompt.txt": {Content: "prompt-content"},
+		},
+	}
+
+	engine := &MockEngine{loader: provider}
+	runtime := &MockRuntime{engine: engine}
+	nodeCtx := &MockNodeCtx{
+		runtime: runtime,
+		selfDef: &types.NodeDef{
+			ID:         "prompt_builder_node",
+			SourcePath: "code/dsl/rulechains/discovery/suggest_hashtags_flow.json",
+		},
+		chainID: "sellitx/rc-suggest-hashtags",
+		nodeID:  "prompt_builder_node",
+	}
+
+	a := asset.Asset[string]{URI: "rel://../../prompts/suggest/suggest_hashtags_prompt.txt"}
+	v, err := a.Resolve(asset.NewAssetContext(asset.WithNodeCtx(nodeCtx)))
+	assert.NoError(t, err)
+	assert.Equal(t, "prompt-content", v)
+}
+
+func TestAssetResolve_Rel_StrictMissingNodeContext(t *testing.T) {
+	asset.InitRegistry()
+	a := asset.Asset[string]{URI: "rel://../../prompts/suggest/suggest_hashtags_prompt.txt"}
+	_, err := a.Resolve(asset.NewAssetContext())
+	assert.Error(t, err)
+	AssertErrorCode(t, err, types.AssetNotFound)
+}
+
 func TestAssetResolve_Ref(t *testing.T) {
 	asset.InitRegistry()
 
@@ -287,7 +336,7 @@ func TestDecodeAssetString(t *testing.T) {
 	}
 
 	cfg := &PromptConfig{}
-	if err := utils.Decode(data, cfg); err != nil {
+	if err := matrixutils.Decode(data, cfg); err != nil {
 		t.Fatalf("Decode failed: %v", err)
 	}
 	if cfg.System.URI != data["system"] {

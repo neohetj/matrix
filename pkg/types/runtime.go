@@ -98,6 +98,16 @@ type NodeDef struct {
 	Configuration ConfigMap      `json:"configuration"`
 	Inputs        map[string]any `json:"inputs,omitempty"`
 	Outputs       map[string]any `json:"outputs,omitempty"`
+	// SourcePath stores the node DSL definition file path (runtime only).
+	// Example: code/dsl/rulechains/example/example_flow.json
+	//
+	// IMPORTANT:
+	// - This is the DSL JSON file that defines this node.
+	// - This is NOT the Go source file path of the node implementation.
+	//
+	// It is used to resolve relative assets (e.g. rel://...) by:
+	// baseDir = dir(SourcePath)
+	SourcePath string `json:"-"`
 }
 
 // Parser is the interface for parsing the rule chain definition file (DSL).

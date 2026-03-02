@@ -102,6 +102,7 @@ func LoadDefs(dslLoader types.ResourceProvider, rulechainPaths []string) (DefMap
 				fmt.Printf("warning: failed to decode rule chain %s (source: %s): %v\n", filePath, res.Source, err)
 				return nil
 			}
+			setSourcePathForNodeDefs(chainDef.Metadata.Nodes, filePath)
 
 			if chainDef.RuleChain.ID == "" {
 				chainDef.RuleChain.ID = strings.TrimSuffix(d.Name(), ".json")
@@ -154,6 +155,7 @@ func LoadEndpoints(
 				fmt.Printf("warning: failed to decode endpoint file %s (source: %s): %v\n", filePath, res.Source, err)
 				return nil
 			}
+			nodeDef.SourcePath = filePath
 
 			ctx, err := nodePool.NewFromNodeDef(*nodeDef, nodeMgr)
 			if err != nil {
@@ -241,6 +243,7 @@ func LoadSharedNodes(
 				fmt.Printf("warning: failed to decode shared node file %s (source: %s): %v\n", filePath, res.Source, err)
 				return nil
 			}
+			setSourcePathForNodeDefs(def.Metadata.Nodes, filePath)
 
 			// A shared node file is a rulechain def used as a container for nodes.
 			if _, err := nodePool.LoadFromRuleChainDef(def, nodeMgr); err != nil {
@@ -336,6 +339,13 @@ func mergeDefs(base, overlay *types.RuleChainDef) *types.RuleChainDef {
 }
 
 func deepCopyDef(def *types.RuleChainDef) *types.RuleChainDef {
+	pathsByIndex := make([]string, len(def.Metadata.Nodes))
+	pathsByNodeID := make(map[string]string, len(def.Metadata.Nodes))
+	for i := range def.Metadata.Nodes {
+		pathsByIndex[i] = def.Metadata.Nodes[i].SourcePath
+		pathsByNodeID[def.Metadata.Nodes[i].ID] = def.Metadata.Nodes[i].SourcePath
+	}
+
 	tempParser := parser.NewJsonParser()
 	bytes, err := tempParser.EncodeRuleChain(def)
 	if err != nil {
@@ -345,7 +355,29 @@ func deepCopyDef(def *types.RuleChainDef) *types.RuleChainDef {
 	if err != nil {
 		panic(fmt.Sprintf("failed to unmarshal RuleChainDef for deep copy: %v", err))
 	}
+	for i := range newDef.Metadata.Nodes {
+		if i < len(pathsByIndex) && pathsByIndex[i] != "" {
+			newDef.Metadata.Nodes[i].SourcePath = pathsByIndex[i]
+			continue
+		}
+		if sourcePath, ok := pathsByNodeID[newDef.Metadata.Nodes[i].ID]; ok {
+			newDef.Metadata.Nodes[i].SourcePath = sourcePath
+		}
+	}
 	return newDef
+}
+
+func setSourcePathForNodeDefs(nodes []types.NodeDef, sourcePath string) {
+	normalized := filepath.ToSlash(strings.TrimSpace(sourcePath))
+	if normalized == "" {
+		return
+	}
+	for i := range nodes {
+		// Record the DSL JSON file path that defines this node.
+		// This path is later used by rel:// resolution and should not be confused
+		// with any Go implementation file path.
+		nodes[i].SourcePath = normalized
+	}
 }
 
 // DiscoverComponentPaths scans a root directory for component subdirectories using the provided loader
