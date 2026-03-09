@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/neohetj/matrix/internal/registry"
@@ -77,11 +78,59 @@ func (n *ChannelPushNode) Init(config types.ConfigMap) error {
 }
 
 func (n *ChannelPushNode) DataContract() types.DataContract {
-	// Reads all data to push to channel, and passes through the msg to next node
+	// Keep pass-through semantics, and additionally expose explicit rulemsg dependencies
+	// when pipelineId/channelName are configured from rulemsg template placeholders.
+	reads := []string{"rulemsg://*"}
+	reads = append(reads, collectRuleMsgReadsFromConfigString(n.nodeConfig.PipelineID)...)
+	reads = append(reads, collectRuleMsgReadsFromConfigString(n.nodeConfig.ChannelName)...)
+
 	return types.DataContract{
-		Reads:  []string{"rulemsg://*"},
+		Reads:  dedupeContractURIs(reads),
 		Writes: []string{"rulemsg://*"},
 	}
+}
+
+func collectRuleMsgReadsFromConfigString(raw string) []string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return nil
+	}
+
+	uris := make([]string, 0)
+	if asset.IsTemplate(value) {
+		uris = asset.CollectTemplateAssets(value)
+	} else {
+		uris = []string{asset.NormalizeURI(value)}
+	}
+
+	result := make([]string, 0, len(uris))
+	for _, uri := range uris {
+		uri = strings.TrimSpace(uri)
+		if strings.HasPrefix(uri, "rulemsg://") {
+			result = append(result, uri)
+		}
+	}
+	return result
+}
+
+func dedupeContractURIs(uris []string) []string {
+	if len(uris) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(uris))
+	seen := make(map[string]struct{}, len(uris))
+	for _, uri := range uris {
+		uri = strings.TrimSpace(uri)
+		if uri == "" {
+			continue
+		}
+		if _, ok := seen[uri]; ok {
+			continue
+		}
+		seen[uri] = struct{}{}
+		result = append(result, uri)
+	}
+	return result
 }
 
 func (n *ChannelPushNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {

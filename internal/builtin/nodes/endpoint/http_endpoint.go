@@ -281,6 +281,8 @@ func (n *HttpEndpointNode) HandleHttpRequest(w http.ResponseWriter, r *http.Requ
 	if options.ExecutionID != "" {
 		msg.Metadata()[types.ExecutionIDKey] = options.ExecutionID
 	}
+	// Persist the root chain id for trace summary endpoints.
+	msg.Metadata()[types.ExecutionStartRuleChainIDKey] = n.nodeConfig.RuleChainID
 
 	nodeCtx := registry.NewMinimalNodeCtx(n.ID())
 	// Process all parameter types

@@ -20,6 +20,12 @@ type RuleMsgAsset struct {
 	Query  url.Values
 }
 
+const (
+	RuleMsgQueryFormat     = "format"
+	RuleMsgQuerySID        = "sid"
+	RuleMsgQueryCandidates = "candidates"
+)
+
 // Parse parses a rulemsg:// URI into scheme, path, and query.
 func ParseRuleMsg(uri string) (RuleMsgAsset, error) {
 	u, err := url.Parse(uri)
@@ -77,7 +83,11 @@ func (a RuleMsgAsset) Validate(uri *url.URL) error {
 
 	switch targetScheme {
 	case cnst.DATA:
-		formatStr := uri.Query().Get("format")
+		query := uri.Query()
+		if err := validateRuleMsgQueryKeys(query, RuleMsgQueryFormat); err != nil {
+			return err
+		}
+		formatStr := query.Get(RuleMsgQueryFormat)
 		if formatStr == "" {
 			return nil
 		}
@@ -87,18 +97,93 @@ func (a RuleMsgAsset) Validate(uri *url.URL) error {
 		}
 		return nil
 	case cnst.METADATA:
+		if err := validateRuleMsgQueryKeys(uri.Query()); err != nil {
+			return err
+		}
 		return nil
 	case cnst.DATAT:
+		query := uri.Query()
+		if err := validateRuleMsgQueryKeys(query, RuleMsgQuerySID, RuleMsgQueryCandidates); err != nil {
+			return err
+		}
 		if targetPath == "" {
 			return fmt.Errorf("empty dataT path")
 		}
-		if uri.Query().Get("sid") == "" {
+		if strings.TrimSpace(query.Get(RuleMsgQuerySID)) == "" {
 			return fmt.Errorf("missing sid for dataT uri")
+		}
+		if _, err := CollectRuleMsgCandidates(query); err != nil {
+			return fmt.Errorf("invalid %s for dataT uri: %w", RuleMsgQueryCandidates, err)
 		}
 		return nil
 	default:
 		return fmt.Errorf("unsupported rulemsg scheme: %s", targetScheme)
 	}
+}
+
+func validateRuleMsgQueryKeys(query url.Values, allowedKeys ...string) error {
+	allowed := make(map[string]struct{}, len(allowedKeys))
+	for _, key := range allowedKeys {
+		if trimmed := strings.TrimSpace(key); trimmed != "" {
+			allowed[trimmed] = struct{}{}
+		}
+	}
+	for key := range query {
+		if _, ok := allowed[key]; !ok {
+			return fmt.Errorf("unsupported query key for rulemsg uri: %s", key)
+		}
+	}
+	return nil
+}
+
+func ParseRuleMsgCandidates(raw string) ([]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, fmt.Errorf("empty candidates query value")
+	}
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ';' || r == '|'
+	})
+	seen := make(map[string]struct{}, len(parts))
+	candidates := make([]string, 0, len(parts))
+	for _, part := range parts {
+		candidate := strings.TrimSpace(part)
+		if candidate == "" {
+			continue
+		}
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		candidates = append(candidates, candidate)
+	}
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("empty candidates query value")
+	}
+	return candidates, nil
+}
+
+func CollectRuleMsgCandidates(query url.Values) ([]string, error) {
+	rawValues, ok := query[RuleMsgQueryCandidates]
+	if !ok {
+		return nil, nil
+	}
+	seen := make(map[string]struct{})
+	candidates := make([]string, 0)
+	for _, raw := range rawValues {
+		parsed, err := ParseRuleMsgCandidates(raw)
+		if err != nil {
+			return nil, err
+		}
+		for _, candidate := range parsed {
+			if _, exists := seen[candidate]; exists {
+				continue
+			}
+			seen[candidate] = struct{}{}
+			candidates = append(candidates, candidate)
+		}
+	}
+	return candidates, nil
 }
 
 // Handle resolves rulemsg:// URIs against the given context.
@@ -114,7 +199,7 @@ func (a RuleMsgAsset) Handle(uri *url.URL, ctx *AssetContext) (any, error) {
 	switch targetScheme {
 	case cnst.DATA:
 		query := uri.Query()
-		formatStr := query.Get("format")
+		formatStr := query.Get(RuleMsgQueryFormat)
 		if formatStr == "" {
 			return nil, types.InvalidParams.Wrap(fmt.Errorf("data format is required for rulemsg data reads (e.g. ?format=JSON)"))
 		}
@@ -212,7 +297,7 @@ func (a RuleMsgAsset) Set(uri *url.URL, ctx *AssetContext, value any) error {
 		if targetPath != "" {
 			return types.InvalidParams.Wrap(fmt.Errorf("partial updates to rulemsg data are not allowed: %s", uri.String()))
 		}
-		formatStr := uri.Query().Get("format")
+		formatStr := uri.Query().Get(RuleMsgQueryFormat)
 		format := cnst.MFormat(formatStr)
 		if !format.IsValid() {
 			return types.InvalidParams.Wrap(fmt.Errorf("valid data format is required for rulemsg data writes (e.g. ?format=JSON)"))
@@ -254,7 +339,7 @@ func (a RuleMsgAsset) Set(uri *url.URL, ctx *AssetContext, value any) error {
 			fieldPath = parts[1]
 		}
 
-		sid := uri.Query().Get("sid")
+		sid := uri.Query().Get(RuleMsgQuerySID)
 		return a.setInDataT(msg, objID, fieldPath, value, sid)
 
 	default:
@@ -383,7 +468,7 @@ func (d *RuleMsgAssetDataBuilder) Format(format cnst.MFormat) *RuleMsgAssetDataB
 		if d.a.Query == nil {
 			d.a.Query = url.Values{}
 		}
-		d.a.Query.Set("format", string(format))
+		d.a.Query.Set(RuleMsgQueryFormat, string(format))
 	}
 	return d
 }
@@ -438,7 +523,7 @@ func (d *RuleMsgAssetDataTBuilder) SID(sid string) *RuleMsgAssetDataTBuilder {
 		if d.a.Query == nil {
 			d.a.Query = url.Values{}
 		}
-		d.a.Query.Set("sid", sid)
+		d.a.Query.Set(RuleMsgQuerySID, sid)
 	}
 	return d
 }

@@ -38,9 +38,10 @@ func (t *Tracer) RecordNodeLog(executionID string, nodeLog types.RuleNodeRunLog)
 	if !ok {
 		status = &types.ExecutionStatus{
 			Snapshot: types.RuleChainRunSnapshot{
-				Id:      executionID,
-				StartTs: nodeLog.StartTs,
-				Logs:    make([]types.RuleNodeRunLog, 0),
+				Id:               executionID,
+				StartRuleChainID: resolveStartRuleChainID(nodeLog),
+				StartTs:          nodeLog.StartTs,
+				Logs:             make([]types.RuleNodeRunLog, 0),
 			},
 		}
 		t.store.Set(executionID, status)
@@ -49,8 +50,20 @@ func (t *Tracer) RecordNodeLog(executionID string, nodeLog types.RuleNodeRunLog)
 	status.Lock()
 	defer status.Unlock()
 
+	if status.Snapshot.StartRuleChainID == "" {
+		status.Snapshot.StartRuleChainID = resolveStartRuleChainID(nodeLog)
+	}
 	status.Snapshot.Logs = append(status.Snapshot.Logs, nodeLog)
 	status.LastUpdated = time.Now().UnixNano()
+}
+
+func resolveStartRuleChainID(nodeLog types.RuleNodeRunLog) string {
+	if nodeLog.InMsg != nil {
+		if v, ok := nodeLog.InMsg.Metadata()[types.ExecutionStartRuleChainIDKey]; ok && v != "" {
+			return v
+		}
+	}
+	return nodeLog.RuleChainID
 }
 
 // GetMetadataToPropagate filters the metadata based on the provided keys for tracing purposes.

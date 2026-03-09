@@ -10,6 +10,15 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func containsURI(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
+}
+
 func TestChannelPushNode_Execute(t *testing.T) {
 	node := &ChannelPushNode{}
 	node.BaseNode = *types.NewBaseNode(ChannelPushNodeType, types.NodeMetadata{})
@@ -115,4 +124,36 @@ func TestChannelPushNode_ChannelNotFound(t *testing.T) {
 
 	assert.NotNil(t, ctx.FailureErr)
 	assert.Contains(t, ctx.FailureErr.Error(), "channel not found")
+}
+
+func TestChannelPushNode_DataContract_DynamicRuleMsgConfigReadsAreExplicit(t *testing.T) {
+	node := &ChannelPushNode{}
+	node.BaseNode = *types.NewBaseNode(ChannelPushNodeType, types.NodeMetadata{})
+
+	err := node.Init(map[string]any{
+		CfgPipelineID:  "${rulemsg://dataT/obj_route_pipeline?sid=String}",
+		CfgChannelName: "${rulemsg://dataT/obj_route_channel?sid=String}",
+	})
+	assert.NoError(t, err)
+
+	contract := node.DataContract()
+	assert.True(t, containsURI(contract.Reads, "rulemsg://*"))
+	assert.True(t, containsURI(contract.Reads, "rulemsg://dataT/obj_route_pipeline?sid=String"))
+	assert.True(t, containsURI(contract.Reads, "rulemsg://dataT/obj_route_channel?sid=String"))
+	assert.Equal(t, []string{"rulemsg://*"}, contract.Writes)
+}
+
+func TestChannelPushNode_DataContract_StaticConfigOnlyKeepsPassThrough(t *testing.T) {
+	node := &ChannelPushNode{}
+	node.BaseNode = *types.NewBaseNode(ChannelPushNodeType, types.NodeMetadata{})
+
+	err := node.Init(map[string]any{
+		CfgPipelineID:  "ep-static-pipeline",
+		CfgChannelName: "ch_static_input",
+	})
+	assert.NoError(t, err)
+
+	contract := node.DataContract()
+	assert.Equal(t, []string{"rulemsg://*"}, contract.Reads)
+	assert.Equal(t, []string{"rulemsg://*"}, contract.Writes)
 }

@@ -53,6 +53,8 @@ const (
 	// ExecutionIDKey is the unified key for tracing a single execution instance
 	// across the entire call chain.
 	ExecutionIDKey = "X-Execution-ID"
+	// ExecutionStartRuleChainIDKey is the key for the root rule chain id of an execution.
+	ExecutionStartRuleChainIDKey = "X-Start-RuleChain-ID"
 )
 
 // RuleNodeRunLog 存储单个节点的执行日志
@@ -70,11 +72,12 @@ type RuleNodeRunLog struct {
 
 // RuleChainRunSnapshot 存储整个规则链的执行快照
 type RuleChainRunSnapshot struct {
-	Id      string           `json:"id"`
-	StartTs int64            `json:"startTs"`
-	EndTs   int64            `json:"endTs"`
-	Err     string           `json:"err,omitempty"`
-	Logs    []RuleNodeRunLog `json:"logs"`
+	Id               string           `json:"id"`
+	StartRuleChainID string           `json:"startRuleChainId,omitempty"`
+	StartTs          int64            `json:"startTs"`
+	EndTs            int64            `json:"endTs"`
+	Err              string           `json:"err,omitempty"`
+	Logs             []RuleNodeRunLog `json:"logs"`
 }
 
 // ExecutionStatus stores the complete snapshot and metadata for a single
