@@ -3,10 +3,12 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/neohetj/matrix/internal/registry"
 	"github.com/neohetj/matrix/pkg/asset"
+	"github.com/neohetj/matrix/pkg/rulechain"
 	"github.com/neohetj/matrix/pkg/types"
 	"github.com/neohetj/matrix/pkg/utils"
 )
@@ -66,6 +68,7 @@ type PipelineEndpointNode struct {
 
 // Ensure PipelineEndpointNode implements ActiveEndpoint interface
 var _ types.ActiveEndpoint = (*PipelineEndpointNode)(nil)
+var _ types.PipelineInputRouter = (*PipelineEndpointNode)(nil)
 
 // OnMsg implements the Node interface.
 // While PipelineEndpoint is primarily an Endpoint, implementing OnMsg allows it to be used
@@ -190,8 +193,19 @@ func (n *PipelineEndpointNode) processData(ctx context.Context, stage PipelineSt
 		}
 	}
 
-	// Create new msg with same Data and Metadata
-	newMsg := types.NewMsg(stage.Processor.ID, string(msg.Data()), msg.Metadata(), msg.DataT())
+	stageDataT := msg.DataT()
+	requiredInputs := rulechain.ResolveRequiredInputs(rt)
+	if !requiredInputs.RetainAll && msg.DataT() != nil {
+		projected, err := msg.DataT().Project(requiredInputs.ObjIDs)
+		if err != nil {
+			fmt.Printf("Stage %s projection error: %v\n", stage.Name, err)
+			return
+		}
+		stageDataT = projected
+	}
+
+	// Create new msg with same raw payload but a stage-specific projected DataT view.
+	newMsg := types.NewMsg(stage.Processor.ID, string(msg.Data()), msg.Metadata().Copy(), stageDataT).WithDataFormat(msg.DataFormat())
 
 	// Execute from default start node
 	err := rt.Execute(ctx, "", newMsg, func(result types.RuleMsg, err error) {
@@ -279,6 +293,43 @@ func (n *PipelineEndpointNode) GetTargetChainIDs() []string {
 				seen[stage.Processor.ID] = struct{}{}
 			}
 		}
+	}
+	return ids
+}
+
+// GetTargetChainIDsForInputChannel resolves the consumer rulechains behind a logical or concrete input channel.
+func (n *PipelineEndpointNode) GetTargetChainIDsForInputChannel(channelName string) []string {
+	channelName = strings.TrimSpace(channelName)
+	if channelName == "" {
+		return nil
+	}
+	realNames := map[string]struct{}{channelName: {}}
+	if mapped, ok := n.config.ExposedChannels[channelName]; ok {
+		mapped = strings.TrimSpace(mapped)
+		if mapped != "" {
+			realNames[mapped] = struct{}{}
+		}
+	}
+
+	ids := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, stage := range n.config.Stages {
+		inputChannel := strings.TrimSpace(stage.InputChannel)
+		if inputChannel == "" {
+			continue
+		}
+		if _, ok := realNames[inputChannel]; !ok {
+			continue
+		}
+		targetID := strings.TrimSpace(stage.Processor.ID)
+		if targetID == "" {
+			continue
+		}
+		if _, ok := seen[targetID]; ok {
+			continue
+		}
+		seen[targetID] = struct{}{}
+		ids = append(ids, targetID)
 	}
 	return ids
 }

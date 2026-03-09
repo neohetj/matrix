@@ -235,6 +235,12 @@ type MultiChainTrigger interface {
 	GetTargetChainIDs() []string
 }
 
+// PipelineInputRouter exposes the target rulechains that consume a specific input channel.
+type PipelineInputRouter interface {
+	Node
+	GetTargetChainIDsForInputChannel(channelName string) []string
+}
+
 // PassiveEndpoint is a marker interface for Endpoints that are triggered by external services.
 type PassiveEndpoint interface {
 	Endpoint

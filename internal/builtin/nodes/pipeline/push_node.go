@@ -9,6 +9,7 @@ import (
 	"github.com/neohetj/matrix/pkg/asset"
 	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/helper"
+	"github.com/neohetj/matrix/pkg/rulechain"
 	"github.com/neohetj/matrix/pkg/types"
 	"github.com/neohetj/matrix/pkg/utils"
 )
@@ -78,15 +79,13 @@ func (n *ChannelPushNode) Init(config types.ConfigMap) error {
 }
 
 func (n *ChannelPushNode) DataContract() types.DataContract {
-	// Keep pass-through semantics, and additionally expose explicit rulemsg dependencies
-	// when pipelineId/channelName are configured from rulemsg template placeholders.
-	reads := []string{"rulemsg://*"}
+	// Channel push should only expose its local configuration dependencies.
+	reads := make([]string, 0, 2)
 	reads = append(reads, collectRuleMsgReadsFromConfigString(n.nodeConfig.PipelineID)...)
 	reads = append(reads, collectRuleMsgReadsFromConfigString(n.nodeConfig.ChannelName)...)
 
 	return types.DataContract{
-		Reads:  dedupeContractURIs(reads),
-		Writes: []string{"rulemsg://*"},
+		Reads: dedupeContractURIs(reads),
 	}
 }
 
@@ -184,16 +183,14 @@ func (n *ChannelPushNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 		return
 	}
 
+	msgCopy, err := n.cloneMsgForChannel(ctx, msg, pipelineID, channelName)
+	if err != nil {
+		ctx.HandleError(msg, fmt.Errorf("failed to project message for channel push: %w", err))
+		return
+	}
+
 	// 4. Push to Channel
 	if blocking {
-		// We MUST DeepCopy the message because it's crossing goroutine boundaries (channel).
-		// The original message (and DataT) might be modified by subsequent nodes.
-		msgCopy, err := msg.DeepCopy()
-		if err != nil {
-			ctx.HandleError(msg, fmt.Errorf("failed to deep copy message: %w", err))
-			return
-		}
-
 		select {
 		case ch <- msgCopy:
 			ctx.TellSuccess(msg)
@@ -203,13 +200,6 @@ func (n *ChannelPushNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 			// Cancelled
 		}
 	} else {
-		// We MUST DeepCopy the message because it's crossing goroutine boundaries (channel).
-		msgCopy, err := msg.DeepCopy()
-		if err != nil {
-			ctx.HandleError(msg, fmt.Errorf("failed to deep copy message: %w", err))
-			return
-		}
-
 		select {
 		case ch <- msgCopy:
 			ctx.TellSuccess(msg)
@@ -217,4 +207,93 @@ func (n *ChannelPushNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 			ctx.HandleError(msg, DefChannelFull)
 		}
 	}
+}
+
+func (n *ChannelPushNode) cloneMsgForChannel(ctx types.NodeCtx, msg types.RuleMsg, pipelineID string, channelName string) (types.RuleMsg, error) {
+	requiredInputs, resolved := n.resolveChannelRequiredInputs(ctx, pipelineID, channelName)
+	if !resolved || requiredInputs.RetainAll {
+		return msg.DeepCopy()
+	}
+	if msg.DataT() == nil {
+		return msg.DeepCopy()
+	}
+	projectedDataT, err := msg.DataT().Project(requiredInputs.ObjIDs)
+	if err != nil {
+		return nil, err
+	}
+	if types.CloneMsgWithDataT == nil {
+		return msg.DeepCopy()
+	}
+	return types.CloneMsgWithDataT(msg, projectedDataT), nil
+}
+
+func (n *ChannelPushNode) resolveChannelRequiredInputs(ctx types.NodeCtx, pipelineID string, channelName string) (types.CoreObjSet, bool) {
+	runtime := ctx.GetRuntime()
+	if runtime == nil || runtime.GetEngine() == nil {
+		return types.CoreObjSet{RetainAll: true}, false
+	}
+	sharedPool := runtime.GetEngine().SharedNodePool()
+	if sharedPool == nil {
+		return types.CoreObjSet{RetainAll: true}, false
+	}
+	sharedCtx, ok := sharedPool.Get(pipelineID)
+	if !ok || sharedCtx == nil {
+		return types.CoreObjSet{RetainAll: true}, false
+	}
+	router, ok := sharedCtx.GetNode().(types.PipelineInputRouter)
+	if !ok {
+		return types.CoreObjSet{RetainAll: true}, false
+	}
+	targetChainIDs := router.GetTargetChainIDsForInputChannel(channelName)
+	if len(targetChainIDs) == 0 {
+		return types.CoreObjSet{RetainAll: true}, false
+	}
+	runtimePool := runtime.GetEngine().RuntimePool()
+	if runtimePool == nil {
+		return types.CoreObjSet{RetainAll: true}, false
+	}
+
+	requiredInputs := types.CoreObjSet{}
+	for _, targetChainID := range targetChainIDs {
+		targetRuntime, ok := runtimePool.Get(targetChainID)
+		if !ok || targetRuntime == nil {
+			return types.CoreObjSet{RetainAll: true}, false
+		}
+		requiredInputs = unionCoreObjSets(requiredInputs, rulechain.ResolveRequiredInputs(targetRuntime))
+		if requiredInputs.RetainAll {
+			return requiredInputs, true
+		}
+	}
+	return requiredInputs, true
+}
+
+func unionCoreObjSets(base types.CoreObjSet, other types.CoreObjSet) types.CoreObjSet {
+	if base.RetainAll || other.RetainAll {
+		return types.CoreObjSet{RetainAll: true}
+	}
+	seen := make(map[string]struct{}, len(base.ObjIDs)+len(other.ObjIDs))
+	objIDs := make([]string, 0, len(base.ObjIDs)+len(other.ObjIDs))
+	for _, objID := range base.ObjIDs {
+		objID = strings.TrimSpace(objID)
+		if objID == "" {
+			continue
+		}
+		if _, ok := seen[objID]; ok {
+			continue
+		}
+		seen[objID] = struct{}{}
+		objIDs = append(objIDs, objID)
+	}
+	for _, objID := range other.ObjIDs {
+		objID = strings.TrimSpace(objID)
+		if objID == "" {
+			continue
+		}
+		if _, ok := seen[objID]; ok {
+			continue
+		}
+		seen[objID] = struct{}{}
+		objIDs = append(objIDs, objID)
+	}
+	return types.CoreObjSet{ObjIDs: objIDs}
 }

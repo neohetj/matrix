@@ -115,6 +115,19 @@ func (m *DefaultRuleMsg) Copy() types.RuleMsg {
 	return newMsg
 }
 
+// CloneWithDataT preserves the message identity while replacing the structured payload.
+func (m *DefaultRuleMsg) CloneWithDataT(dataT types.DataT) types.RuleMsg {
+	return &DefaultRuleMsg{
+		id:         m.id,
+		ts:         m.ts,
+		msgType:    m.msgType,
+		dataFormat: m.dataFormat,
+		data:       m.data,
+		dataT:      dataT,
+		metadata:   m.metadata.Copy(),
+	}
+}
+
 // DeepCopy creates a full, deep copy of the RuleMsg.
 func (m *DefaultRuleMsg) DeepCopy() (types.RuleMsg, error) {
 	// Deep copy the DataT container.

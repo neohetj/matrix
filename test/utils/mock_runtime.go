@@ -105,6 +105,16 @@ func (m *MockRuntime) Destroy() {
 }
 
 func (m *MockRuntime) Definition() *types.RuleChainDef {
+	hasExpectation := false
+	for _, call := range m.ExpectedCalls {
+		if call.Method == "Definition" {
+			hasExpectation = true
+			break
+		}
+	}
+	if !hasExpectation {
+		return nil
+	}
 	args := m.Called()
 	return args.Get(0).(*types.RuleChainDef)
 }
@@ -122,6 +132,16 @@ func (m *MockRuntime) GetEngine() types.MatrixEngine {
 func (m *MockRuntime) GetChainInstance() types.ChainInstance {
 	if m.ChainInstance != nil {
 		return m.ChainInstance
+	}
+	hasExpectation := false
+	for _, call := range m.ExpectedCalls {
+		if call.Method == "GetChainInstance" {
+			hasExpectation = true
+			break
+		}
+	}
+	if !hasExpectation {
+		return nil
 	}
 	args := m.Called()
 	if args.Get(0) == nil {

@@ -119,6 +119,31 @@ func (d *DefaultDataT) DeepCopy() (types.DataT, error) {
 	return newData, nil
 }
 
+// Project creates a new DataT that only keeps the requested object IDs.
+func (d *DefaultDataT) Project(keepObjIDs []string) (types.DataT, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	projected := &DefaultDataT{
+		data: make(map[string]types.CoreObj, len(keepObjIDs)),
+	}
+	for _, objID := range keepObjIDs {
+		if objID == "" {
+			continue
+		}
+		value, ok := d.data[objID]
+		if !ok {
+			continue
+		}
+		copiedObj, err := value.DeepCopy()
+		if err != nil {
+			return nil, fmt.Errorf("failed to project item '%s': %w", objID, err)
+		}
+		projected.data[objID] = copiedObj
+	}
+	return projected, nil
+}
+
 // MarshalJSON implements the json.Marshaler interface for DefaultDataT.
 // It ensures that the map of CoreObjs is correctly serialized.
 func (d *DefaultDataT) MarshalJSON() ([]byte, error) {

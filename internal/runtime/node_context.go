@@ -283,11 +283,14 @@ func (ctx *DefaultNodeCtx) TellNext(msg types.RuleMsg, relationTypes ...string) 
 			// The child's onEnd is the parent's childDone
 			nextCtx := NewDefaultNodeCtx(ctx.Context, ctx.runtime, ctx.chain, nextDef, ctx, ctx.onEnd, ctx.aspects, ctx.callback)
 
-			// Create a copy of the message for each parallel branch.
-			// This isolates metadata while sharing the main data object (DataT).
-			msgCopy := msg.Copy()
+			msgCopy, err := ctx.cloneMsgForEdge(msg, nextNodeID)
+			if err != nil {
+				ctx.Error("Failed to project message for next node", "fromNodeId", ctx.selfDef.ID, "toNodeId", nextNodeID, "error", err)
+				ctx.childDone(msg, err)
+				continue
+			}
 
-			ctx.runtime.scheduler.Submit(func() {
+			if err := ctx.runtime.scheduler.Submit(func() {
 				var onMsgErr error
 				var processedMsg = msgCopy
 
@@ -319,7 +322,9 @@ func (ctx *DefaultNodeCtx) TellNext(msg types.RuleMsg, relationTypes ...string) 
 				// 2. Execute the node's OnMsg
 				// The node itself is responsible for calling childDone via Tell... methods
 				nextNode.OnMsg(nextCtx, processedMsg)
-			})
+			}); err != nil {
+				ctx.childDone(msg, err)
+			}
 		}
 	}
 
@@ -358,6 +363,30 @@ func (ctx *DefaultNodeCtx) TellNext(msg types.RuleMsg, relationTypes ...string) 
 func (ctx *DefaultNodeCtx) NewMsg(msgType string, metaData types.Metadata, data string) types.RuleMsg {
 	// By default, messages created within a chain are treated as TEXT, unless specified otherwise.
 	return types.NewMsg(msgType, data, metaData, nil).WithDataFormat(cnst.TEXT)
+}
+
+func (ctx *DefaultNodeCtx) cloneMsgForEdge(msg types.RuleMsg, nextNodeID string) (types.RuleMsg, error) {
+	if msg == nil {
+		return nil, nil
+	}
+	if ctx.runtime == nil {
+		return msg.Copy(), nil
+	}
+	liveSet, ok := ctx.runtime.LiveObjectsForEdge(ctx.selfDef.ID, nextNodeID)
+	if !ok || liveSet.RetainAll {
+		return msg.Copy(), nil
+	}
+	if msg.DataT() == nil {
+		return msg.Copy(), nil
+	}
+	projectedDataT, err := msg.DataT().Project(liveSet.ObjIDs)
+	if err != nil {
+		return nil, err
+	}
+	if types.CloneMsgWithDataT == nil {
+		return msg.Copy(), nil
+	}
+	return types.CloneMsgWithDataT(msg, projectedDataT), nil
 }
 
 // SetOnAllNodesCompleted sets a callback that will be called when all nodes in the chain have completed.

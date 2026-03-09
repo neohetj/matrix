@@ -75,6 +75,9 @@ type DataT interface {
 	Copy() DataT
 	// DeepCopy returns a deep copy of the container.
 	DeepCopy() (DataT, error)
+	// Project returns a new container that only retains the specified object IDs.
+	// The original container is left untouched.
+	Project(keepObjIDs []string) (DataT, error)
 
 	// GetByParam retrieves a business object by its logical parameter name,
 	// by resolving the name to an objId using the node's context.
@@ -167,4 +170,10 @@ type RuleMsg interface {
 
 	// WithDataFormat sets the raw message payload format and returns the message.
 	WithDataFormat(format cnst.MFormat) RuleMsg
+}
+
+// RuleMsgDataTCloner is implemented by RuleMsg types that can preserve message identity
+// while replacing the structured DataT payload.
+type RuleMsgDataTCloner interface {
+	CloneWithDataT(dataT DataT) RuleMsg
 }

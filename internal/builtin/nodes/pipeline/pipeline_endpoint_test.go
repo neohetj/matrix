@@ -186,3 +186,40 @@ func TestPipelineEndpointNode_ProcessData_MetadataErrorBlocksOutput(t *testing.T
 	mockRuntime.AssertExpectations(t)
 	mockPool.AssertExpectations(t)
 }
+
+func TestPipelineEndpointNode_ProcessData_ProjectsToStageRequiredInputs(t *testing.T) {
+	node := &PipelineEndpointNode{}
+	node.BaseNode = *types.NewBaseNode(PipelineEndpointNodeType, types.NodeMetadata{})
+	node.SetID("test-pipeline-node")
+
+	targetRuntime := &testProjectionRuntime{
+		projection: types.RuleChainCoreObjAnalysis{
+			RequiredInputs: types.CoreObjSet{ObjIDs: []string{"image_push_items"}},
+		},
+		executeFn: func(_ context.Context, _ string, msg types.RuleMsg, onEnd func(types.RuleMsg, error)) error {
+			_, hasImagePushItems := msg.DataT().Get("image_push_items")
+			_, hasScrapedPosts := msg.DataT().Get("ttscrapedposts")
+			assert.True(t, hasImagePushItems)
+			assert.False(t, hasScrapedPosts)
+			onEnd(msg, nil)
+			return nil
+		},
+	}
+
+	mockPool := new(MockRuntimePoolForPipeline)
+	mockPool.On("Get", "mock-chain").Return(targetRuntime, true)
+	node.SetRuntimePool(mockPool)
+
+	stage := PipelineStageConfig{
+		Name:      "Stage1",
+		Processor: ProcessorConfig{ID: "mock-chain", Type: "chain"},
+	}
+	inDataT := types.NewDataT()
+	inDataT.Set("image_push_items", &testCoreObj{key: "image_push_items", body: "keep"})
+	inDataT.Set("ttscrapedposts", &testCoreObj{key: "ttscrapedposts", body: "drop"})
+	inMsg := types.NewMsg("input", "", nil, inDataT)
+
+	node.processData(context.Background(), stage, inMsg)
+
+	mockPool.AssertExpectations(t)
+}

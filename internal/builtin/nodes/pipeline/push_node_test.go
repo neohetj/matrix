@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -137,13 +138,12 @@ func TestChannelPushNode_DataContract_DynamicRuleMsgConfigReadsAreExplicit(t *te
 	assert.NoError(t, err)
 
 	contract := node.DataContract()
-	assert.True(t, containsURI(contract.Reads, "rulemsg://*"))
 	assert.True(t, containsURI(contract.Reads, "rulemsg://dataT/obj_route_pipeline?sid=String"))
 	assert.True(t, containsURI(contract.Reads, "rulemsg://dataT/obj_route_channel?sid=String"))
-	assert.Equal(t, []string{"rulemsg://*"}, contract.Writes)
+	assert.Empty(t, contract.Writes)
 }
 
-func TestChannelPushNode_DataContract_StaticConfigOnlyKeepsPassThrough(t *testing.T) {
+func TestChannelPushNode_DataContract_StaticConfigOnlyKeepsLocalDependencies(t *testing.T) {
 	node := &ChannelPushNode{}
 	node.BaseNode = *types.NewBaseNode(ChannelPushNodeType, types.NodeMetadata{})
 
@@ -154,6 +154,147 @@ func TestChannelPushNode_DataContract_StaticConfigOnlyKeepsPassThrough(t *testin
 	assert.NoError(t, err)
 
 	contract := node.DataContract()
-	assert.Equal(t, []string{"rulemsg://*"}, contract.Reads)
-	assert.Equal(t, []string{"rulemsg://*"}, contract.Writes)
+	assert.Empty(t, contract.Reads)
+	assert.Empty(t, contract.Writes)
+}
+
+func TestChannelPushNode_ProjectsMessageToDownstreamRequiredInputs(t *testing.T) {
+	node := &ChannelPushNode{}
+	node.BaseNode = *types.NewBaseNode(ChannelPushNodeType, types.NodeMetadata{})
+
+	pipelineID := "ep-image-save"
+	channelName := "ch_image_save_input"
+	targetRuleChainID := "sellitx/rc-image-save"
+
+	sharedDSL := `{
+		"metadata": {
+			"nodes": [
+				{"id":"shared-cm-projection","type":"resource/channel_manager","name":"Shared CM Projection"},
+				{
+					"id":"ep-image-save",
+					"type":"endpoint/pipeline",
+					"name":"Image Save Pipeline",
+					"configuration":{
+						"stages":[
+							{
+								"name":"Image Save Stage",
+								"id":"stage-image-save",
+								"concurrency":1,
+								"processor":{"id":"sellitx/rc-image-save","type":"chain"},
+								"inputChannel":"ch_image_save_input"
+							}
+						],
+						"exposedChannels":{"ch_image_save_input":"ch_image_save_input"},
+						"channelManager":"ref://shared-cm-projection"
+					}
+				}
+			]
+		}
+	}`
+	pool := registry.Default.GetSharedNodePool()
+	_, err := pool.Load([]byte(sharedDSL), registry.Default.GetNodeManager())
+	assert.NoError(t, err)
+
+	inst, err := pool.GetInstance("shared-cm-projection")
+	assert.NoError(t, err)
+	cm := inst.(*ChannelManager)
+
+	ch := make(chan types.RuleMsg, 1)
+	cm.Register(pipelineID, channelName, ch)
+	defer cm.Unregister(pipelineID, channelName)
+
+	sourceRuntime := &testProjectionRuntime{
+		engine: &utils.MockEngine{
+			RuntimePoolValue: &utils.MockRuntimePool{
+				Runtimes: map[string]types.Runtime{
+					targetRuleChainID: &testProjectionRuntime{
+						projection: types.RuleChainCoreObjAnalysis{
+							RequiredInputs: types.CoreObjSet{ObjIDs: []string{"image_push_items"}},
+						},
+					},
+				},
+			},
+			SharedNodePoolValue: pool,
+		},
+	}
+	ctx := utils.NewMockNodeCtx()
+	ctx.SetRuntime(sourceRuntime)
+
+	dataT := types.NewDataT()
+	dataT.Set("image_push_items", &testCoreObj{key: "image_push_items", body: "keep"})
+	dataT.Set("ttscrapedposts", &testCoreObj{key: "ttscrapedposts", body: "drop"})
+	msg := types.NewMsg("test", "", nil, dataT)
+
+	err = node.Init(map[string]any{
+		CfgPipelineID:    pipelineID,
+		CfgChannelName:   channelName,
+		CfgBlocking:      true,
+		"channelManager": "ref://shared-cm-projection",
+	})
+	assert.NoError(t, err)
+
+	node.OnMsg(ctx, msg)
+
+	assert.Nil(t, ctx.FailureErr)
+	assert.NotNil(t, ctx.SuccessMsg)
+
+	select {
+	case pushedMsg := <-ch:
+		_, hasImagePushItems := pushedMsg.DataT().Get("image_push_items")
+		_, hasScrapedPosts := pushedMsg.DataT().Get("ttscrapedposts")
+		assert.True(t, hasImagePushItems)
+		assert.False(t, hasScrapedPosts)
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("timeout waiting for projected message in channel")
+	}
+}
+
+type testProjectionRuntime struct {
+	engine        types.MatrixEngine
+	projection    types.RuleChainCoreObjAnalysis
+	executeFn     func(context.Context, string, types.RuleMsg, func(types.RuleMsg, error)) error
+	definition    *types.RuleChainDef
+	chainInstance types.ChainInstance
+}
+
+func (r *testProjectionRuntime) Execute(ctx context.Context, fromNodeID string, msg types.RuleMsg, onEnd func(types.RuleMsg, error)) error {
+	if r.executeFn != nil {
+		return r.executeFn(ctx, fromNodeID, msg, onEnd)
+	}
+	return nil
+}
+
+func (r *testProjectionRuntime) ExecuteAndWait(context.Context, string, types.RuleMsg, func(types.RuleMsg, error)) (types.RuleMsg, error) {
+	return nil, nil
+}
+
+func (r *testProjectionRuntime) Reload(*types.RuleChainDef) error { return nil }
+func (r *testProjectionRuntime) Destroy()                         {}
+func (r *testProjectionRuntime) Definition() *types.RuleChainDef  { return r.definition }
+func (r *testProjectionRuntime) GetNodePool() types.NodePool      { return nil }
+func (r *testProjectionRuntime) GetEngine() types.MatrixEngine    { return r.engine }
+func (r *testProjectionRuntime) GetChainInstance() types.ChainInstance {
+	return r.chainInstance
+}
+func (r *testProjectionRuntime) CoreObjProjection() types.RuleChainCoreObjAnalysis {
+	return r.projection
+}
+func (r *testProjectionRuntime) LiveObjectsForEdge(string, string) (types.CoreObjSet, bool) {
+	return types.CoreObjSet{}, false
+}
+
+type testCoreObj struct {
+	key  string
+	body any
+}
+
+func (o *testCoreObj) Key() string                  { return o.key }
+func (o *testCoreObj) Definition() types.CoreObjDef { return nil }
+func (o *testCoreObj) Body() any                    { return o.body }
+func (o *testCoreObj) SetBody(body any) error {
+	o.body = body
+	return nil
+}
+func (o *testCoreObj) DeepCopy() (types.CoreObj, error) {
+	return &testCoreObj{key: o.key, body: o.body}, nil
 }

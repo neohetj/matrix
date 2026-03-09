@@ -29,6 +29,7 @@ import (
 	"github.com/neohetj/matrix/internal/registry"
 	"github.com/neohetj/matrix/pkg/asset"
 	"github.com/neohetj/matrix/pkg/cnst"
+	"github.com/neohetj/matrix/pkg/rulechain"
 	"github.com/neohetj/matrix/pkg/types"
 )
 
@@ -95,6 +96,7 @@ type DefaultRuntime struct {
 	callback      types.CallbackFunc
 	logger        types.Logger
 	engine        types.MatrixEngine
+	coreObjPlan   types.RuleChainCoreObjAnalysis
 }
 
 // NewDefaultRuntime creates a new, stateful instance of DefaultRuntime.
@@ -121,6 +123,7 @@ func NewDefaultRuntime(s types.Scheduler, chainDef *types.RuleChainDef, opts ...
 		return nil, fmt.Errorf("failed to build initial chain instance: %w", err)
 	}
 	r.chainInstance = instance
+	r.coreObjPlan = rulechain.AnalyzeCoreObjProjection(chainDef, instance)
 
 	return r, nil
 }
@@ -532,6 +535,7 @@ func (r *DefaultRuntime) Reload(newChainDef *types.RuleChainDef) error {
 	oldInstance := r.chainInstance
 	r.chainInstance = newInstance
 	r.chainDef = newChainDef // Update the definition as well
+	r.coreObjPlan = rulechain.AnalyzeCoreObjProjection(newChainDef, newInstance)
 	r.mutex.Unlock()
 
 	// 3. Destroy the old instance after the swap is complete.
@@ -581,4 +585,22 @@ func (r *DefaultRuntime) GetChainInstance() types.ChainInstance {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 	return r.chainInstance
+}
+
+// CoreObjProjection returns the cached rulechain projection plan.
+func (r *DefaultRuntime) CoreObjProjection() types.RuleChainCoreObjAnalysis {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+	return r.coreObjPlan
+}
+
+// LiveObjectsForEdge returns the cached live-object set for a concrete execution edge.
+func (r *DefaultRuntime) LiveObjectsForEdge(fromNodeID string, toNodeID string) (types.CoreObjSet, bool) {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+	if r.coreObjPlan.LiveObjectsByEdge == nil {
+		return types.CoreObjSet{}, false
+	}
+	set, ok := r.coreObjPlan.LiveObjectsByEdge[rulechain.LiveObjectsEdgeKey(fromNodeID, toNodeID)]
+	return set, ok
 }

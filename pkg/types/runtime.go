@@ -46,6 +46,20 @@ type RuleChainOnError struct {
 	Strategy RuleChainOnErrorStrategy `json:"strategy,omitempty"`
 }
 
+// CoreObjSet represents a derived set of object IDs used for runtime-safe projection.
+// RetainAll means the set cannot be safely narrowed.
+type CoreObjSet struct {
+	ObjIDs    []string `json:"objIds,omitempty"`
+	RetainAll bool     `json:"retainAll,omitempty"`
+}
+
+// RuleChainCoreObjAnalysis captures the derived object requirements of a rule chain.
+type RuleChainCoreObjAnalysis struct {
+	RequiredInputs    CoreObjSet            `json:"requiredInputs"`
+	ProducedObjects   CoreObjSet            `json:"producedObjects"`
+	LiveObjectsByEdge map[string]CoreObjSet `json:"liveObjectsByEdge,omitempty"`
+}
+
 // RuleChainData holds the core data of a rule chain.
 type RuleChainData struct {
 	ID            string            `json:"id"`
@@ -184,6 +198,12 @@ type Runtime interface {
 
 	// GetChainInstance returns the chain instance for accessing initialized nodes.
 	GetChainInstance() ChainInstance
+}
+
+// CoreObjProjectionProvider exposes derived core-object requirements for runtime-safe projection.
+type CoreObjProjectionProvider interface {
+	CoreObjProjection() RuleChainCoreObjAnalysis
+	LiveObjectsForEdge(fromNodeID string, toNodeID string) (CoreObjSet, bool)
 }
 
 // Source indicates the origin of a loaded resource.

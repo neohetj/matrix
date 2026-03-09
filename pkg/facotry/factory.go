@@ -53,6 +53,17 @@ func NewMsg(msgType, data string, metadata types.Metadata, dataT types.DataT) ty
 	return contract.NewDefaultRuleMsg(msgType, data, metadata, dataT)
 }
 
+func CloneMsgWithDataT(msg types.RuleMsg, dataT types.DataT) types.RuleMsg {
+	if dataT == nil {
+		dataT = NewDataT()
+	}
+	if cloner, ok := msg.(types.RuleMsgDataTCloner); ok {
+		return cloner.CloneWithDataT(dataT)
+	}
+	cloned := NewMsg(msg.Type(), string(msg.Data()), msg.Metadata().Copy(), dataT)
+	return cloned.WithDataFormat(msg.DataFormat())
+}
+
 func NewMinNodeCtx(nodeID string) types.NodeCtx {
 	return registry.NewMinimalNodeCtx(nodeID)
 }

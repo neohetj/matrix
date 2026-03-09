@@ -8,6 +8,7 @@ import (
 func init() {
 	types.NewNodeCtx = facotry.NewNodeCtx
 	types.NewMsg = facotry.NewMsg
+	types.CloneMsgWithDataT = facotry.CloneMsgWithDataT
 	types.NewDataT = facotry.NewDataT
 	types.NewSubMsg = facotry.NewSubMsg
 	types.NewCoreObj = facotry.NewCoreObj

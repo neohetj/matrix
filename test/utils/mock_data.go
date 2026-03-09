@@ -99,6 +99,10 @@ func (m *MockDataT) DeepCopy() (types.DataT, error) {
 	args := m.Called()
 	return args.Get(0).(types.DataT), args.Error(1)
 }
+func (m *MockDataT) Project(keepObjIDs []string) (types.DataT, error) {
+	args := m.Called(keepObjIDs)
+	return args.Get(0).(types.DataT), args.Error(1)
+}
 func (m *MockDataT) GetByParam(ctx types.NodeCtx, pname string) (types.CoreObj, error) {
 	args := m.Called(ctx, pname)
 	if args.Get(0) == nil {
