@@ -25,7 +25,6 @@ import (
 	"github.com/neohetj/matrix/pkg/asset"
 	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/helper"
-	"github.com/neohetj/matrix/pkg/message"
 	"github.com/neohetj/matrix/pkg/types"
 	"github.com/neohetj/matrix/pkg/utils"
 )
@@ -119,11 +118,13 @@ func (p *MessageValueProvider) GetValue(path string) (any, bool, error) {
 		return nil, false, nil
 	}
 
-	val, err := message.ExtractFromMsg[any](p.msg, path)
+	val, found, err := helper.RuleMsgProvider{Msg: p.msg}.GetValue(path)
 	if err != nil {
-		// If URI extraction fails, log it and return the error.
 		p.ctx.Warn("failed to extract value from message", "path", path, "error", err)
 		return nil, false, err
+	}
+	if !found {
+		return nil, false, nil
 	}
 
 	// 如果值是字符串，尝试解析为JSON对象
