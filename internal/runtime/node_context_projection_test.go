@@ -5,7 +5,6 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/neohetj/matrix/internal/contract"
-	"github.com/neohetj/matrix/pkg/rulechain"
 	"github.com/neohetj/matrix/pkg/types"
 )
 
@@ -27,34 +26,28 @@ func init() {
 	}
 }
 
-func TestCloneMsgForEdgeProjectsOnlyLiveObjects(t *testing.T) {
+func TestCloneMsgForEdgeKeepsAllObjectsWithinRuleChain(t *testing.T) {
 	dataT := types.NewDataT()
 	dataT.Set("image_push_items", &projectionRuntimeCoreObj{key: "image_push_items", body: "keep"})
-	dataT.Set("ttscrapedposts", &projectionRuntimeCoreObj{key: "ttscrapedposts", body: "drop"})
+	dataT.Set("ttscrapedposts", &projectionRuntimeCoreObj{key: "ttscrapedposts", body: "keep-too"})
 
-	r := &DefaultRuntime{
-		coreObjPlan: types.RuleChainCoreObjAnalysis{
-			LiveObjectsByEdge: map[string]types.CoreObjSet{
-				rulechain.LiveObjectsEdgeKey("node_a", "node_b"): {ObjIDs: []string{"image_push_items"}},
-			},
-		},
-	}
+	r := &DefaultRuntime{}
 	ctx := &DefaultNodeCtx{
 		runtime: r,
 		selfDef: &types.NodeDef{ID: "node_a"},
 	}
 
 	msg := types.NewMsg("test", "", nil, dataT)
-	projected, err := ctx.cloneMsgForEdge(msg, "node_b")
+	cloned, err := ctx.cloneMsgForEdge(msg, "node_b")
 	if err != nil {
 		t.Fatalf("cloneMsgForEdge failed: %v", err)
 	}
 
-	if _, ok := projected.DataT().Get("image_push_items"); !ok {
-		t.Fatalf("expected projected message to keep image_push_items")
+	if _, ok := cloned.DataT().Get("image_push_items"); !ok {
+		t.Fatalf("expected cloned message to keep image_push_items")
 	}
-	if _, ok := projected.DataT().Get("ttscrapedposts"); ok {
-		t.Fatalf("expected projected message to drop ttscrapedposts")
+	if _, ok := cloned.DataT().Get("ttscrapedposts"); !ok {
+		t.Fatalf("expected cloned message to keep ttscrapedposts")
 	}
 	if _, ok := msg.DataT().Get("ttscrapedposts"); !ok {
 		t.Fatalf("expected source message to remain unchanged")

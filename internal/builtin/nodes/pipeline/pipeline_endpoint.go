@@ -183,18 +183,14 @@ func (n *PipelineEndpointNode) startStageWorkers(ctx context.Context, stage Pipe
 func (n *PipelineEndpointNode) processData(ctx context.Context, stage PipelineStageConfig, msg types.RuleMsg) {
 	// Execute the processor.
 	// stage.Processor.ID is a RuleChain ID.
-	rt, ok := n.runtimePool.Get(stage.Processor.ID)
+	rt, ok := n.resolveStageRuntime(stage.Processor.ID)
 	if !ok {
-		// Fallback to global pool
-		rt, ok = registry.Default.RuntimePool.Get(stage.Processor.ID)
-		if !ok {
-			fmt.Printf("Error: Runtime not found for processor %s in stage %s\n", stage.Processor.ID, stage.Name)
-			return
-		}
+		fmt.Printf("Error: Runtime not found for processor %s in stage %s\n", stage.Processor.ID, stage.Name)
+		return
 	}
 
 	stageDataT := msg.DataT()
-	requiredInputs := rulechain.ResolveRequiredInputs(rt)
+	requiredInputs := n.resolveStageRequiredInputs(stage, rt)
 	if !requiredInputs.RetainAll && msg.DataT() != nil {
 		projected, err := msg.DataT().Project(requiredInputs.ObjIDs)
 		if err != nil {
@@ -240,6 +236,63 @@ func (n *PipelineEndpointNode) processData(ctx context.Context, stage PipelineSt
 	if err != nil {
 		fmt.Printf("Stage %s execution start error: %v\n", stage.Name, err)
 	}
+}
+
+func (n *PipelineEndpointNode) resolveStageRuntime(processorID string) (types.Runtime, bool) {
+	if n.runtimePool != nil {
+		if rt, ok := n.runtimePool.Get(processorID); ok && rt != nil {
+			return rt, true
+		}
+	}
+	rt, ok := registry.Default.RuntimePool.Get(processorID)
+	if !ok || rt == nil {
+		return nil, false
+	}
+	return rt, true
+}
+
+func (n *PipelineEndpointNode) resolveStageRequiredInputs(stage PipelineStageConfig, stageRuntime types.Runtime) types.CoreObjSet {
+	requiredInputs := rulechain.ResolveRequiredInputs(stageRuntime)
+	if requiredInputs.RetainAll {
+		return requiredInputs
+	}
+
+	visitedChannels := map[string]struct{}{}
+	var visitChannel func(channelName string) types.CoreObjSet
+
+	visitChannel = func(channelName string) types.CoreObjSet {
+		channelName = strings.TrimSpace(channelName)
+		if channelName == "" {
+			return types.CoreObjSet{}
+		}
+		if _, seen := visitedChannels[channelName]; seen {
+			return types.CoreObjSet{}
+		}
+		visitedChannels[channelName] = struct{}{}
+
+		downstreamRequired := types.CoreObjSet{}
+		for _, nextStage := range n.config.Stages {
+			if strings.TrimSpace(nextStage.InputChannel) != channelName {
+				continue
+			}
+			nextRuntime, ok := n.resolveStageRuntime(nextStage.Processor.ID)
+			if !ok {
+				return types.CoreObjSet{RetainAll: true}
+			}
+			downstreamRequired = unionCoreObjSets(downstreamRequired, rulechain.ResolveRequiredInputs(nextRuntime))
+			if downstreamRequired.RetainAll {
+				return downstreamRequired
+			}
+			downstreamRequired = unionCoreObjSets(downstreamRequired, visitChannel(nextStage.OutputChannel))
+			if downstreamRequired.RetainAll {
+				return downstreamRequired
+			}
+		}
+		return downstreamRequired
+	}
+
+	requiredInputs = unionCoreObjSets(requiredInputs, visitChannel(stage.OutputChannel))
+	return requiredInputs
 }
 
 func (n *PipelineEndpointNode) pushToChannel(channelName string, msg types.RuleMsg) {

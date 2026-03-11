@@ -369,24 +369,10 @@ func (ctx *DefaultNodeCtx) cloneMsgForEdge(msg types.RuleMsg, nextNodeID string)
 	if msg == nil {
 		return nil, nil
 	}
-	if ctx.runtime == nil {
-		return msg.Copy(), nil
-	}
-	liveSet, ok := ctx.runtime.LiveObjectsForEdge(ctx.selfDef.ID, nextNodeID)
-	if !ok || liveSet.RetainAll {
-		return msg.Copy(), nil
-	}
-	if msg.DataT() == nil {
-		return msg.Copy(), nil
-	}
-	projectedDataT, err := msg.DataT().Project(liveSet.ObjIDs)
-	if err != nil {
-		return nil, err
-	}
-	if types.CloneMsgWithDataT == nil {
-		return msg.Copy(), nil
-	}
-	return types.CloneMsgWithDataT(msg, projectedDataT), nil
+	// Intra-rulechain message passing keeps the full DataT. Projection only applies
+	// at explicit rulechain boundaries such as channel push, sub-chain invocation,
+	// or pipeline stage ingress.
+	return msg.Copy(), nil
 }
 
 // SetOnAllNodesCompleted sets a callback that will be called when all nodes in the chain have completed.

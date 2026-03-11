@@ -11,6 +11,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type rulechainValidatorLead struct {
+	Username  string `json:"username"`
+	Followers int    `json:"followers"`
+}
+
+type rulechainValidatorProfile struct {
+	Username string   `json:"username"`
+	Tags     []string `json:"tags"`
+}
+
+func registerTestCoreObjDef(t *testing.T, sample any, sid string) {
+	t.Helper()
+	registry.Default.CoreObjRegistry.Register(types.NewCoreObjDef(sample, sid, "test coreobj def"))
+	t.Cleanup(func() {
+		if r, ok := registry.Default.CoreObjRegistry.(*registry.DefaultCoreObjRegistry); ok {
+			r.Unregister(sid)
+		}
+	})
+}
+
 func TestProcessOutbound(t *testing.T) {
 	ctx := registry.NewMinimalNodeCtx("test-node")
 	msg := setupTestMsg(t)
@@ -96,5 +116,135 @@ func TestProcessOutbound(t *testing.T) {
 		resultSlice, ok := res.(*[]any)
 		assert.True(t, ok)
 		assert.Equal(t, expectedSlice, *resultSlice)
+	})
+
+	t.Run("Inbound field passthrough preserves slice when type omitted", func(t *testing.T) {
+		sliceSid := cnst.SID_SLICE_ANY
+		dataT := msg.DataT()
+		source, err := dataT.NewItem(sliceSid, "sourceList")
+		require.NoError(t, err)
+
+		expectedSlice := []any{"item1", map[string]any{"username": "alice"}}
+		require.NoError(t, source.SetBody(&expectedSlice))
+
+		packet := types.EndpointIOPacket{
+			Fields: []types.EndpointIOField{
+				{
+					Name:     "rulemsg://dataT/sourceList?sid=" + sliceSid,
+					BindPath: "rulemsg://dataT/copiedList?sid=" + sliceSid,
+				},
+			},
+		}
+
+		err = helper.ProcessInbound(ctx, msg, packet, helper.RuleMsgProvider{Msg: msg})
+		require.NoError(t, err)
+
+		copied, ok := msg.DataT().Get("copiedList")
+		require.True(t, ok)
+
+		resultSlice, ok := copied.Body().(*[]any)
+		require.True(t, ok)
+		assert.Equal(t, expectedSlice, *resultSlice)
+	})
+}
+
+func TestProcessInbound_TypedCollectionPassthroughAndObjectConversion(t *testing.T) {
+	ctx := registry.NewMinimalNodeCtx("test-node")
+
+	t.Run("Typed business slice passthrough preserves typed slice when type omitted", func(t *testing.T) {
+		const leadSliceSID = "[]RulechainValidatorLead_V1"
+		registerTestCoreObjDef(t, &[]rulechainValidatorLead{}, leadSliceSID)
+
+		msg := setupTestMsg(t)
+		source, err := msg.DataT().NewItem(leadSliceSID, "finalleadslist")
+		require.NoError(t, err)
+
+		expected := []rulechainValidatorLead{
+			{Username: "alice", Followers: 1200},
+			{Username: "bob", Followers: 980},
+		}
+		require.NoError(t, source.SetBody(&expected))
+
+		packet := types.EndpointIOPacket{
+			Fields: []types.EndpointIOField{
+				{
+					Name:     "rulemsg://dataT/finalleadslist?sid=" + leadSliceSID,
+					BindPath: "rulemsg://dataT/filteredLeadBatch?sid=" + leadSliceSID,
+				},
+			},
+		}
+
+		err = helper.ProcessInbound(ctx, msg, packet, helper.RuleMsgProvider{Msg: msg})
+		require.NoError(t, err)
+
+		copied, ok := msg.DataT().Get("filteredLeadBatch")
+		require.True(t, ok)
+
+		resultSlice, ok := copied.Body().(*[]rulechainValidatorLead)
+		require.True(t, ok)
+		assert.Equal(t, expected, *resultSlice)
+	})
+
+	t.Run("Typed business slice fails when object conversion is forced", func(t *testing.T) {
+		const leadSliceSID = "[]RulechainValidatorLead_V1"
+		registerTestCoreObjDef(t, &[]rulechainValidatorLead{}, leadSliceSID)
+
+		msg := setupTestMsg(t)
+		source, err := msg.DataT().NewItem(leadSliceSID, "finalleadslist")
+		require.NoError(t, err)
+
+		expected := []rulechainValidatorLead{
+			{Username: "alice", Followers: 1200},
+		}
+		require.NoError(t, source.SetBody(&expected))
+
+		packet := types.EndpointIOPacket{
+			Fields: []types.EndpointIOField{
+				{
+					Name:     "rulemsg://dataT/finalleadslist?sid=" + leadSliceSID,
+					BindPath: "rulemsg://dataT/filteredLeadBatch?sid=" + leadSliceSID,
+					Type:     "object",
+				},
+			},
+		}
+
+		err = helper.ProcessInbound(ctx, msg, packet, helper.RuleMsgProvider{Msg: msg})
+		require.Error(t, err)
+		assertFaultCode(t, err, cnst.CodeFieldConversionFailed)
+		assert.Contains(t, err.Error(), "can't convert")
+	})
+
+	t.Run("String JSON still converts to object when type is object", func(t *testing.T) {
+		const profileSID = "RulechainValidatorProfile_V1"
+		registerTestCoreObjDef(t, &rulechainValidatorProfile{}, profileSID)
+
+		msg := setupTestMsg(t)
+		rawJSON := `{"username":"alice","tags":["fashion","sale"]}`
+		source, err := msg.DataT().NewItem(cnst.SID_STRING, "llmResponse")
+		require.NoError(t, err)
+		require.NoError(t, source.SetBody(&rawJSON))
+
+		packet := types.EndpointIOPacket{
+			Fields: []types.EndpointIOField{
+				{
+					Name:     "rulemsg://dataT/llmResponse?sid=" + cnst.SID_STRING,
+					BindPath: "rulemsg://dataT/profile?sid=" + profileSID,
+					Type:     "object",
+				},
+			},
+		}
+
+		err = helper.ProcessInbound(ctx, msg, packet, helper.RuleMsgProvider{Msg: msg})
+		require.NoError(t, err)
+
+		profileObj, ok := msg.DataT().Get("profile")
+		require.True(t, ok)
+
+		profile, ok := profileObj.Body().(*rulechainValidatorProfile)
+		require.True(t, ok)
+		assert.Equal(t, rulechainValidatorProfile{
+			Username: "alice",
+			Tags:     []string{"fashion", "sale"},
+		}, *profile)
 	})
 }

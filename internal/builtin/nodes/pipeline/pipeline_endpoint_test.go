@@ -223,3 +223,78 @@ func TestPipelineEndpointNode_ProcessData_ProjectsToStageRequiredInputs(t *testi
 
 	mockPool.AssertExpectations(t)
 }
+
+func TestPipelineEndpointNode_ProcessData_ProjectsToUnionOfDownstreamStageInputs(t *testing.T) {
+	node := &PipelineEndpointNode{}
+	node.BaseNode = *types.NewBaseNode(PipelineEndpointNodeType, types.NodeMetadata{})
+	node.SetID("test-pipeline-node")
+
+	stageOneRuntime := &testProjectionRuntime{
+		projection: types.RuleChainCoreObjAnalysis{
+			RequiredInputs: types.CoreObjSet{ObjIDs: []string{"stage1_only"}},
+		},
+		executeFn: func(_ context.Context, _ string, msg types.RuleMsg, onEnd func(types.RuleMsg, error)) error {
+			_, hasStage1 := msg.DataT().Get("stage1_only")
+			_, hasStage2 := msg.DataT().Get("stage2_only")
+			_, hasStage3 := msg.DataT().Get("stage3_only")
+			_, hasDrop := msg.DataT().Get("drop_me")
+			assert.True(t, hasStage1)
+			assert.True(t, hasStage2)
+			assert.True(t, hasStage3)
+			assert.False(t, hasDrop)
+			onEnd(msg, nil)
+			return nil
+		},
+	}
+	stageTwoRuntime := &testProjectionRuntime{
+		projection: types.RuleChainCoreObjAnalysis{
+			RequiredInputs: types.CoreObjSet{ObjIDs: []string{"stage2_only"}},
+		},
+	}
+	stageThreeRuntime := &testProjectionRuntime{
+		projection: types.RuleChainCoreObjAnalysis{
+			RequiredInputs: types.CoreObjSet{ObjIDs: []string{"stage3_only"}},
+		},
+	}
+
+	mockPool := new(MockRuntimePoolForPipeline)
+	mockPool.On("Get", "stage-1-chain").Return(stageOneRuntime, true)
+	mockPool.On("Get", "stage-2-chain").Return(stageTwoRuntime, true)
+	mockPool.On("Get", "stage-3-chain").Return(stageThreeRuntime, true)
+	node.SetRuntimePool(mockPool)
+	node.activeChannels = map[string]chan types.RuleMsg{
+		"stage2_in": make(chan types.RuleMsg, 1),
+		"stage3_in": make(chan types.RuleMsg, 1),
+	}
+	node.config = PipelineConfig{
+		Stages: []PipelineStageConfig{
+			{
+				Name:          "Stage1",
+				Processor:     ProcessorConfig{ID: "stage-1-chain", Type: "chain"},
+				OutputChannel: "stage2_in",
+			},
+			{
+				Name:          "Stage2",
+				Processor:     ProcessorConfig{ID: "stage-2-chain", Type: "chain"},
+				InputChannel:  "stage2_in",
+				OutputChannel: "stage3_in",
+			},
+			{
+				Name:         "Stage3",
+				Processor:    ProcessorConfig{ID: "stage-3-chain", Type: "chain"},
+				InputChannel: "stage3_in",
+			},
+		},
+	}
+
+	inDataT := types.NewDataT()
+	inDataT.Set("stage1_only", &testCoreObj{key: "stage1_only", body: "keep-stage1"})
+	inDataT.Set("stage2_only", &testCoreObj{key: "stage2_only", body: "keep-stage2"})
+	inDataT.Set("stage3_only", &testCoreObj{key: "stage3_only", body: "keep-stage3"})
+	inDataT.Set("drop_me", &testCoreObj{key: "drop_me", body: "drop"})
+	inMsg := types.NewMsg("input", "", nil, inDataT)
+
+	node.processData(context.Background(), node.config.Stages[0], inMsg)
+
+	mockPool.AssertExpectations(t)
+}
