@@ -1,0 +1,5 @@
+version: 1
+interface:
+  display_name: Matrix Function Node Creator
+  short_description: Build Matrix nodes with adapter and pure impl layers
+  default_prompt: Use $matrix-function-node-creator to add or refactor Matrix function nodes so `Xxx` stays Matrix-aware and `XxxImpl` remains reusable pure business logic with a repo-owned logger contract.

@@ -1,0 +1,5 @@
+version: 1
+interface:
+  display_name: "Matrix Rulechain Validator"
+  short_description: "静态校验 Matrix DSL 映射和函数节点签名风险"
+  default_prompt: "Use $matrix-rulechain-validator to inspect Matrix DSL mappings, function node signatures, and risky rulechain configuration patterns."

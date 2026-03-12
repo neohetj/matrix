@@ -1,0 +1,5 @@
+version: 1
+interface:
+  display_name: Matrix Requirement To DSL
+  short_description: 将需求收敛并落成 Matrix DSL
+  default_prompt: 将需求转换为 Matrix DSL 的设计和实现，先输出结构化设计草案，再落地到 endpoint、pipeline、rulechain、prompt 或 shared 资源。
