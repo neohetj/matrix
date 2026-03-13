@@ -380,6 +380,9 @@ func (a RuleMsgAsset) setInDataT(msg types.RuleMsg, objID, fieldPath string, val
 		errInfo := fmt.Errorf("failed to convert dataT object body to map for setting value: %w", err)
 		return types.InternalError.Wrap(errInfo)
 	}
+	if objMap == nil {
+		objMap = make(map[string]any)
+	}
 
 	utils.SetValueByDotPath(objMap, fieldPath, value)
 

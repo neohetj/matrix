@@ -123,6 +123,23 @@
 - 如果下游不需要独立快照，直接读取原 objId
 - 如果确实需要快照，明确实现深拷贝语义，不要依赖别名式搬运
 
+## Runtime Edge Cases
+
+### `MapStringInterface` nested field writes on old runtimes
+
+触发条件：
+- trace 报 `assignment to entry in nil map`
+- 出错节点通常是 `transform/object_mapper`
+- `bindPath` 类似 `rulemsg://dataT/<obj>.<field>?sid=MapStringInterface`
+
+为什么危险：
+- 旧版 Matrix 在首次创建 `MapStringInterface` 对象后，若直接写嵌套字段，根 map 可能还是 nil
+- 这会在 `rulemsg://dataT` 写入阶段直接 panic，后续错误处理链会被一起带崩
+
+建议修复：
+- 优先升级到包含 nil-map 初始化修复的 Matrix 运行时
+- 如果短期不能升级，改用函数节点先输出完整 `MapStringInterface` 对象，再做 whole-object 写入
+
 ## Intentional Non-Checks
 
 - `action/forEach` 的 `type` 不参与这一套校验

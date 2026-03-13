@@ -17,6 +17,7 @@
 
 - 跨 `SID` 不做整对象透传。
 - `Patch` 目标必须逐字段映射。
+- `MapStringInterface` 目标允许按字段构造 patch，但如果目标对象需要在运行时首次创建，需确认 Matrix 运行时已支持对 `rulemsg://dataT/<obj>.<field>?sid=MapStringInterface` 的 nil-map 自动初始化；否则改用函数节点先输出完整 map。
 - 集合对象的 `loopSource`、`inputMapping`、`outputs` 必须保持 `SID` 一致。
 - 如果字段可能缺失，只在显式配置了 `defaultValue` 时才依赖缺字段兜底。
 
@@ -32,3 +33,4 @@
 - 为了跑通链路临时塞 `task_context` 等伪输入
 - 用旧对象继续驱动后续 stage，而不是消费保存结果
 - 用 `type: "object"` 把完整业务对象写进 patch
+- 在未确认运行时版本的情况下，直接用 `object_mapper` 往 `MapStringInterface` 的新对象嵌套字段写值

@@ -90,6 +90,36 @@ func TestRuleMsgAssetSet_DataTMapTypes(t *testing.T) {
 	assert.Equal(t, interfaceMap, storedParams)
 }
 
+func TestRuleMsgAssetSet_DataTMapNestedFieldOnNewItem(t *testing.T) {
+	msg := types.NewMsg("test", "", nil, types.NewDataT())
+	ctx := asset.NewAssetContext(asset.WithRuleMsg(msg))
+
+	nestedAsset := asset.Asset[any]{URI: "rulemsg://dataT/stats.originalLeadCount?sid=" + cnst.SID_MAP_STRING_INTERFACE}
+	err := nestedAsset.Set(ctx, int64(10))
+	assert.NoError(t, err)
+
+	obj, ok := msg.DataT().Get("stats")
+	assert.True(t, ok)
+	stored := derefMap[any](t, obj.Body())
+	assert.Equal(t, int64(10), stored["originalLeadCount"])
+}
+
+func TestRuleMsgAssetSet_DataTMapNestedFieldOnNilMapBody(t *testing.T) {
+	msg := types.NewMsg("test", "", nil, types.NewDataT())
+	ctx := asset.NewAssetContext(asset.WithRuleMsg(msg))
+
+	obj, err := msg.DataT().NewItem(cnst.SID_MAP_STRING_INTERFACE, "patch")
+	assert.NoError(t, err)
+	assert.NotNil(t, obj)
+
+	nestedAsset := asset.Asset[any]{URI: "rulemsg://dataT/patch.scrapedProfileCount?sid=" + cnst.SID_MAP_STRING_INTERFACE}
+	err = nestedAsset.Set(ctx, int64(5))
+	assert.NoError(t, err)
+
+	stored := derefMap[any](t, obj.Body())
+	assert.Equal(t, int64(5), stored["scrapedProfileCount"])
+}
+
 func TestRuleMsgAssetSet_DataTSliceTypes(t *testing.T) {
 	msg := types.NewMsg("test", "", nil, types.NewDataT())
 	ctx := asset.NewAssetContext(asset.WithRuleMsg(msg))

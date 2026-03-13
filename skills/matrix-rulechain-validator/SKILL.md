@@ -28,7 +28,8 @@ description: "校验基于 Matrix 的 DSL 规则链、HTTP endpoint 与函数节
 3. 再处理映射规则。如果命中 `collection-sid-object-conversion`，优先检查是否在 helper-based packet 中把集合 SID 显式写成了 `"type": "object"`。
 4. 如果命中 `typed-whole-object-cross-sid-conversion`，优先检查是不是把完整业务对象直接灌进另一个 typed SID，尤其是 `*Patch*_V*`；这类场景必须显式按字段映射。
 5. 如果命中 `object-mapper-alias-copy`，评估这个 `transform/object_mapper` 是否只是把同一个 SID 换了个 objId；能直读原对象就直接删掉。
-6. 如果静态检查干净但运行仍失败，再查 trace，确认首个真正失败节点，而不是后续错误处理链的连锁报错。
+6. 如果 trace 里看到 `assignment to entry in nil map`，优先检查是不是在用 `transform/object_mapper` 往 `rulemsg://dataT/<obj>.<field>?sid=MapStringInterface` 写嵌套字段；旧版 Matrix 运行时会在这里 panic。
+7. 如果静态检查干净但运行仍失败，再查 trace，确认首个真正失败节点，而不是后续错误处理链的连锁报错。
 
 ## Covered Rules
 
@@ -85,6 +86,7 @@ description: "校验基于 Matrix 的 DSL 规则链、HTTP endpoint 与函数节
 - 字符串 JSON 解析成对象：保留 `"type": "object"`，但确保源是 `sid=String` 或原始 JSON 字符串。
 - 跨 SID 的 typed whole-object 转换：不要整对象透传，改成显式字段映射。
 - 目标是 `Patch` SID：只映射 patch 所需字段，不要把完整业务对象直接塞进去。
+- 目标是 `MapStringInterface` 且 trace 命中 `assignment to entry in nil map`：先确认 Matrix 运行时是否已包含 `rulemsg://dataT` nil-map 初始化修复；若未升级，改用函数节点先构造完整 map 再整对象写入。
 - 仅换 objId 的 mapper：优先删除中间 `object_mapper`，直接让下游节点读取原对象。
 
 ## Resources
