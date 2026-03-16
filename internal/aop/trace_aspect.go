@@ -18,14 +18,10 @@ package aop
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
-	"os"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/trace"
 	"github.com/neohetj/matrix/pkg/types"
 )
@@ -54,8 +50,6 @@ func (a *TraceAspect) Before(ctx types.NodeCtx, msg types.RuleMsg) (types.RuleMs
 
 	// 1. Deep copy the input message to freeze its state.
 	inMsgCopy, deepCopyErr := msg.DeepCopy()
-	// Process Image Data in Input
-	inMsgCopy = a.processImages(inMsgCopy)
 
 	nodeLog := &types.RuleNodeRunLog{
 		Id:          uuid.New().String(),
@@ -107,8 +101,6 @@ func (a *TraceAspect) After(ctx types.NodeCtx, msg types.RuleMsg, err error) {
 
 	// 2. Deep copy the output message to freeze its state.
 	outMsgCopy, deepCopyErr := msg.DeepCopy()
-	// Process Image Data in Output
-	outMsgCopy = a.processImages(outMsgCopy)
 
 	if deepCopyErr != nil {
 		// Log the error but don't block the chain.
@@ -140,79 +132,4 @@ func (a *TraceAspect) After(ctx types.NodeCtx, msg types.RuleMsg, err error) {
 
 	// 4. Record the complete log synchronously.
 	a.tracer.RecordNodeLog(executionID, *logInProgress)
-}
-
-// processImages checks if the message data is an image and converts it to a base64 string for display.
-func (a *TraceAspect) processImages(msg types.RuleMsg) types.RuleMsg {
-	if msg == nil {
-		return nil
-	}
-
-	// Since we cannot modify the msg in-place if it doesn't support it,
-	// and we want to ensure the log contains the image content,
-	// we might need to construct a new message if changes are needed.
-	// But `RuleMsg` is an interface. We rely on `types.NewMsg` if we need to replace it.
-
-	needsUpdate := false
-	newData := msg.Data()
-	newFormat := msg.DataFormat()
-
-	// 1. Check Main Data
-	var dataStr string
-	// Handle types.Data which might be string or []byte alias depending on definition.
-	// Assuming it's compatible with string conversion or casting.
-	// If types.Data is `type Data string`, we need to cast.
-	// If it's interface, we type assert.
-	// Based on error `cannot use newData (variable of string type types.Data) as string value`,
-	// it seems `types.Data` is a defined type, likely `type Data string`.
-	dataStr = string(newData)
-
-	if newFormat == "Image" || strings.HasSuffix(dataStr, ".png") || strings.HasSuffix(dataStr, ".jpg") {
-		if !strings.HasPrefix(dataStr, "data:image") && len(dataStr) < 1024 && (strings.Contains(dataStr, "/") || strings.Contains(dataStr, "\\")) {
-			// Try to read file
-			bytes, err := os.ReadFile(dataStr)
-			if err == nil {
-				// Detect mime type simple heuristic
-				mimeType := "image/png"
-				if strings.HasSuffix(dataStr, ".jpg") || strings.HasSuffix(dataStr, ".jpeg") {
-					mimeType = "image/jpeg"
-				}
-				b64 := base64.StdEncoding.EncodeToString(bytes)
-				// Convert back to types.Data
-				newData = types.Data(fmt.Sprintf("data:%s;base64,%s", mimeType, b64))
-				needsUpdate = true
-			}
-		}
-	}
-
-	// 2. Check DataT items
-	newDataT := msg.DataT()
-	if newDataT != nil {
-		allObjs := newDataT.GetAll()
-		for _, obj := range allObjs {
-			// Check if body is a string path to image
-			if strVal, ok := obj.Body().(string); ok {
-				if strings.HasSuffix(strVal, ".png") || strings.HasSuffix(strVal, ".jpg") {
-					if !strings.HasPrefix(strVal, "data:image") && len(strVal) < 1024 && (strings.Contains(strVal, "/") || strings.Contains(strVal, "\\")) {
-						bytes, err := os.ReadFile(strVal)
-						if err == nil {
-							// We found an image path and read it.
-							// However, we can't easily update the CoreObject in DataT in this generic Aspect
-							// without access to CoreObject setters or DataT mutators which might not be exposed.
-							// For the strict requirement "rulemsg://data format is Image", we prioritized Main Data.
-							// We will skip DataT modification for now to avoid complexity with immutable/interface types.
-							_ = bytes
-						}
-					}
-				}
-			}
-		}
-	}
-
-	if needsUpdate {
-		// message with updated data
-		msg.SetData(string(newData), cnst.IMAGE)
-	}
-
-	return msg
 }

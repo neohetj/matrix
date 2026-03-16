@@ -9,19 +9,29 @@ import (
 // Manager manages the lifecycle of trace snapshots.
 // It provides a tracer for the runtime and methods to interact with the snapshot store.
 type Manager struct {
-	store types.Store
+	store        types.Store
+	payloadStore PayloadStore
 }
 
 // NewManager creates a new Manager instance.
 func NewManager(store types.Store) *Manager {
 	return &Manager{
-		store: store,
+		store:        store,
+		payloadStore: NewFilePayloadStore("", 24*time.Hour),
 	}
 }
 
 // GetTracer creates a new Tracer instance for injection into AOP aspects.
 func (m *Manager) GetTracer() *Tracer {
-	return NewTracer(m.store)
+	return NewTracer(m.store, m.payloadStore)
+}
+
+// LoadPayload loads the externalized payload bytes for a trace log message.
+func (m *Manager) LoadPayload(executionID, logID, source string) ([]byte, error) {
+	if m.payloadStore == nil {
+		return nil, errPayloadNotFound
+	}
+	return m.payloadStore.LoadMessage(executionID, logID, source)
 }
 
 // GetSnapshot retrieves an execution snapshot from the store.
