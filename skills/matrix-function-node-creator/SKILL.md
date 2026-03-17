@@ -26,16 +26,18 @@ Skill 触发口令：`$matrix-function-node-creator`
 2. `Xxx(ctx,msg)` 可以依赖 Matrix 对象与 helper，例如 `types.NodeCtx`、`types.RuleMsg`、`asset`、`helper`。
 3. `XxxImpl` 不得依赖 Matrix 包，不得接收 `types.NodeCtx`、`types.RuleMsg`、`asset`、`helper` 相关对象。
 4. `XxxImpl` 的输入输出只使用 `context.Context`、领域对象、标量/切片/map、options struct、仓库自有 logger interface。
-5. logger 契约必须是仓库拥有的业务接口；`Xxx` 负责把 Matrix logger / node context 适配成这个接口，不把框架 logger 类型泄漏到 `XxxImpl`。
+5. logger 契约必须是仓库拥有的业务接口；`Xxx` 负责把 Matrix logger / node context 通过仓库通用 adapter 适配成这个接口，不把框架 logger 类型泄漏到 `XxxImpl`。
 6. 保持 `FuncObject.ID` 与 DSL `configuration.functionName` 完全一致。
 7. 默认不定义 `XxxInputs/XxxOutputs`、`loadXxxInputs/saveXxxOutputs`；只有项目已有明确约定时才跟随。
+8. 读取列表型 DataT 输入时，优先使用 `helper.GetParam[*[]T](...)`，不要默认写成 `helper.GetParam[[]T](...)`；Matrix 运行时常把列表对象物化成 `*[]T`，直接按 `[]T` 读取会在链路里报 `expected []T, got *[]T`。
 
 ## Workflow
 
 1. 选择最近似函数节点作为基线，优先复用同类参数和输出结构。
-2. 先定义边界：哪些参数由 Matrix adapter 负责读取，哪些配置收敛为 `Options` struct，logger 适配点放在哪里。
+2. 先定义边界：哪些参数由 Matrix adapter 负责读取，哪些配置收敛为 `Options` struct，logger 适配点放在哪里；如果仓库已有通用 `AdaptNodeLogger/ResolveLogger/StdLogger`，优先直接复用。
 3. 编写 `XxxFuncObj` 并声明完整 `Inputs/Outputs/Business`。
-4. 编写 `Xxx(ctx, msg)`：取参/读配置 -> 构造 `Options` -> 适配 logger -> 调 `XxxImpl` -> 写回输出 -> `TellSuccess`。
+4. 编写 `Xxx(ctx, msg)`：取参/读配置 -> 构造 `Options` -> 通过通用 logger adapter 适配 logger -> 调 `XxxImpl` -> 写回输出 -> `TellSuccess`。
+   列表输入如果要传给 `XxxImpl`，在 adapter 层先用 `GetParam[*[]T]` 取值并解引用，再把普通 `[]T` 传下去。
 5. 编写 `XxxImpl(context.Context, bizlog.Logger, ...)`，保证业务逻辑可被非 Matrix 场景直接调用。
 6. 在项目的函数注册入口注册 `XxxFuncObj`。
 7. 在 rulechain DSL 中新增或更新 `type: functions` 节点，设置 `functionName`、`inputs`、`outputs`、`defineSid`。
@@ -86,7 +88,7 @@ func Xxx(ctx types.NodeCtx, msg types.RuleMsg) {
 
 	limit, _ := helper.GetConfigAsset[int](assetCtx, cfgLimit)
 	opts := Options{Limit: limit}
-	logger := adaptNodeLogger(ctx) // project-owned adapter to bizlog.Logger
+	logger := bizlog.AdaptNodeLogger(ctx) // repo-owned shared adapter to bizlog.Logger
 
 	output, err := XxxImpl(ctx.GetContext(), logger, input, opts)
 	if err != nil {
@@ -132,6 +134,7 @@ func XxxImpl(ctx types.NodeCtx, msg types.RuleMsg, input *domain.Input) (*domain
 2. 让 `XxxImpl` import Matrix 包，导致它无法在 service、orchestrator、测试里复用。
 3. 不做 logger 适配，直接把 `NodeCtx` 或框架 logger 类型传进 `XxxImpl`。
 4. 在 `Xxx(ctx,msg)` 中混入核心业务循环和复杂数据加工。
+5. 在单个节点包里重复定义私有 `adaptNodeLogger`、`noopLogger`；优先复用仓库级 logger adapter 和默认 logger。
 
 ## References
 

@@ -14,6 +14,7 @@
 - 没有跨 `SID` 整对象透传
 - `Patch` 映射是逐字段的
 - 没有引入伪输入保活对象
+- 如果是 list endpoint，已遵守 `GET + page/pageSize + data/total [+ meta]`
 
 ## Validation
 

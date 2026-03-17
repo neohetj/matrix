@@ -29,7 +29,9 @@ description: "校验基于 Matrix 的 DSL 规则链、HTTP endpoint 与函数节
 4. 如果命中 `typed-whole-object-cross-sid-conversion`，优先检查是不是把完整业务对象直接灌进另一个 typed SID，尤其是 `*Patch*_V*`；这类场景必须显式按字段映射。
 5. 如果命中 `object-mapper-alias-copy`，评估这个 `transform/object_mapper` 是否只是把同一个 SID 换了个 objId；能直读原对象就直接删掉。
 6. 如果 trace 里看到 `assignment to entry in nil map`，优先检查是不是在用 `transform/object_mapper` 往 `rulemsg://dataT/<obj>.<field>?sid=MapStringInterface` 写嵌套字段；旧版 Matrix 运行时会在这里 panic。
-7. 如果静态检查干净但运行仍失败，再查 trace，确认首个真正失败节点，而不是后续错误处理链的连锁报错。
+7. 如果本次改动包含同步查询类 HTTP list endpoint，按 `references/rules.md` 里的 list contract checklist 做一轮人工审查，确认请求参数、响应结构和 DSL 绑定符合统一规范。
+8. 如果 trace 或节点报错里出现 `expected []T, got *[]T`，优先检查对应函数节点的 Matrix adapter 是否把列表输入写成了 `helper.GetParam[[]T](...)`；这类列表型 DataT 输入应改成 `helper.GetParam[*[]T](...)`。
+9. 如果静态检查干净但运行仍失败，再查 trace，确认首个真正失败节点，而不是后续错误处理链的连锁报错。
 
 ## Covered Rules
 

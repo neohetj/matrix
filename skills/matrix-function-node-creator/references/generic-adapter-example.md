@@ -24,7 +24,7 @@ func NormalizeItems(ctx types.NodeCtx, msg types.RuleMsg) {
 
 	trimSpaces, _ := helper.GetConfigAsset[bool](assetCtx, cfgTrimSpaces)
 	opts := NormalizeOptions{TrimSpaces: trimSpaces}
-	logger := adaptNodeLogger(ctx)
+	logger := bizlog.AdaptNodeLogger(ctx)
 
 	output, err := NormalizeItemsImpl(ctx.GetContext(), logger, items, opts)
 	if err != nil {
@@ -70,3 +70,11 @@ func NormalizeItemsImpl(
 2. Matrix 依赖被局限在 adapter 层。
 3. logger 也是业务层契约，不强绑框架类型。
 4. DSL 仍然只需要对接 `NormalizeItemsFuncObj` 的 I/O 契约。
+
+如果还有 orchestrator、service、CLI 这类非 Matrix 调用方，继续复用仓库级 logger resolver：
+
+```go
+func ExecuteNormalizeItems(ctx context.Context, logger bizlog.Logger, items []domain.Item, opts NormalizeOptions) ([]domain.Item, error) {
+	return NormalizeItemsImpl(ctx, bizlog.ResolveLogger(logger), items, opts)
+}
+```

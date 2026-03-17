@@ -14,20 +14,46 @@ description: 将产品或业务需求转换为 Matrix DSL 实现方案与实际�
 
 1. 先用 `references/requirement-template.md` 把自然语言需求整理成结构化输入。
 2. 再用 `references/design-output-contract.md` 产出 DSL 设计草案，再决定是否开始改文件。
-3. 再读取项目 adapter，找到最接近的现有 DSL 作为基线。
-4. 按 `references/implementation-workflow.md` 做最小化实现。
-5. 按 `references/acceptance-checklist.md` 做校验，并补充项目自己的验证命令。
+3. 如果需求包含同步查询类 HTTP list 接口，先按下面的 list contract 把请求参数、返回结构和 DSL 绑定方式收敛到统一契约。
+4. 再读取项目 adapter，找到最接近的现有 DSL 作为基线。
+5. 按 `references/implementation-workflow.md` 做最小化实现。
+6. 按 `references/acceptance-checklist.md` 做校验，并补充项目自己的验证命令。
 
 ## Non-Negotiable Rules
 
 - 不要从自然语言直接跳到 JSON 编辑。
 - 优先复用现有 endpoint、pipeline、rulechain、prompt、shared 结构。
+- 同步查询类 HTTP list 接口默认遵守 `GET + page/pageSize + data/total [+ meta]` 契约。
 - 不允许跨 `SID` 的整对象透传。
 - 目标为 `Patch` 类型时，必须显式字段映射。
 - 目标为 `MapStringInterface` patch 时，先确认运行时 Matrix 版本是否支持嵌套字段写入自动初始化；如果要兼容旧运行时，优先用函数节点先产出完整 map，再交给 `storage_update`。
 - DSL 节点 `inputs/outputs` 必须与函数签名一致。
 - 不允许引入伪输入来“保活”上下文对象。
 - 如果 stage 依赖持久化后的对象，必须消费保存后的对象，而不是保存前的临时对象。
+
+## List Contract
+
+仅适用于同步查询类 HTTP list 接口，不适用于流式输出、异步任务提交或单资源详情。
+
+- 请求默认使用 `GET`
+- 查询参数默认支持：
+  - `page`，1-based，默认 `1`
+  - `pageSize`，默认 `20`
+- 可选过滤条件优先收敛到：
+  - `keyword`
+  - `filter.*`
+- 返回结构至少包含：
+  - `data`：当前页数据
+  - `total`：分页前总数
+  - `meta`：可选，仅放分页无关的领域汇总信息
+- 不要再用 `windows`、`products`、`tasks` 这类资源专属集合字段名承载分页结果
+- Matrix DSL 绑定统一使用：
+  - endpoint query params 绑定到 `pagination_req: JsonDBPagination`
+  - `page -> pagination_req.page`
+  - `pageSize -> pagination_req.page_size`
+  - list 节点输入参数统一命名为 `pagination`
+- `page` 非法时由服务端兜底
+- `page` 超出总页数时，`data` 返回空数组，但 `total` 仍返回真实总数
 
 ## Required Deliverables
 

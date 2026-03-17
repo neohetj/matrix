@@ -125,6 +125,23 @@
 
 ## Runtime Edge Cases
 
+### Function node list params materialized as `*[]T`
+
+触发条件：
+- trace、节点错误或日志里出现 `expected []T, got *[]T`
+- 首个失败节点通常是 `type=functions`
+- 报错点常见于 `failed to get <param>`
+
+为什么危险：
+- Matrix 运行时对 typed list DataT 常按 `*[]T` 物化
+- 如果函数节点 adapter 用 `helper.GetParam[[]T](...)` 直接读取，会在运行期触发类型不匹配
+- 这类错误看起来像 DSL/SID 问题，实际是 Go adapter 取参方式错了
+
+建议修复：
+- 列表型函数输入统一用 `helper.GetParam[*[]T](...)`
+- 在 Matrix adapter 层解引用后，再把普通 `[]T` 传给 `XxxImpl`
+- 排查同目录其他节点时，优先全局搜索 `helper.GetParam[[]`
+
 ### `MapStringInterface` nested field writes on old runtimes
 
 触发条件：
@@ -139,6 +156,34 @@
 建议修复：
 - 优先升级到包含 nil-map 初始化修复的 Matrix 运行时
 - 如果短期不能升级，改用函数节点先输出完整 `MapStringInterface` 对象，再做 whole-object 写入
+
+## Manual Review Checklist
+
+### Sync query list endpoint contract
+
+触发条件：
+- 本次改动包含同步查询类 HTTP list 接口
+- endpoint 语义是“读取分页列表”，而不是详情、流式输出或异步任务提交
+
+必须检查：
+- 接口方法是否为 `GET`
+- query params 是否包含 `page`、`pageSize`
+- `page`、`pageSize` 是否绑定到 `JsonDBPagination`
+- 过滤条件是否优先放到 `keyword` 或 `filter.*`
+- 返回结构是否使用 `data`、`total`，可选 `meta`
+- 是否避免使用 `windows`、`products`、`tasks` 等资源专属集合字段名
+- `total` 是否表示分页前总数，而不是当前页长度
+- `meta` 是否只放分页无关的领域汇总信息
+
+为什么危险：
+- list 接口如果各自定义分页参数或返回字段，会让前端、SDK、DSL adapter 和后续校验都失去统一预期
+- 旧接口常见问题是直接返回全量 `windows/products/tasks`，导致契约不稳定，分页语义也不清楚
+
+建议修复：
+- 收敛到 `GET + page/pageSize + data/total [+ meta]`
+- endpoint 入口统一使用 `pagination_req: JsonDBPagination`
+- list 节点输入统一命名为 `pagination`
+- 如果现有接口已经对外暴露资源专属集合名，改造时优先兼容评估后再统一收敛
 
 ## Intentional Non-Checks
 
