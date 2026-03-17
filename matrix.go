@@ -38,6 +38,7 @@ import (
 
 	_ "github.com/neohetj/matrix/pkg/components/action"
 	_ "github.com/neohetj/matrix/pkg/components/external"
+	_ "github.com/neohetj/matrix/pkg/components/ops"
 )
 
 func init() {
