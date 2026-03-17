@@ -41,6 +41,10 @@ RFC流程是进行重大功能设计、核心API变更或架构调整的主要�
 *   [`0006_ops-foundation-components-and-dsl-extensions_rfc.md`](./0006_ops-foundation-components-and-dsl-extensions_rfc.md): 为运维场景设计基础组件和DSL扩展。
 *   [`0007_matrix_cohesion_refactor_rfc.md`](./0007_matrix_cohesion_refactor_rfc.md): 对Matrix进行内聚性重构。
 *   [`0008_generic_agent_nodes_rfc.md`](./0008_generic_agent_nodes_rfc.md): 设计一套通用的Agent核心节点。
+*   [`0009_websocket_endpoint_node_rfc.md`](./0009_websocket_endpoint_node_rfc.md): 为 Matrix 增加 WebSocket Endpoint 节点。
+*   [`0010_unified_error_handling_rfc.md`](./0010_unified_error_handling_rfc.md): 定义统一错误处理与跨边界错误语义。
+*   [`0011_config_uri_and_manager_rfc.md`](./0011_config_uri_and_manager_rfc.md): 统一配置 URI 与配置管理器语义。
+*   [`0012_topology-driven-deployment-platform_rfc.md`](./0012_topology-driven-deployment-platform_rfc.md): 定义拓扑驱动的多视图部署与自动分发平台。
 
 # 2. 文档命名规范 (NamingConvention)
 
