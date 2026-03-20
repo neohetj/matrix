@@ -1,6 +1,6 @@
 ---
 name: matrix-requirement-to-dsl
-description: 将产品或业务需求转换为 Matrix DSL 实现方案与实际改动。用于把自然语言需求落成 `endpoint/http`、`endpoint/pipeline`、`rulechain`、`prompt`、`shared` 等 DSL 文件，并强制执行需求收敛、设计草案、契约映射和实现后验证。
+description: 将产品或业务需求转换为 Matrix DSL 实现方案与实际改动。用于把自然语言需求落成 `endpoint/http`、`endpoint/pipeline`、`rulechain`、`prompt`、`shared` 等 DSL 文件，并强制执行需求收敛、设计草案、契约映射和实现后验证。若需求同时涉及函数节点代码实现，需串联 `matrix-function-node-creator`。
 ---
 
 # Matrix Requirement To DSL
@@ -9,6 +9,11 @@ description: 将产品或业务需求转换为 Matrix DSL 实现方案与实际�
 
 如果当前仓库存在 `skills/*-dsl-adapter/`，在需求收敛后必须继续读取对应 adapter。  
 如果当前仓库存在 `matrix-rulechain-validator` 或等价校验入口，实现完成前必须执行它。
+
+## Skill Handoff
+
+- 需求只改 DSL：`matrix-requirement-to-dsl` -> `*-dsl-adapter` -> `matrix-rulechain-validator`
+- 需求同时改函数节点：在上述链路中追加 `matrix-function-node-creator`
 
 ## Workflow
 

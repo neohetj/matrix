@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/neohetj/matrix/internal/registry"
 	"github.com/neohetj/matrix/pkg/cnst"
@@ -120,7 +121,7 @@ func (n *HttpEndpointNode) createServiceErrorFromMsg(msg types.RuleMsg, errStr s
 		failureInfo.Timestamp = val
 	}
 	if val, ok := msg.Metadata()[types.MetaErrorCode]; ok {
-		failureInfo.Code = val
+		failureInfo.Code = normalizeErrorCode(val)
 	}
 
 	// Determine response code based on mapping or default
@@ -137,6 +138,47 @@ func (n *HttpEndpointNode) createServiceErrorFromMsg(msg types.RuleMsg, errStr s
 		UserMessage:  failureInfo.Error,
 		FailureInfo:  failureInfo,
 	}
+}
+
+func (n *HttpEndpointNode) createServiceErrorFromExecErr(execErr error) *types.ServiceError {
+	responseCode := n.defaultErrorCode
+	userMessage := "internal server error"
+	cause := execErr
+	failureInfo := &types.FailureInfo{
+		Error: execErr.Error(),
+	}
+
+	var fault *types.Fault
+	if errors.As(execErr, &fault) {
+		failureInfo.Code = normalizeErrorCode(string(fault.Code))
+		if n.faultCodeMap != nil {
+			if code, ok := n.faultCodeMap[failureInfo.Code]; ok {
+				responseCode = code
+			}
+		}
+		// Keep message aligned with rule-chain fault content for mapped faults.
+		userMessage = execErr.Error()
+		cause = nil
+	}
+
+	return &types.ServiceError{
+		ResponseCode: responseCode,
+		UserMessage:  userMessage,
+		Cause:        cause,
+		FailureInfo:  failureInfo,
+	}
+}
+
+func normalizeErrorCode(raw string) string {
+	code := strings.TrimSpace(raw)
+	for code != "" {
+		decoded, err := strconv.Unquote(code)
+		if err != nil {
+			break
+		}
+		code = strings.TrimSpace(decoded)
+	}
+	return strings.Trim(code, "\"'")
 }
 
 // SetRuntimePool implements the types.Endpoint interface.
@@ -351,7 +393,7 @@ func (n *HttpEndpointNode) handleSyncRequest(w http.ResponseWriter, r *http.Requ
 	if execErr != nil {
 		var serviceErr *types.ServiceError
 		if !errors.As(execErr, &serviceErr) {
-			serviceErr = &types.ServiceError{ResponseCode: n.defaultErrorCode, UserMessage: "internal server error", Cause: execErr}
+			serviceErr = n.createServiceErrorFromExecErr(execErr)
 		}
 
 		n.handleError(w, serviceErr, options)
