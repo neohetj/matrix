@@ -3,10 +3,13 @@ package test
 import (
 	"context"
 	"encoding/json"
+	"io/fs"
 	"testing"
 
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 
 	matrix "github.com/neohetj/matrix"
@@ -32,6 +35,31 @@ type TestEnv struct {
 	MockLogger *utils.MockLogger
 }
 
+func copyJSONFixtures(t *testing.T, srcDir, dstDir string) {
+	t.Helper()
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		t.Fatalf("read fixture dir %s: %v", srcDir, err)
+	}
+	if err := os.MkdirAll(dstDir, 0o755); err != nil {
+		t.Fatalf("create fixture dir %s: %v", dstDir, err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		srcPath := filepath.Join(srcDir, entry.Name())
+		dstPath := filepath.Join(dstDir, entry.Name())
+		data, err := os.ReadFile(srcPath)
+		if err != nil {
+			t.Fatalf("read fixture file %s: %v", srcPath, err)
+		}
+		if err := os.WriteFile(dstPath, data, fs.FileMode(0o644)); err != nil {
+			t.Fatalf("write fixture file %s: %v", dstPath, err)
+		}
+	}
+}
+
 // setup initializes the Matrix engine and mock logger for testing
 func setup(t *testing.T) *TestEnv {
 	cleanup()
@@ -45,15 +73,19 @@ func setup(t *testing.T) *TestEnv {
 	registry.Default.CoreObjRegistry.Register(types.NewCoreObjDef(&Alert{}, "parsedAlert", "Parsed Alert"))
 
 	mockLogger := &utils.MockLogger{}
+	workspace := t.TempDir()
+	componentRoot := filepath.Join(workspace, "alert", "dsl")
+	copyJSONFixtures(t, filepath.Join(".", "rulechains"), filepath.Join(componentRoot, "rulechains"))
+	copyJSONFixtures(t, filepath.Join(".", "endpoints"), filepath.Join(componentRoot, "endpoints"))
+
 	cfg := config.MatrixConfig{
 		Loader: config.LoaderConfig{
 			Providers: []config.LoaderProviderConfig{
 				{
 					Type: "file",
-					Args: []string{".."}, // 从上级目录开始查找
+					Args: []string{workspace},
 				},
 			},
-			ComponentsRoot: ".", // 设置ComponentsRoot为"../."，即上级目录
 		},
 		EnabledComponents: []string{"alert"},
 	}

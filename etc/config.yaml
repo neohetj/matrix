@@ -2,10 +2,18 @@
 
 Loader:
   Providers:
-    # By default, load DSL files from the local filesystem.
-    # The path is relative to the application's working directory.
+    # By default, Matrix discovers components from <provider>/<component>/dsl.
+    # The base path is relative to the application's working directory.
     - Type: "file"
-      Args: ["components"]
+      Args: ["."]
+
+    # If a component stores DSL files in a child directory, declare it explicitly.
+    # Example:
+    # - Type: "file"
+    #   Args: ["."]
+    #   ComponentRoots:
+    #     module_a: "code"
+    #     module_b: "code"
   
   # Directory to scan for endpoint definition files.
   EndpointsPath: "endpoints"

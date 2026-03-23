@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"mime/multipart"
 	"net/http/httptest"
 	"os"
@@ -27,20 +28,49 @@ type TestEnv struct {
 	MockLogger *utils.MockLogger
 }
 
+func copyJSONFixtures(t *testing.T, srcDir, dstDir string) {
+	t.Helper()
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		t.Fatalf("read fixture dir %s: %v", srcDir, err)
+	}
+	if err := os.MkdirAll(dstDir, 0o755); err != nil {
+		t.Fatalf("create fixture dir %s: %v", dstDir, err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		srcPath := filepath.Join(srcDir, entry.Name())
+		dstPath := filepath.Join(dstDir, entry.Name())
+		data, err := os.ReadFile(srcPath)
+		if err != nil {
+			t.Fatalf("read fixture file %s: %v", srcPath, err)
+		}
+		if err := os.WriteFile(dstPath, data, fs.FileMode(0o644)); err != nil {
+			t.Fatalf("write fixture file %s: %v", dstPath, err)
+		}
+	}
+}
+
 // setup initializes the Matrix engine and mock logger for testing
 func setup(t *testing.T) *TestEnv {
 	cleanup()
 
 	mockLogger := &utils.MockLogger{}
+	workspace := t.TempDir()
+	componentRoot := filepath.Join(workspace, "image_upload", "dsl")
+	copyJSONFixtures(t, filepath.Join(".", "rulechains"), filepath.Join(componentRoot, "rulechains"))
+	copyJSONFixtures(t, filepath.Join(".", "endpoints"), filepath.Join(componentRoot, "endpoints"))
+
 	cfg := config.MatrixConfig{
 		Loader: config.LoaderConfig{
 			Providers: []config.LoaderProviderConfig{
 				{
 					Type: "file",
-					Args: []string{".."}, // Search from parent directory
+					Args: []string{workspace},
 				},
 			},
-			ComponentsRoot: ".",
 		},
 		EnabledComponents: []string{"image_upload"},
 	}

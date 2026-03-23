@@ -27,17 +27,19 @@ func LoadFromFile(path string) (MatrixConfig, error) {
 
 // LoaderProviderConfig defines the configuration for a single resource provider.
 type LoaderProviderConfig struct {
-	Type     string   `json:"Type" yaml:"type"`                             // "file" or "embed"
-	Args     []string `json:"Args,omitempty" yaml:"args,omitempty"`         // Arguments for the provider (e.g., base path for "file")
-	Priority *int     `json:"Priority,omitempty" yaml:"priority,omitempty"` // Search priority, higher numbers are checked first.
+	Type           string            `json:"Type" yaml:"type"`                                         // "file" or "embed"
+	Args           []string          `json:"Args,omitempty" yaml:"args,omitempty"`                     // Arguments for the provider (e.g., base path for "file")
+	Priority       *int              `json:"Priority,omitempty" yaml:"priority,omitempty"`             // Search priority, higher numbers are checked first.
+	ComponentRoots map[string]string `json:"ComponentRoots,omitempty" yaml:"componentRoots,omitempty"` // Optional per-component subpaths under <provider>/<component>, e.g. sellitx -> code => <provider>/sellitx/code.
 }
 
 // LoaderConfig defines the configuration for the DSL loader.
 // It supports a list of providers to be composed into a HybridLoader.
+// By default, Matrix resolves component DSL directories as <provider>/<component>/dsl.
+// Use LoaderProviderConfig.ComponentRoots when a component stores DSL files in a child directory.
 type LoaderConfig struct {
-	Providers      []LoaderProviderConfig `json:"Providers" yaml:"providers"`
-	EndpointsPath  string                 `json:"EndpointsPath" yaml:"endpointsPath"`
-	ComponentsRoot string                 `json:"ComponentsRoot,omitempty" yaml:"componentsRoot,omitempty"`
+	Providers     []LoaderProviderConfig `json:"Providers" yaml:"providers"`
+	EndpointsPath string                 `json:"EndpointsPath" yaml:"endpointsPath"`
 }
 
 // SchedulerConfig defines the configuration for the task scheduler.

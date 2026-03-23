@@ -2,6 +2,8 @@ package builder_test
 
 import (
 	"embed"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/neohetj/matrix/internal/builder"
@@ -493,26 +495,71 @@ func (p *captureNodePool) GetEndpoints() []types.Endpoint            { return ni
 // 该测试验证是否能正确识别组件内的特定目录（如 rulechains, endpoints, shared）
 func TestDiscoverComponentPaths(t *testing.T) {
 	// 测试点：扫描组件目录，验证是否正确返回各类配置文件的路径列表
-	t.Run("discover paths", func(t *testing.T) {
+	t.Run("discover paths with direct component roots", func(t *testing.T) {
 		provider := &utils.MockResourceProvider{
 			Files: map[string]struct {
 				Content string
 				IsDir   bool
 			}{
-				"components/common/dsl/rulechains": {IsDir: true},
-				"components/comp1/dsl/endpoints":   {IsDir: true},
-				"components/comp2/dsl/shared":      {IsDir: true},
+				"common/dsl/rulechains": {IsDir: true},
+				"comp1/dsl/endpoints":   {IsDir: true},
+				"comp2/dsl/shared":      {IsDir: true},
 			},
 		}
 
 		rulechainPaths, endpointPaths, sharedNodePaths := builder.DiscoverComponentPaths(
 			provider,
-			"components",
+			config.LoaderConfig{
+				Providers: []config.LoaderProviderConfig{
+					{
+						Type: "file",
+						Args: []string{"."},
+					},
+				},
+			},
 			[]string{"comp1", "comp2"},
 		)
 
-		assert.Equal(t, []string{"components/common/dsl/rulechains"}, rulechainPaths)
-		assert.Equal(t, []string{"components/comp1/dsl/endpoints"}, endpointPaths)
-		assert.Equal(t, []string{"components/comp2/dsl/shared"}, sharedNodePaths)
+		assert.Equal(t, []string{"common/dsl/rulechains"}, rulechainPaths)
+		assert.Equal(t, []string{"comp1/dsl/endpoints"}, endpointPaths)
+		assert.Equal(t, []string{"comp2/dsl/shared"}, sharedNodePaths)
+	})
+
+	t.Run("discover paths with provider component roots", func(t *testing.T) {
+		workspace := t.TempDir()
+		for _, dir := range []string{
+			filepath.Join(workspace, "sellitx", "code", "dsl", "rulechains"),
+			filepath.Join(workspace, "lens", "code", "dsl", "endpoints"),
+			filepath.Join(workspace, "lens", "code", "dsl", "shared"),
+		} {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatalf("create test dir %s: %v", dir, err)
+			}
+		}
+
+		loaderCfg := config.LoaderConfig{
+			Providers: []config.LoaderProviderConfig{
+				{
+					Type: "file",
+					Args: []string{workspace},
+					ComponentRoots: map[string]string{
+						"sellitx": "code",
+						"lens":    "code",
+					},
+				},
+			},
+		}
+		provider, err := builder.NewLoaderFromConfig(loaderCfg, nil)
+		assert.NoError(t, err)
+
+		rulechainPaths, endpointPaths, sharedNodePaths := builder.DiscoverComponentPaths(
+			provider,
+			loaderCfg,
+			[]string{"sellitx", "lens"},
+		)
+
+		assert.Equal(t, []string{"sellitx/code/dsl/rulechains"}, rulechainPaths)
+		assert.Equal(t, []string{"lens/code/dsl/endpoints"}, endpointPaths)
+		assert.Equal(t, []string{"lens/code/dsl/shared"}, sharedNodePaths)
 	})
 }

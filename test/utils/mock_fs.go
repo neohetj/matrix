@@ -66,8 +66,8 @@ func (m *MockResourceProvider) ReadFile(name string) (*types.Resource, error) {
 }
 
 func (m *MockResourceProvider) Stat(name string) (fs.FileInfo, error) {
-	if _, ok := m.Files[name]; ok {
-		return &MockFileInfo{}, nil
+	if file, ok := m.Files[name]; ok {
+		return &MockFileInfo{name: name, isDir: file.IsDir}, nil
 	}
 	return nil, fs.ErrNotExist
 }

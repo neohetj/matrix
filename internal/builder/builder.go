@@ -260,6 +260,52 @@ func LoadSharedNodes(
 	return nil
 }
 
+func orderedComponentNames(enabledComponents []string) []string {
+	seen := map[string]struct{}{
+		"common": {},
+	}
+	names := []string{"common"}
+	for _, raw := range enabledComponents {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	return names
+}
+
+func resolveProviderComponentBasePath(componentName string, overrides map[string]string) string {
+	if overrides != nil {
+		if rawRoot, ok := overrides[componentName]; ok {
+			root := filepath.ToSlash(filepath.Clean(filepath.FromSlash(strings.TrimSpace(rawRoot))))
+			if root == "." || root == "" {
+				return filepath.ToSlash(componentName)
+			}
+			return filepath.ToSlash(filepath.Join(componentName, root))
+		}
+	}
+	return filepath.ToSlash(componentName)
+}
+
+func appendIfDirExists(dslLoader types.ResourceProvider, seen map[string]struct{}, paths *[]string, candidate string) {
+	candidate = filepath.ToSlash(strings.TrimSpace(candidate))
+	if candidate == "" {
+		return
+	}
+	if _, ok := seen[candidate]; ok {
+		return
+	}
+	if stat, err := dslLoader.Stat(candidate); err == nil && stat.IsDir() {
+		seen[candidate] = struct{}{}
+		*paths = append(*paths, candidate)
+	}
+}
+
 // Merger handles the merging of rule chain definitions based on `imports`.
 type Merger struct {
 	defs DefMap
@@ -384,29 +430,19 @@ func setSourcePathForNodeDefs(nodes []types.NodeDef, sourcePath string) {
 // and returns paths to their 'rulechains', 'endpoints', and 'shared' directories if they exist.
 func DiscoverComponentPaths(
 	dslLoader types.ResourceProvider,
-	componentsRoot string,
+	loaderCfg config.LoaderConfig,
 	enabledComponents []string,
 ) (rulechainPaths []string, endpointPaths []string, sharedNodePaths []string) {
-	componentSet := make(map[string]struct{})
-	componentSet["common"] = struct{}{} // "common" is always included
-	for _, name := range enabledComponents {
-		componentSet[name] = struct{}{}
-	}
+	rulechainSeen := map[string]struct{}{}
+	endpointSeen := map[string]struct{}{}
+	sharedSeen := map[string]struct{}{}
 
-	for name := range componentSet {
-		rulechainPath := filepath.ToSlash(filepath.Join(componentsRoot, name, "dsl/rulechains"))
-		if _, err := dslLoader.Stat(rulechainPath); err == nil {
-			rulechainPaths = append(rulechainPaths, rulechainPath)
-		}
-
-		endpointPath := filepath.ToSlash(filepath.Join(componentsRoot, name, "dsl/endpoints"))
-		if _, err := dslLoader.Stat(endpointPath); err == nil {
-			endpointPaths = append(endpointPaths, endpointPath)
-		}
-
-		sharedPath := filepath.ToSlash(filepath.Join(componentsRoot, name, "dsl/shared"))
-		if _, err := dslLoader.Stat(sharedPath); err == nil {
-			sharedNodePaths = append(sharedNodePaths, sharedPath)
+	for _, providerCfg := range loaderCfg.Providers {
+		for _, componentName := range orderedComponentNames(enabledComponents) {
+			componentBase := resolveProviderComponentBasePath(componentName, providerCfg.ComponentRoots)
+			appendIfDirExists(dslLoader, rulechainSeen, &rulechainPaths, filepath.Join(componentBase, "dsl/rulechains"))
+			appendIfDirExists(dslLoader, endpointSeen, &endpointPaths, filepath.Join(componentBase, "dsl/endpoints"))
+			appendIfDirExists(dslLoader, sharedSeen, &sharedNodePaths, filepath.Join(componentBase, "dsl/shared"))
 		}
 	}
 

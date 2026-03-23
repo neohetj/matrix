@@ -59,10 +59,10 @@ var Registry = types.DefaultRegistry
 // Discover is a public API wrapper around the internal builder function.
 func Discover(
 	dslLoader types.ResourceProvider,
-	componentsRoot string,
+	loaderCfg config.LoaderConfig,
 	enabledComponents []string,
 ) (rulechainPaths []string, endpointPaths []string, sharedNodePaths []string) {
-	return builder.DiscoverComponentPaths(dslLoader, componentsRoot, enabledComponents)
+	return builder.DiscoverComponentPaths(dslLoader, loaderCfg, enabledComponents)
 }
 
 // SetLogger sets the global logger for the entire matrix engine.
@@ -227,11 +227,7 @@ func newEngine(e *MatrixEngine) (*MatrixEngine, error) {
 }
 
 func (e *MatrixEngine) discoverComponents() (rulechainPaths, endpointPaths, sharedNodePaths []string) {
-	componentsRoot := e.config.Loader.ComponentsRoot
-	if componentsRoot == "" {
-		componentsRoot = "components" // Default convention
-	}
-	return Discover(e.loader, componentsRoot, e.config.EnabledComponents)
+	return Discover(e.loader, e.config.Loader, e.config.EnabledComponents)
 }
 
 func (e *MatrixEngine) initScheduler() (types.Scheduler, error) {
