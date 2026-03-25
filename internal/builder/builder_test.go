@@ -150,12 +150,30 @@ func TestLoadDefs(t *testing.T) {
 				Content string
 				IsDir   bool
 			}{
-				"rulechains/chain1.json": {Content: `{"ruleChain":{"id":"chain1"}, "metadata":{}}`},
-				"rulechains/chain2.json": {Content: `{"ruleChain":{"id":"chain1"}, "metadata":{}}`},
+				"rulechains/chain1.json": {Content: `{"ruleChain":{"id":"chain1"}, "metadata":{"nodes":[{"id":"n1","type":"x"}]}}`},
+				"rulechains/chain2.json": {Content: `{"ruleChain":{"id":"chain1"}, "metadata":{"nodes":[{"id":"n2","type":"y"}]}}`},
 			},
 		}
 		_, err := builder.LoadDefs(provider, []string{"rulechains"})
 		assert.Error(t, err)
+	})
+
+	t.Run("duplicate chain id with identical definition is skipped", func(t *testing.T) {
+		provider := &utils.MockResourceProvider{
+			Files: map[string]struct {
+				Content string
+				IsDir   bool
+			}{
+				"rulechains/chain1.json": {Content: `{"ruleChain":{"id":"chain1"}, "metadata":{"nodes":[{"id":"n1","type":"x"}]}}`},
+				"rulechains/chain2.json": {Content: `{"ruleChain":{"id":"chain1"}, "metadata":{"nodes":[{"id":"n1","type":"x"}]}}`},
+			},
+		}
+
+		defs, err := builder.LoadDefs(provider, []string{"rulechains"})
+		assert.NoError(t, err)
+		assert.Len(t, defs, 1)
+		assert.Contains(t, defs, "chain1")
+		assert.Equal(t, "rulechains/chain1.json", defs["chain1"].Metadata.Nodes[0].SourcePath)
 	})
 
 	// 测试点：处理无效的 JSON 文件，应忽略错误并继续加载其他有效文件

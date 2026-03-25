@@ -76,6 +76,8 @@ func NewLoaderFromConfig(cfg config.LoaderConfig, logger types.Logger, embedFSs 
 // LoadDefs scans for rule chain definitions from a list of base paths.
 func LoadDefs(dslLoader types.ResourceProvider, rulechainPaths []string) (DefMap, error) {
 	chains := make(DefMap)
+	chainSignatures := make(map[string]string)
+	chainSources := make(map[string]string)
 	jsonParser := &parser.JsonParser{}
 
 	for _, basePath := range rulechainPaths {
@@ -108,10 +110,21 @@ func LoadDefs(dslLoader types.ResourceProvider, rulechainPaths []string) (DefMap
 				chainDef.RuleChain.ID = strings.TrimSuffix(d.Name(), ".json")
 			}
 
-			if _, exists := chains[chainDef.RuleChain.ID]; exists {
+			signature, err := ruleChainSignature(chainDef)
+			if err != nil {
+				return fmt.Errorf("build rule chain signature failed for %s: %w", filePath, err)
+			}
+
+			if existingSignature, exists := chainSignatures[chainDef.RuleChain.ID]; exists {
+				if existingSignature == signature {
+					fmt.Printf("info: skipping duplicate rule chain ID %s from %s; identical definition already loaded from %s\n", chainDef.RuleChain.ID, res.Source, chainSources[chainDef.RuleChain.ID])
+					return nil
+				}
 				return fmt.Errorf("duplicate rule chain ID found: %s from %s", chainDef.RuleChain.ID, res.Source)
 			}
 			chains[chainDef.RuleChain.ID] = chainDef
+			chainSignatures[chainDef.RuleChain.ID] = signature
+			chainSources[chainDef.RuleChain.ID] = res.Source.String()
 			return nil
 		})
 
@@ -120,6 +133,21 @@ func LoadDefs(dslLoader types.ResourceProvider, rulechainPaths []string) (DefMap
 		}
 	}
 	return chains, nil
+}
+
+func ruleChainSignature(def *types.RuleChainDef) (string, error) {
+	if def == nil {
+		return "", fmt.Errorf("rule chain definition is nil")
+	}
+
+	normalized := deepCopyDef(def)
+	clearSourcePathForNodeDefs(normalized.Metadata.Nodes)
+
+	bytes, err := (&parser.JsonParser{}).EncodeRuleChain(normalized)
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
 }
 
 // LoadEndpoints scans for endpoint definitions from a list of base paths.
@@ -423,6 +451,12 @@ func setSourcePathForNodeDefs(nodes []types.NodeDef, sourcePath string) {
 		// This path is later used by rel:// resolution and should not be confused
 		// with any Go implementation file path.
 		nodes[i].SourcePath = normalized
+	}
+}
+
+func clearSourcePathForNodeDefs(nodes []types.NodeDef) {
+	for i := range nodes {
+		nodes[i].SourcePath = ""
 	}
 }
 

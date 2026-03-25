@@ -182,6 +182,9 @@ func (a Asset[T]) Resolve(ctx *AssetContext) (T, error) {
 	if tVal, ok := val.(T); ok {
 		return tVal, nil
 	}
+	if tVal, ok := coerceInterface[T](val); ok {
+		return tVal, nil
+	}
 	if tVal, ok := coerceBasicPointer[T](val); ok {
 		return tVal, nil
 	}
@@ -191,6 +194,30 @@ func (a Asset[T]) Resolve(ctx *AssetContext) (T, error) {
 	}
 
 	return zero, AssetTypeMismatch.Wrap(fmt.Errorf("expected %T, got %T", zero, val))
+}
+
+func coerceInterface[T any](val any) (T, bool) {
+	var zero T
+	targetType := reflect.TypeFor[T]()
+	if targetType == nil || targetType.Kind() != reflect.Interface {
+		return zero, false
+	}
+
+	value := reflect.ValueOf(val)
+	if !value.IsValid() {
+		return zero, false
+	}
+	if !value.Type().Implements(targetType) {
+		return zero, false
+	}
+
+	bound := reflect.New(targetType).Elem()
+	bound.Set(value)
+	result, ok := bound.Interface().(T)
+	if !ok {
+		return zero, false
+	}
+	return result, true
 }
 
 func coerceStruct[T any](ctx *AssetContext, val any) (T, bool) {

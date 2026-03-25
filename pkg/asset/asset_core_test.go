@@ -105,6 +105,14 @@ type MockCoreObj struct {
 
 func (m *MockCoreObj) Body() any { return m.body }
 
+type TestService interface {
+	Echo(input string) string
+}
+
+type testServiceImpl struct{}
+
+func (s *testServiceImpl) Echo(input string) string { return input }
+
 func TestAssetResolve_RuleMsg_DataT_StructToMap(t *testing.T) {
 	myObj := &MockCoreObj{body: &TestStruct{Name: "Foo"}}
 	dataT := &MockDataT{objects: map[string]types.CoreObj{"obj1": myObj}}
@@ -262,6 +270,22 @@ func TestAssetResolve_Rel_StrictMissingNodeContext(t *testing.T) {
 	_, err := a.Resolve(asset.NewAssetContext())
 	assert.Error(t, err)
 	AssertErrorCode(t, err, types.AssetNotFound)
+}
+
+func TestAssetResolve_Ref_InterfaceTarget(t *testing.T) {
+	asset.InitRegistry()
+
+	pool := &MockNodePool{}
+	impl := &testServiceImpl{}
+	pool.On("GetInstance", "svc").Return(any(impl), nil).Once()
+
+	ctx := asset.NewAssetContext(asset.WithNodePool(pool))
+	value, err := (asset.Asset[TestService]{URI: "ref://svc"}).Resolve(ctx)
+	assert.NoError(t, err)
+	if assert.NotNil(t, value) {
+		assert.Equal(t, "hello", value.Echo("hello"))
+	}
+	pool.AssertExpectations(t)
 }
 
 func TestAssetResolve_Ref(t *testing.T) {
