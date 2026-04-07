@@ -519,9 +519,11 @@ func TestDiscoverComponentPaths(t *testing.T) {
 				Content string
 				IsDir   bool
 			}{
-				"common/dsl/rulechains": {IsDir: true},
-				"comp1/dsl/endpoints":   {IsDir: true},
-				"comp2/dsl/shared":      {IsDir: true},
+				"common/dsl/rulechains":       {IsDir: true},
+				"comp1/dsl/endpoints":         {IsDir: true},
+				"comp1/common/dsl/shared":     {IsDir: true},
+				"comp2/dsl/shared":            {IsDir: true},
+				"comp2/common/dsl/rulechains": {IsDir: true},
 			},
 		}
 
@@ -538,17 +540,19 @@ func TestDiscoverComponentPaths(t *testing.T) {
 			[]string{"comp1", "comp2"},
 		)
 
-		assert.Equal(t, []string{"common/dsl/rulechains"}, rulechainPaths)
+		assert.Equal(t, []string{"common/dsl/rulechains", "comp2/common/dsl/rulechains"}, rulechainPaths)
 		assert.Equal(t, []string{"comp1/dsl/endpoints"}, endpointPaths)
-		assert.Equal(t, []string{"comp2/dsl/shared"}, sharedNodePaths)
+		assert.Equal(t, []string{"comp1/common/dsl/shared", "comp2/dsl/shared"}, sharedNodePaths)
 	})
 
 	t.Run("discover paths with provider component roots", func(t *testing.T) {
 		workspace := t.TempDir()
 		for _, dir := range []string{
 			filepath.Join(workspace, "sellitx", "code", "dsl", "rulechains"),
+			filepath.Join(workspace, "sellitx", "common", "dsl", "shared"),
 			filepath.Join(workspace, "lens", "code", "dsl", "endpoints"),
 			filepath.Join(workspace, "lens", "code", "dsl", "shared"),
+			filepath.Join(workspace, "lens", "common", "dsl", "rulechains"),
 		} {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				t.Fatalf("create test dir %s: %v", dir, err)
@@ -576,8 +580,8 @@ func TestDiscoverComponentPaths(t *testing.T) {
 			[]string{"sellitx", "lens"},
 		)
 
-		assert.Equal(t, []string{"sellitx/code/dsl/rulechains"}, rulechainPaths)
+		assert.Equal(t, []string{"sellitx/code/dsl/rulechains", "lens/common/dsl/rulechains"}, rulechainPaths)
 		assert.Equal(t, []string{"lens/code/dsl/endpoints"}, endpointPaths)
-		assert.Equal(t, []string{"lens/code/dsl/shared"}, sharedNodePaths)
+		assert.Equal(t, []string{"sellitx/common/dsl/shared", "lens/code/dsl/shared"}, sharedNodePaths)
 	})
 }

@@ -320,6 +320,34 @@ func resolveProviderComponentBasePath(componentName string, overrides map[string
 	return filepath.ToSlash(componentName)
 }
 
+func resolveProviderCommonBasePaths(componentName string, overrides map[string]string) []string {
+	componentName = filepath.ToSlash(strings.TrimSpace(componentName))
+	if componentName == "" {
+		return nil
+	}
+	if componentName == "common" {
+		return nil
+	}
+
+	if overrides != nil {
+		if rawRoot, ok := overrides[componentName]; ok {
+			root := filepath.ToSlash(filepath.Clean(filepath.FromSlash(strings.TrimSpace(rawRoot))))
+			if root == "." || root == "" {
+				if componentName == "code" {
+					return []string{"common"}
+				}
+				return []string{filepath.ToSlash(filepath.Join(componentName, "common"))}
+			}
+			return []string{filepath.ToSlash(filepath.Join(componentName, "common"))}
+		}
+	}
+
+	if componentName == "code" {
+		return []string{"common"}
+	}
+	return []string{filepath.ToSlash(filepath.Join(componentName, "common"))}
+}
+
 func appendIfDirExists(dslLoader types.ResourceProvider, seen map[string]struct{}, paths *[]string, candidate string) {
 	candidate = filepath.ToSlash(strings.TrimSpace(candidate))
 	if candidate == "" {
@@ -477,6 +505,11 @@ func DiscoverComponentPaths(
 			appendIfDirExists(dslLoader, rulechainSeen, &rulechainPaths, filepath.Join(componentBase, "dsl/rulechains"))
 			appendIfDirExists(dslLoader, endpointSeen, &endpointPaths, filepath.Join(componentBase, "dsl/endpoints"))
 			appendIfDirExists(dslLoader, sharedSeen, &sharedNodePaths, filepath.Join(componentBase, "dsl/shared"))
+			for _, commonBase := range resolveProviderCommonBasePaths(componentName, providerCfg.ComponentRoots) {
+				appendIfDirExists(dslLoader, rulechainSeen, &rulechainPaths, filepath.Join(commonBase, "dsl/rulechains"))
+				appendIfDirExists(dslLoader, endpointSeen, &endpointPaths, filepath.Join(commonBase, "dsl/endpoints"))
+				appendIfDirExists(dslLoader, sharedSeen, &sharedNodePaths, filepath.Join(commonBase, "dsl/shared"))
+			}
 		}
 	}
 
