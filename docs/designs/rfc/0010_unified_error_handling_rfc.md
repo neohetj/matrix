@@ -2,199 +2,111 @@
 uuid: "8f7e6a5d-1b2c-4e3f-9a0b-1c2d3e4f5a6b"
 type: "RFC"
 title: "需求：Unified Error Handling"
-status: "Draft"
-owner: "@matrix-team"
-version: "1.0.0"
+status: "Accepted"
+owner: "neohetj"
+version: "2.0.0"
 tags:
   - "rfc"
   - "design"
   - "error-handling"
 relations:
-  - type: "relates_to"
-    target_uuid: ""
-    description: "Related to core architecture."
+  - type: "is_supported_by"
+    target_uuid: "d1e2f3a4-b5c6-d7e8-f9a0-b1c2d3e4f5a6"
+    description: "统一错误处理仍建立在 RuleMsg 与 metadata 传播模型之上。"
+  - type: "is_explained_by"
+    target_uuid: "ab800e51-847f-4523-b330-9f14e71caf29"
+    description: "当前统一错误处理与 HTTP 错误映射的使用方式见指南文档。"
+  - type: "references"
+    target_uuid: "f5614284-7536-45c4-8342-b098f005394e"
+    description: "HTTP endpoint 错误处理的当前实现细节以 Reference-10 为准。"
 ---
 
-# RFC: Unified Error Handling (Title)
+# RFC: Unified Error Handling
 
-## 1. 摘要 (Summary)
+## 1. 摘要
 
-本RFC提议在Matrix框架中建立统一的错误处理模型，引入三层错误结构：静态定义的`Fault`、运行时上下文的`FailureInfo`（原ChainError）以及面向外部用户的`ServiceError`（原ErrorObj）。该模型旨在标准化节点错误定义、增强运行时错误追踪能力，并提供灵活的错误码映射机制，以便更好地集成到HTTP/gRPC等协议中。
+这份 RFC 的核心模型已经在当前代码中落地：
 
-## 2. 动机 (Motivation)
+1. `Fault`
+2. `FailureInfo`
+3. `ServiceError`
+4. Endpoint 级错误码映射
 
-### 当前存在的问题
-*   **错误定义分散**: 各个组件随意返回Go标准`error`，缺乏统一的错误码（ErrorCode）和错误信息规范，导致上层难以区分错误类型。
-*   **上下文丢失**: 原始错误在层层传递中往往丢失了发生错误的节点ID、时间戳等关键运行时信息，不利于排查问题。
-*   **协议耦合**: 内部错误直接暴露给外部接口（如HTTP 500），缺乏灵活的映射机制将业务错误转换为合适的协议状态码（如400 vs 500）。
-*   **概念混淆**: `ErrorObj`（面向用户）和`ChainError`（面向执行链）职责不清，导致使用上的混乱。
+但最终实现的包路径和少量类型细节与初稿不同。
 
-### 目标
-*   **标准化错误定义**: 通过`Fault`结构体定义静态错误（Code + Message），并在组件开发阶段强制使用。
-*   **丰富的运行时上下文**: 通过`FailureInfo`结构体捕获错误发生的节点上下文（NodeID, Timestamp等），并将其放入消息Metadata中传递。
-*   **灵活的错误映射**: 在Endpoint层引入`ServiceError`和`ErrorMapping`配置，支持将内部`Fault`映射为特定的HTTP状态码或自定义错误码。
-*   **统一处理流程**: 规范Node -> Context -> Endpoint的错误处理链路。
+### 原始需求点总结
 
-## 3. 设计详解 (DetailedDesign)
+1. 统一错误分层：原始需求想把“节点内部错误”“规则链运行时失败”和“对外协议响应错误”拆成明确层级，而不是都混成普通字符串 error。
+2. 保留结构化失败上下文：当链路失败时，框架应能稳定记录失败节点、失败时间、错误码和错误消息，便于 endpoint 统一消费。
+3. 给外部协议一个统一出口：无论内部怎么失败，对外最终都应能包装成稳定的服务错误对象，而不是每个 endpoint 自己拼响应。
+4. 支持错误码映射：原始需求不是只想“打印错误”，而是希望内部 fault code 能被映射到具体协议层状态码。
+5. 为多协议扩展打底：虽然当前主要落在 HTTP，但原始需求从一开始就是跨协议的，希望 gRPC、WebSocket 等后续边界也能接入同一模型。
 
-### 核心思路
+## 2. 当前实现对齐
 
-错误模型分为三层：
+### 2.1 当前类型位置
 
-1.  **Fault (静态故障)**:
-    *   **定义**: 开发阶段定义的错误模板，包含固定的`Code`（int32）和`Message`（string）。
-    *   **用途**: 用于组件内部标识特定的错误场景（如`FaultExprCompilationFailed`）。
-    *   **能力**: 支持`Wrap(error)`来携带具体的底层错误堆栈。
+当前错误模型主要位于：
 
-2.  **FailureInfo (运行时故障信息)**:
-    *   **定义**: 运行时捕获的错误详情，包含`Fault`的Code/Message，以及NodeID、NodeName、Timestamp等上下文信息。
-    *   **用途**: 存储在消息Metadata中，随消息流转，供后续节点或Endpoint消费。
+- `pkg/types/logger.go`
+- `pkg/types/http.go`
 
-3.  **ServiceError (服务错误)**:
-    *   **定义**: 面向外部客户端的错误对象，包含`ResponseCode`（协议状态码）、`UserMessage`（用户友好的信息）和`FailureInfo`。
-    *   **用途**: Endpoint在处理完规则链后，根据`FailureInfo`和配置的映射规则生成，最终序列化返回给调用方。
+而不是 RFC 初稿里写的 `pkg/types/error.go` / `pkg/types/endpoint.go`。
 
-### API变更
+### 2.2 当前已落地的结构
 
-#### 1. 新增错误类型定义 (`pkg/types/error.go`)
+当前代码已经稳定存在：
 
-```go
-// Fault: 静态定义的错误
-type Fault struct {
-    Code    int32
-    Message string
-    Wrapped error
-}
+- `types.Fault`
+- `types.FailureInfo`
+- `types.ServiceError`
+- `types.ErrorMapping`
 
-// FailureInfo: 运行时错误上下文
-type FailureInfo struct {
-    Error     string `json:"error"`
-    NodeID    string `json:"error_node_id"`
-    NodeName  string `json:"error_node_name"`
-    Timestamp string `json:"error_timestamp"`
-    Code      string `json:"error_code"`
-}
+### 2.3 当前 endpoint 错误处理
 
-// ServiceError: 对外服务错误
-type ServiceError struct {
-    ResponseCode int32
-    UserMessage  string
-    Cause        error
-    FailureInfo  *FailureInfo
-}
-```
+`endpoint/http` 已经实现：
 
-#### 2. NodeCtx 增强 (`internal/runtime/node_context.go`)
+1. 从 metadata 重建 `FailureInfo`
+2. 基于 `errorMappings` 计算对外响应码
+3. 构造 `ServiceError`
+4. 输出统一错误响应
 
-`HandleError` 方法被增强，负责将 `error`（通常是 `Fault`）转换为 Metadata 中的标准键值对。
+对应实现位于：
 
-```go
-func (ctx *DefaultNodeCtx) HandleError(msg types.RuleMsg, err error) {
-    // ... 记录日志 ...
-    
-    // 填充Metadata
-    metadata := msg.Metadata()
-    metadata[types.MetaError] = err.Error()
-    metadata[types.MetaErrorNodeID] = ctx.SelfDef().ID
-    metadata[types.MetaErrorTimestamp] = time.Now().UTC().Format(time.RFC3339)
+- `internal/builtin/nodes/endpoint/http_endpoint.go`
 
-    var fault *types.Fault
-    if errors.As(err, &fault) {
-        metadata[types.MetaErrorCode] = fmt.Sprintf("%d", fault.Code)
-    }
+## 3. 与原 RFC 的差异
 
-    // ... 路由到 Failure 路径 ...
-}
-```
+原 RFC 中这些细节已经需要更新：
 
-#### 3. Endpoint 配置增强 (`pkg/types/endpoint.go`)
+1. `Fault.Code` 不是简单的 `int32`，而是 `cnst.ErrCode`
+2. 相关类型不在 `pkg/types/error.go`
+3. 当前 first-class 落地的是 HTTP endpoint 错误处理，不是完整的“所有协议都已统一”
+4. `HandleError` 与 runtime 传播细节已经在当前 runtime 实现里固定下来
 
-Endpoint 配置增加 `errorMappings` 字段，支持将内部错误码映射为协议状态码。
+## 4. 当前实现范围
 
-```go
-type HttpEndpointNodeConfiguration struct {
-    // ... 其他配置 ...
-    ErrorMappings map[string][]string `json:"errorMappings"` // "500": ["20001", "20002"]
-}
-```
+### 4.1 已实现
 
-### 组件交互流程
+- 节点用 `Fault` 包装错误
+- runtime 将结构化错误写入 metadata
+- HTTP endpoint 基于 metadata 生成 `ServiceError`
+- `errorMappings` 将内部 fault code 映射到外部响应码
 
-```mermaid
-sequenceDiagram
-    participant Client
-    participant Endpoint
-    participant Runtime
-    participant Node
+### 4.2 尚未统一到所有协议
 
-    Client->>Endpoint: Request
-    Endpoint->>Runtime: Execute(Msg)
-    Runtime->>Node: OnMsg(Msg)
-    
-    alt Node Execution Failed
-        Node->>Node: Create Fault(Code, Msg)
-        Node->>Runtime: ctx.HandleError(Fault)
-        Runtime->>Runtime: Extract Fault info -> Metadata
-        Runtime->>Endpoint: Return Msg (with Error Metadata)
-    else Success
-        Node->>Runtime: ctx.TellSuccess(Msg)
-        Runtime->>Endpoint: Return Msg
-    end
+当前文档不应暗示这些能力已经在所有边界完全统一：
 
-    Endpoint->>Endpoint: Check Metadata for Error
-    alt Has Error
-        Endpoint->>Endpoint: Construct FailureInfo from Metadata
-        Endpoint->>Endpoint: Map Fault Code to HTTP Status (using ErrorMappings)
-        Endpoint->>Endpoint: Create ServiceError
-        Endpoint->>Client: Error Response (JSON)
-    else Success
-        Endpoint->>Client: Success Response
-    end
-```
+- gRPC
+- WebSocket
+- 其他主动 / 被动 endpoint 协议
 
-### 示例
+## 5. 结论
 
-**节点代码示例**:
-```go
-if err != nil {
-    // 使用预定义的Fault包装底层错误
-    ctx.HandleError(msg, FaultExprEvaluationFailed.Wrap(err))
-    return
-}
-```
+本 RFC 已被接受，并以当前错误模型实现落地。后续如果扩展到更多协议，应在现有 `Fault -> FailureInfo -> ServiceError` 模型上继续演进，而不是回到初稿里过时的包路径和类型签名。
 
-**Endpoint配置示例**:
-```json
-{
-  "errorMappings": {
-    "400": ["202501003"], // 将 "No Match Case" 错误映射为 400 Bad Request
-    "500": ["202501001", "202501002"] // 将编译/执行失败映射为 500
-  }
-}
-```
+## 6. 相关现行文档
 
-## 4. 缺点与风险 (DrawbacksAndRisks)
-
-*   **迁移成本**: 现有的自定义节点如果直接使用了 `fmt.Errorf` 而没有使用 `Fault`，虽然兼容（会被视为无Code的错误），但会丢失错误码特性，需要逐步重构。
-*   **配置复杂度**: `ErrorMappings` 提供了灵活性，但也增加了配置的复杂度，通过UI配置可以缓解此问题。
-*   **Metadata依赖**: 错误信息依赖 Metadata 传递，如果 Metadata 在链中被意外清除，会导致 Endpoint 无法正确重建错误上下文。
-
-## 5. 备选方案 (Alternatives)
-
-*   **直接返回 error**: 这种方式简单，但无法跨进程/跨服务边界传递丰富的结构化错误信息（特别是当 Matrix 分布式部署时）。
-*   **全链路使用 ServiceError**: 让节点直接返回 `ServiceError`。这会导致节点与具体的协议（HTTP/RPC）耦合过重，违背了 Matrix 节点协议无关的设计原则。
-
-## 6. 未解决的问题 (UnresolvedQuestions)
-
-*   目前的 `Fault.Code` 使用 `int32`，未来是否需要支持字符串类型的错误码（如 "ERR_INVALID_PARAM"）以提高可读性？
-*   `FailureInfo` 的结构是否需要进一步扩展以支持多语言错误信息？
-
-## 7. 常见问题与解答 (FAQ)
-
-<!-- qa_section_start -->
-> **问：旧的节点代码需要修改吗？**
-> **答：** 不需要强制修改。`HandleError` 兼容普通的 `error` 接口。但建议新开发的节点都使用 `Fault` 以获得更好的错误分类能力。
-
-> **问：如果我不配置 errorMappings 会怎样？**
-> **答：** Endpoint 会使用默认的错误码（通常是 500）来响应所有错误。
-<!-- qa_section_end -->
+1. [指南：统一错误处理与 HTTP 错误映射](../../guides/15_unified_error_handling_guide.md)
+2. [参考-10：HttpEndpoint 节点深度解析](../../reference/10_http_endpoint_deep_dive.md)
+3. [参考：Matrix 消息设计哲学 (RuleMsg)](../../reference/06_message_design_philosophy.md)

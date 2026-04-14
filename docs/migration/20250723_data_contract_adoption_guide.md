@@ -3,83 +3,105 @@ uuid: "ca31ab15-9a80-4868-8073-9cbfff7ca948"
 type: "MigrationGuide"
 title: "迁移指南：适配节点数据契约"
 status: "Active"
-owner: "@cline"
-version: "1.0.0"
+owner: "neohetj"
+version: "1.1.0"
 tags:
   - "migration"
   - "data-contract"
   - "node-interface"
+relations:
+  - type: "is_part_of"
+    target_uuid: "affcadae-091e-4f63-9072-c3c8216e8f40"
+    description: "本迁移指南属于 migration 目录的正式内容。"
 ---
 
 # 迁移指南：适配节点数据契约
 
 ## 1. 变更概述
 
-为了增强框架的静态分析能力和UI工具链支持，我们对`types.Node`接口和相关定义进行了扩展，引入了统一的数据访问契约。本次变更的核心是在`types.Node`接口上增加了一个新方法`GetDataContract()`，并为`NodeMetadata`和`FuncObject`增加了用于声明数据依赖的字段。
+Matrix 当前使用统一的 URI 契约来描述节点和函数的读写行为。早期文档里提到的 `GetDataContract()`、`ReadsData`、`ReadsMetadata`、`WritesMetadata` 已经不是现行实现。
 
-虽然此变更是向后兼容的，但我们强烈建议所有节点开发者遵循本指南，为现有节点添加数据契约，以充分利用新功能带来的优势。
+当前代码的关键点是：
 
-## 2. 受影响的范围
+1. `types.Node` 对外暴露 `DataContract() DataContract`。
+2. 通用节点通过 `NodeMetadata.NodeReads` / `NodeWrites` 声明契约。
+3. 函数通过 `FuncObject.Configuration.FuncReads` / `FuncWrites` 声明补充契约。
+4. `functions` 节点的 `DataT` 读写还会叠加 DSL 中的 `inputs` / `outputs`。
 
-*   **`types.Node`接口**: 增加了一个新方法`GetDataContract() DataContract`。
-*   **所有`types.Node`的实现**: 所有实现了`Node`接口的结构体都必须实现`GetDataContract`方法。
-*   **非函数节点定义**: `types.NodeMetadata`结构体现已包含`ReadsData`, `ReadsMetadata`, `WritesMetadata`字段。
-*   **函数节点定义**: `types.FuncObjectConfiguration`结构体现已包含`ReadsData`, `ReadsMetadata`, `WritesMetadata`字段。
+## 2. 受影响范围
 
-## 3. 手动迁移与适配清单
+- **`types.Node` 接口**：需要满足 `DataContract() DataContract`。
+- **嵌入 `types.BaseNode` 的普通节点**：通常无需额外实现 `DataContract()`，但要补齐 `NodeReads` / `NodeWrites`。
+- **特殊节点**：如 `FunctionsNode`、需要动态构造契约的节点，必须自己实现 `DataContract()`。
+- **函数定义**：应补齐 `FuncReads` / `FuncWrites`、`Inputs` / `Outputs`、`Business`。
 
-### 3.1. 步骤一：实现`GetDataContract`接口方法
+## 3. 迁移清单
 
-这是强制性的一步，以确保代码能够编译通过。
+### 3.1. 普通节点
 
-- [ ] **对于嵌入了`types.BaseNode`的节点**:
-    - 无需任何操作。`BaseNode`已经提供了满足接口的默认实现。
+- [ ] 审查 `OnMsg()`、`Start()`、`Stop()` 等实现，识别真实读写位置。
+- [ ] 把 `msg.Metadata()` 的读写迁移成 `rulemsg://metadata/...` URI。
+- [ ] 把 `msg.Data()` 的读写迁移成 `rulemsg://data...` URI。
+- [ ] 把结构化对象读写迁移成 `rulemsg://dataT/...` URI。
+- [ ] 在 `NodeMetadata.NodeReads` / `NodeWrites` 中声明这些 URI。
 
-- [ ] **对于未嵌入`types.BaseNode`或需要特殊逻辑的节点 (如`FunctionsNode`)**:
-    - 必须手动为该节点实现`GetDataContract() types.DataContract`方法。
-    - `FunctionsNode`的实现应从其持有的`FuncObject`中动态读取契约信息并返回。
+示例：
 
-### 3.2. 步骤二：为非函数节点添加契约
-
-对于您开发的每一个非函数节点（如`action`, `filter`, `flow`等类型）：
-
-- [ ] 审查节点`OnMsg`方法的实现逻辑。
-- [ ] **如果**节点从`msg.Data()`中读取数据，请在`NodeMetadata`的`ReadsData`字段中声明所读取字段的路径列表（例如 `["user.id", "product.name"]`）。
-- [ ] **如果**节点从`msg.Metadata()`中读取数据，请在`NodeMetadata`的`ReadsMetadata`字段中声明所读取的键。
-- [ ] **如果**节点向`msg.Metadata()`中写入数据，请在`NodeMetadata`的`WritesMetadata`字段中声明所写入的键。
-
-**示例 (`for_each_node.go`):**
 ```go
-// 之前
-var forEachNodePrototype = &ForEachNode{
-	BaseNode: *types.NewBaseNode(ForEachNodeType, types.NodeMetadata{
-		Name: "For Each",
-		// ...
-	}),
-}
+BaseNode: *types.NewBaseNode(ForEachNodeType, types.NodeMetadata{
+    Name: "For Each",
+    NodeReads: []types.ContractDef{
+        {URI: "rulemsg://dataT/items", Description: "待遍历集合"},
+    },
+    NodeWrites: []types.ContractDef{
+        {URI: "rulemsg://metadata/loop.index", Description: "当前索引"},
+        {URI: "rulemsg://metadata/loop.isLast", Description: "是否最后一项"},
+    },
+}),
+```
 
-// 之后
-var forEachNodePrototype = &ForEachNode{
-	BaseNode: *types.NewBaseNode(ForEachNodeType, types.NodeMetadata{
-		Name: "For Each",
-		// ...
-		WritesMetadata: []types.MetadataDef{
-			{Key: MetadataKeyLoopIndex, Description: "..."},
-			{Key: MetadataKeyIsLastItem, Description: "..."},
-		},
-	}),
+### 3.2. 函数节点
+
+- [ ] 审查函数实现是否直接读取 `msg.Data()` / `msg.Metadata()`。
+- [ ] 若有，写入 `FuncReads` / `FuncWrites`。
+- [ ] 如果函数读写 `DataT`，继续通过 `Inputs` / `Outputs` 声明逻辑参数。
+- [ ] 检查 DSL 上的 `inputs` / `outputs` 是否与函数签名一致。
+- [ ] 检查 `defineSid` 是否与 `IOObject.DefineSID` 保持一致。
+
+示例：
+
+```go
+Configuration: types.FuncObjConfiguration{
+    Inputs: []types.IOObject{
+        {ParamName: "pagination", DefineSID: "JsonDBPagination", Required: true},
+    },
+    Outputs: []types.IOObject{
+        {ParamName: "result", DefineSID: "WindowListResponse"},
+    },
+    FuncReads: []types.ContractDef{
+        {URI: "rulemsg://metadata/requestId", Description: "链路追踪 ID"},
+    },
 }
 ```
 
-### 3.3. 步骤三：为函数节点添加契约
+### 3.3. `functions` DSL 接线
 
-对于您开发的每一个函数节点：
+迁移时需要一并核对 DSL：
 
-- [ ] 审查函数`Func`的实现逻辑。
-- [ ] **如果**函数从`msg.Data()`中读取数据，请在`FuncObject.Configuration`的`ReadsData`字段中声明所读取字段的路径列表。
-- [ ] **如果**函数从`msg.Metadata()`中读取数据，请在`FuncObject.Configuration`的`ReadsMetadata`字段中声明所读取的键。
-- [ ] **如果**函数向`msg.Metadata()`中写入数据，请在`FuncObject.Configuration`的`WritesMetadata`字段中声明所写入的键。
+- [ ] `type` 必须是 `functions`。
+- [ ] `configuration.functionName` 必须与 `FuncObject.ID` 一致。
+- [ ] 业务配置应收敛到 `configuration.business`。
+- [ ] 节点级 `inputs` / `outputs` 必须和函数签名一致，不能夹带伪输入。
 
-## 4. 自动化迁移工具
+## 4. 推荐验证步骤
 
-本次变更不提供自动化迁移工具，需要开发者根据上述清单手动进行适配。
+1. 运行 DSL / 函数签名静态校验，确认 `defineSid`、必填输入、输出映射没有漂移。
+2. 抽样跑一条真实规则链，验证运行时生成的契约视图仍然正确。
+3. 若改动包含 endpoint / object mapper / shared resource，再补一轮映射和资源解析测试。
+
+## 5. 常见迁移误区
+
+- 把旧文档中的 `ReadsMetadata` 直接抄回代码。
+- 只改函数签名，不同步 DSL `inputs` / `outputs`。
+- 继续把函数业务配置平铺在 `configuration` 顶层，而不是放进 `configuration.business`。
+- 只补静态契约，不补最小规则链验证，导致文档和运行时继续漂移。

@@ -38,6 +38,54 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+const (
+	testDecisionFunctionID = "test/decision-route"
+	testStandardFunctionID = "test/standard-success"
+	testMarkerFunctionID   = "test/marker-success"
+)
+
+func init() {
+	types.DefaultRegistry.GetNodeFuncManager().Register(&types.NodeFuncObject{
+		Func: func(ctx types.NodeCtx, msg types.RuleMsg) {
+			ctx.TellSuccess(msg)
+		},
+		FuncObject: types.FuncObject{
+			ID:   testStandardFunctionID,
+			Name: "Test Standard Success",
+		},
+	})
+
+	types.DefaultRegistry.GetNodeFuncManager().Register(&types.NodeFuncObject{
+		Func: func(ctx types.NodeCtx, msg types.RuleMsg) {
+			ctx.TellNext(msg, "Create")
+		},
+		FuncObject: types.FuncObject{
+			ID:   testDecisionFunctionID,
+			Name: "Test Decision Route",
+			Configuration: types.FuncObjConfiguration{
+				RoutingMode:       types.FunctionRoutingModeDecision,
+				DeclaredRelations: []string{"Create", "Update"},
+			},
+		},
+	})
+
+	types.DefaultRegistry.GetNodeFuncManager().Register(&types.NodeFuncObject{
+		Func: func(ctx types.NodeCtx, msg types.RuleMsg) {
+			meta := msg.Metadata()
+			if meta == nil {
+				meta = types.Metadata{}
+			}
+			meta["marker"] = "decision branch reached"
+			msg.SetMetadata(meta)
+			ctx.TellSuccess(msg)
+		},
+		FuncObject: types.FuncObject{
+			ID:   testMarkerFunctionID,
+			Name: "Test Marker Success",
+		},
+	})
+}
+
 func TestRuntime_Execute_LogFunc(t *testing.T) {
 	// 1. Arrange
 	// Redirect log output to a buffer to capture it
@@ -494,6 +542,166 @@ func TestRuntime_OnError_DefaultHalt(t *testing.T) {
 	}
 	if finalMsg.Metadata()[types.MetaError] == "" {
 		t.Fatalf("Expected metadata %s to be set", types.MetaError)
+	}
+}
+
+func TestRuntime_FunctionRoutingValidation_RejectsCustomRelationOnStandardFunction(t *testing.T) {
+	p := parser.NewJsonParser()
+	s, _ := scheduler.NewAntsScheduler(10)
+	defer s.Stop()
+
+	dsl := `
+	{
+		"ruleChain": {
+			"id": "invalid_standard_function_routing"
+		},
+		"metadata": {
+			"nodes": [
+				{
+					"id": "log_node",
+					"type": "functions",
+					"configuration": {
+						"functionName": "` + testStandardFunctionID + `"
+					}
+				},
+				{
+					"id": "next_node",
+					"type": "functions",
+					"configuration": {
+						"functionName": "` + testStandardFunctionID + `"
+					}
+				}
+			],
+			"connections": [
+				{
+					"fromId": "log_node",
+					"toId": "next_node",
+					"type": "Create"
+				}
+			]
+		}
+	}`
+
+	chainDef, err := p.DecodeRuleChain([]byte(dsl))
+	if err != nil {
+		t.Fatalf("Failed to decode rule chain: %v", err)
+	}
+
+	_, err = runtime.NewDefaultRuntime(s, chainDef)
+	if err == nil {
+		t.Fatal("expected runtime creation to fail for custom relation on standard function")
+	}
+	if !strings.Contains(err.Error(), "may only connect via Success/Failure") {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+}
+
+func TestRuntime_FunctionRoutingValidation_RejectsUndeclaredDecisionRelation(t *testing.T) {
+	p := parser.NewJsonParser()
+	s, _ := scheduler.NewAntsScheduler(10)
+	defer s.Stop()
+
+	dsl := `
+	{
+		"ruleChain": {
+			"id": "invalid_decision_function_routing"
+		},
+		"metadata": {
+			"nodes": [
+				{
+					"id": "decision_node",
+					"type": "functions",
+					"configuration": {
+						"functionName": "` + testDecisionFunctionID + `"
+					}
+				},
+				{
+					"id": "next_node",
+					"type": "functions",
+					"configuration": {
+						"functionName": "log"
+					}
+				}
+			],
+			"connections": [
+				{
+					"fromId": "decision_node",
+					"toId": "next_node",
+					"type": "Reject"
+				}
+			]
+		}
+	}`
+
+	chainDef, err := p.DecodeRuleChain([]byte(dsl))
+	if err != nil {
+		t.Fatalf("Failed to decode rule chain: %v", err)
+	}
+
+	_, err = runtime.NewDefaultRuntime(s, chainDef)
+	if err == nil {
+		t.Fatal("expected runtime creation to fail for undeclared decision relation")
+	}
+	if !strings.Contains(err.Error(), "not declared by decision function") {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+}
+
+func TestRuntime_FunctionRoutingValidation_AllowsDeclaredDecisionRelation(t *testing.T) {
+	p := parser.NewJsonParser()
+	s, _ := scheduler.NewAntsScheduler(10)
+	defer s.Stop()
+
+	dsl := `
+	{
+		"ruleChain": {
+			"id": "valid_decision_function_routing"
+		},
+		"metadata": {
+			"nodes": [
+				{
+					"id": "decision_node",
+					"type": "functions",
+					"configuration": {
+						"functionName": "` + testDecisionFunctionID + `"
+					}
+				},
+				{
+					"id": "next_node",
+					"type": "functions",
+					"configuration": {
+						"functionName": "` + testMarkerFunctionID + `"
+					}
+				}
+			],
+			"connections": [
+				{
+					"fromId": "decision_node",
+					"toId": "next_node",
+					"type": "Create"
+				}
+			]
+		}
+	}`
+
+	chainDef, err := p.DecodeRuleChain([]byte(dsl))
+	if err != nil {
+		t.Fatalf("Failed to decode rule chain: %v", err)
+	}
+
+	rt, err := runtime.NewDefaultRuntime(s, chainDef)
+	if err != nil {
+		t.Fatalf("Failed to create runtime: %v", err)
+	}
+
+	msg := types.NewMsg("TEST_DECISION_ROUTE", `{}`, types.Metadata{}, nil).WithDataFormat(cnst.JSON)
+	finalMsg, err := rt.ExecuteAndWait(context.Background(), "decision_node", msg, nil)
+	if err != nil {
+		t.Fatalf("ExecuteAndWait failed: %v", err)
+	}
+
+	if finalMsg.Metadata()["marker"] != "decision branch reached" {
+		t.Fatalf("expected declared decision relation branch to execute, metadata: %#v", finalMsg.Metadata())
 	}
 }
 

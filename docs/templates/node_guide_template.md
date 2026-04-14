@@ -3,7 +3,7 @@ uuid: "GENERATED_UUID"
 type: "ComponentGuide"
 title: "[节点名称] 使用指南"
 status: "Draft"
-owner: "@developer-name"
+owner: "neohetj"
 version: "1.0.0"
 tags:
   - "component"
@@ -11,7 +11,7 @@ tags:
   - "[功能分类标签, e.g., database, action]"
 relations:
   - type: "is_governed_by"
-    target_uuid: "a2c8d4e1-7b3e-4c2a-8f5d-9e1b3c4d5a6b" # -> Matrix节点/组件开发SOP
+    target_uuid: "a2b1c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
   - type: "relates_to"
     target_uuid: "[UUID of a related concept doc]"
     description: "This node implements the concepts described in the related document."

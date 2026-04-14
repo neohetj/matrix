@@ -4,7 +4,7 @@ uuid: "e3d4c5b6-a7b8-9c0d-1e2f-3a4b5c6d7e8f"
 type: "ComponentGuide"
 title: "组件指南：Redis命令功能节点 (redisCommand)"
 status: "Draft"
-owner: "@cline"
+owner: "neohetj"
 version: "1.0.0"
 tags:
   - "matrix"

@@ -4,7 +4,7 @@ uuid: "5a8b3c7e-9f0d-4a1b-8c2d-6e5f4a3b2c1d"
 type: "Specification"
 title: "学习Matrix DSL规范"
 status: "Draft"
-owner: "@Matrix-Core-Team"
+owner: "neohetj"
 version: "1.1.0"
 tags:
   - "dsl"
@@ -113,7 +113,7 @@ flowchart TD
 | `id` | String | **必需**。节点的唯一标识符，在规则链内必须唯一。 |
 | `type` | String | **必需**。节点的类型，例如 `functions` 或 `action/exprSwitch`。框架根据此类型查找并实例化节点原型。 |
 | `name` | String | **必需**。节点的可读名称，用于UI展示和日志。 |
-| `configuration` | Object | **必需**。节点的具体配置。通常包含一个`business`子对象，用于存放核心业务逻辑参数。<br/>- **(函数节点专属)** 对于`functions`节点，此对象还可包含`readsData`, `readsMetadata`, `writesMetadata`字段，用于声明其对非`DataT`数据的访问契约。 |
+| `configuration` | Object | **必需**。节点的具体配置。不同节点类型的结构不同。对于 `functions` 节点，当前推荐形态是 `{ "functionName": "...", "business": { ... } }`；其补充读写契约来自函数注册时的 `FuncReads` / `FuncWrites`，而不是写在 DSL 里的旧式 `readsData` / `readsMetadata` / `writesMetadata` 字段。 |
 | `inputs` | Object | *(函数节点专属)* 声明`functions`节点消费的`DataT`业务对象。key是函数的逻辑参数名(`pname`)，value是`DataT`中对象的`objId`。 |
 | `outputs` | Object | *(函数节点专属)* 声明`functions`节点产生的`DataT`业务对象。key是函数的逻辑参数名(`pname`)，value包含新对象的`objId`和`defineSid`。 |
 
@@ -125,7 +125,7 @@ flowchart TD
 | :--- | :--- | :--- |
 | `fromId` | String | **必需**。连接的起始节点的`id`。 |
 | `toId` | String | **必需**。连接的目标节点的`id`。 |
-| `type` | String | **必需**。连接的类型，例如 "Success", "Failure", "Commit"。节点通过`NodeCtx.TellNext(msg, relationType)`将消息发送到具有匹配类型的连接。 |
+| `type` | String | **必需**。连接的类型，例如 "Success", "Failure", "Commit"。节点通过`NodeCtx.TellNext(msg, relationType)`将消息发送到具有匹配类型的连接。注意：具体节点类型可以对允许的 relation 施加更严格的约束；例如 `functions` 节点默认只允许 `Success/Failure`，除非其函数元数据显式声明为 `decision` 路由模式。 |
 
 ### 2.5. `Relation`：定义逻辑关联 (DefiningLogicalRelations)
 
@@ -163,6 +163,19 @@ finetune_instruction: "提供一个Matrix DSL中inputs/outputs数据流定义的
 
 ### 3.2. 引用共享资源：`ref://` 语法 (SharedResources)
 
+当节点需要访问共享资源时，应在配置中存放 URI，而不是裸节点 ID。推荐形态：
+
+```json
+"configuration": {
+  "functionName": "sqlQuery",
+  "business": {
+    "dsn": "ref://shared_sql_client"
+  }
+}
+```
+
+这里的 `shared_sql_client` 对应一个已在 shared DSL 中定义并预装载到 `SharedNodePool` 的共享节点。
+
 当节点需要访问外部客户端或共享服务（如数据库连接、Redis客户端）时，可以使用`ref://`语法。
 
 ### 3.3. 配置复用：`imports` 关键字 (ConfigurationReuse)
@@ -198,19 +211,7 @@ finetune_instruction: "提供一个Matrix DSL中inputs/outputs数据流定义的
 }
 ```
 
-**示例**:
-<!--
-finetune_role: "code_generation_example"
-finetune_instruction: "提供一个Matrix DSL中通过ref://语法引用共享资源的JSON示例"
--->
-```json
-"configuration": {
-  "business": {
-    "dsn": "ref://local_mysql_client"
-  }
-}
-```
-在运行时，Matrix框架会解析`ref://`协议，并从`SharedNodePool`中查找ID为`local_mysql_client`的共享资源提供者（Provider），然后将该资源注入到节点中。这实现了配置与资源的解耦。
+在运行时，Matrix 会解析 `ref://` 协议，并从 `SharedNodePool` 中查找对应共享节点，再经由 `asset.Asset` 或 helper 向业务节点提供实例。
 
 ## 4. 查看一个真实示例 (RealWorldExample)
 

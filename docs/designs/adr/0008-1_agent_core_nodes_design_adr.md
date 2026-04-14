@@ -3,7 +3,7 @@ uuid: "e1f2a3b4-c5d6-e7f8-a9b0-c1d2e3f4a5b6"
 type: "ADR"
 title: "决策：采用通用节点与可插拔工具的Agent架构"
 status: "Draft"
-owner: "@cline"
+owner: "neohetj"
 version: "1.0.0"
 tags:
   - "adr"

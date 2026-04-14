@@ -3,7 +3,7 @@ uuid: "6b8a1bd9-bb96-4690-a7f7-6a2ed6788e33"
 type: "Plan"
 title: "计划：拓扑驱动的多视图部署与自动分发平台实现"
 status: "Draft"
-owner: "@codex"
+owner: "neohetj"
 version: "1.0.0"
 tags:
   - "plan"

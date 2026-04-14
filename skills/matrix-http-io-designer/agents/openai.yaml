@@ -1,0 +1,5 @@
+version: 1
+interface:
+  display_name: Matrix HTTP IO Designer
+  short_description: 设计 Matrix HTTP endpoint 和 packet 映射边界
+  default_prompt: Use $matrix-http-io-designer to design or repair Matrix HTTP endpoint and external HTTP client mappings with bindPath, packet fields, and safe object boundaries.

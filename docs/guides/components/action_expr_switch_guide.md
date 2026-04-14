@@ -4,7 +4,7 @@ uuid: "c5b4a398-f6e7-4b0d-8c6a-1e2f3a4b5c6d"
 type: "ComponentGuide"
 title: "组件指南：表达式路由 (action/exprSwitch)"
 status: "Draft"
-owner: "@cline"
+owner: "neohetj"
 version: "1.0.0"
 tags:
   - "matrix"
@@ -20,8 +20,8 @@ relations:
     target_uuid: "a0b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d"
     description: "本节点是Matrix核心能力层的动作组件之一。"
   - type: "references"
-    target_uuid: "81080378-a3e9-41ee-86ed-807193d45bce"
-    description: "本文档遵循语义化文档规范编写。"
+    target_uuid: "a2b1c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
+    description: "本文档遵循 guides/components 目录的组件指南规范。"
 ---
 
 # 1. 功能概述 (FunctionalOverview)
@@ -112,4 +112,4 @@ relations:
 
 <!-- 链接定义区域 -->
 [Guide-MatrixOverview-2b3c4d]: ../00_matrix_guide.md
-[Ref-SemanticDoc-d45bce]: ../../reference/04_semantic_documentation_standard.md
+[Ref-SemanticDoc-d45bce]: ./README.md

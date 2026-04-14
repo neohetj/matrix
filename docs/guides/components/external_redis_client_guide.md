@@ -4,7 +4,7 @@ uuid: "e5f6a7b8-c9d0-1e2f-3a4b-5c6d7e8f9a0b"
 type: "ComponentGuide"
 title: "组件指南：Redis客户端共享节点 (external/redisClient)"
 status: "Draft"
-owner: "@cline"
+owner: "neohetj"
 version: "1.0.0"
 tags:
   - "matrix"
@@ -78,5 +78,5 @@ relations:
 `redisClient` 节点是一个资源管理节点，它**不参与**消息的数据流处理。它不会读取或修改 `RuleMsg` 的任何部分 (`Data`, `DataT`, `Metadata`)。
 
 <!-- 链接定义区域 -->
-[Guide-MatrixOverview]: ../../00_matrix_guide.md
+[Guide-MatrixOverview]: ../00_matrix_guide.md
 [Guide-SharedNode-7c8d]: ../03_shared_node_guide.md

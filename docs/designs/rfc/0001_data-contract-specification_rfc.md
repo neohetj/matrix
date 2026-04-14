@@ -3,116 +3,87 @@ uuid: "589dab79-3b5c-4231-ada6-b2617d375abb"
 type: "RFC"
 title: "需求：为节点声明分层的数据访问契约"
 status: "Superseded"
-owner: "@cline"
-version: "1.0.0"
+owner: "neohetj"
+version: "2.0.0"
 tags:
   - "rfc"
   - "design"
   - "data-contract"
   - "static-analysis"
 relations:
-  - type: "is_formalized_by"
-    target_uuid: "d8a3bfe2-0a7e-4b3a-9c1d-8e7f6a5b4c3d" # -> 07_data_contract_specification.md
-    description: "The design proposed in this RFC has been implemented and is formally specified in the reference document."
+  - type: "superseded_by"
+    target_uuid: "f745eae6-f75c-4849-b7fb-407d6c439182"
+    description: "当前节点契约规范已合并进 Reference-12。"
 ---
 
-# RFC: 为节点声明分层的数据访问契约 (HierarchicalDataContract)
+# RFC: 为节点声明分层的数据访问契约
 
-## 1. 摘要 (Summary)
+> Historical note: 本 RFC 保留的是早期数据契约设计草案。文中 `ReadsData`、`ReadsMetadata`、`WritesMetadata` 方案没有按原样落地，当前实现请以 `NodeReads` / `NodeWrites`、`FuncReads` / `FuncWrites` 和 `DataContract()` 为准。
 
-本RFC提议为Matrix框架引入一个分层的数据访问契约体系：为`function`节点扩展其独有的`FuncObject`以声明完整的`DataT/Data/Metadata`交互；为非`function`节点扩展其`NodeMetadata`以声明其对`Data/Metadata`的简单读写，从而为所有节点提供清晰、精准的静态数据契约。
+## 1. 原始目标
 
-## 2. 动机 (Motivation)
+这份 RFC 当年的目标是把“节点和函数到底读写了什么”从隐性知识变成显式声明，让静态分析、UI 展示和 DSL 校验都能有统一依据。
 
-*   **当前存在的问题**: 节点的数据访问模式是隐式的。`function`节点虽有`DataT`的`Inputs/Outputs`定义，但缺乏对`Data/Metadata`的声明；非`function`节点则完全没有数据契约。这导致静态分析无法进行，UI工具也无法提供智能辅助。
-*   **用例**: 静态分析工具可以校验`forEach`产生的`is_last_item`是否被下游节点正确声明读取。UI可以在用户配置`log`函数节点时，根据其契约提示它可以访问哪些`Metadata`和`DataT`对象。
-*   **目标**: 为所有节点提供清晰、准确、与其能力匹配的数据访问契约，增强框架的可观测性和工具链支持。
+这个目标已经实现，但实现方式和 RFC 初稿不同。
 
-## 3. 设计详解 (DetailedDesign)
+### 原始需求点总结
 
-*   **核心思路**:
-    我们认识到`function`节点和非`function`节点在数据处理上的本质区别。因此，我们提议在它们各自的元数据定义中，声明相匹配的契约。
+1. 显式声明读写范围：节点和函数不应再依赖“阅读源码才能知道它改了什么”的隐性知识，而应在元数据层声明自己会读取和写入哪些消息区域。
+2. 区分不同数据层次：原始设想里，希望至少把 `Data`、`Metadata`、`DataT` 这几类访问边界分开表达，避免“全部都算读写消息”导致静态分析失真。
+3. 服务 DSL 校验与编辑体验：规则链编辑器、DSL 校验器和代码审查工具需要基于这些契约判断上下游节点是否真的连得上，而不是只看节点类型。
+4. 服务可视化与文档生成：希望 UI、组件目录和自动文档能直接展示“这个节点依赖哪些输入、会产出哪些副作用”，降低上手和排障成本。
+5. 降低副作用不透明问题：原始需求强调，消息读写必须变成框架级约束，否则节点/函数会悄悄改 metadata 或 data，导致链路排查困难。
 
-### 3.1. 非`function`节点的数据契约 (NonFunctionNodeDataContract)
+## 2. 当前实现对齐
 
-此类节点（如`action/log`, `flow/forEach`）不与`DataT`交互。我们在其`NodeMetadata`中声明对`Data`和`Metadata`的访问。
+当前 Matrix 的数据契约模型以 URI 为核心，而不是以 `ReadsData` / `ReadsMetadata` 这样的分栏字段为核心。
 
-*   **API变更: `matrix/pkg/types/node.go`**:
-<!--
-finetune_role: code_generation_example
-finetune_instruction: "展示如何修改NodeMetadata结构以增加数据契约字段"
--->
-    ```go
-    // MetadataDef 描述了对一个元数据键的读或写
-    type MetadataDef struct {
-        Key         string `json:"key"`
-        Description string `json:"description"`
-    }
+### 2.1 节点侧
 
-    // NodeMetadata 描述一个节点的静态元数据
-    type NodeMetadata struct {
-        Type        string   `json:"type"`
-        Name        string   `json:"name"`
-        // ... (其他字段)
+- `types.NodeMetadata` 使用 `NodeReads` / `NodeWrites`
+- 每一项都是 `ContractDef`
+- `ContractDef.URI` 使用统一 URI 约定，例如：
+  - `rulemsg://data/...`
+  - `rulemsg://metadata/...`
+  - `rulemsg://dataT/<objId>...`
 
-        // ReadsData (可选) 声明节点从原始 RuleMsg.Data 中读取的字段路径列表。
-        // 例如: ["customer.name", "order.id"]
-        ReadsData []string `json:"readsData,omitempty"`
-        // ReadsMetadata (可选) 声明节点读取的元数据键。
-        ReadsMetadata []MetadataDef `json:"readsMetadata,omitempty"`
-        // WritesMetadata (可选) 声明节点写入的元数据键。
-        WritesMetadata []MetadataDef `json:"writesMetadata,omitempty"`
-    }
-    ```
+### 2.2 函数侧
 
-### 3.2. `function`节点的数据契约 (FunctionNodeDataContract)
+- `types.FuncObjConfiguration` 使用：
+  - `Inputs`
+  - `Outputs`
+  - `Business`
+  - `FuncReads`
+  - `FuncWrites`
+- 函数节点真正的注册单元是 `types.NodeFuncObject`
 
-此类节点是`DataT`的主要消费者和生产者。我们在其具体的`FuncObject.Configuration`中声明所有数据访问。
+### 2.3 统一视图
 
-*   **API变更: `matrix/pkg/types/func.go`**:
-<!--
-finetune_role: code_generation_example
-finetune_instruction: "展示如何修改FuncObjConfiguration结构以增加数据契约字段"
--->
-    ```go
-    // FuncObjConfiguration holds the detailed configuration definition of a function node.
-    type FuncObjConfiguration struct {
-        // ... (已有字段)
-        Inputs   []IOObject           `json:"inputs"`  // DataT 输入
-        Outputs  []IOObject           `json:"outputs"` // DataT 输出
+- 所有节点仍通过 `DataContract()` 暴露统一读写视图
+- 运行时、DSL 工具和文档现在都围绕 URI 契约工作，而不是围绕旧版分层字段工作
 
-        // --- 新增字段 ---
-        // ReadsData (可选) 声明函数从原始 RuleMsg.Data 中读取的字段路径列表。
-        ReadsData []string `json:"readsData,omitempty"`
-        // ReadsMetadata (可选) 声明函数读取的元数据键。
-        ReadsMetadata []MetadataDef `json:"readsMetadata,omitempty"`
-        // WritesMetadata (可选) 声明函数写入的元数据键。
-        WritesMetadata []MetadataDef `json:"writesMetadata,omitempty"`
-    }
-    ```
-    *(注: `MetadataDef`需定义在`node.go`或`types.go`以被`func.go`引用)*
+## 3. 与原 RFC 的主要差异
 
-*   **逻辑自洽**: 此方案解决了`function`节点共用`NodeMetadata`的矛盾。每个具体的函数（如`log`函数）都在其独有的`FuncObject`中定义自己的数据契约，而通用的`FunctionNode`的`NodeMetadata`则保持为空。
+原 RFC 中这些内容已经过时：
 
-## 4. 缺点与风险 (DrawbacksAndRisks)
+1. `NodeMetadata.ReadsData` / `ReadsMetadata` / `WritesMetadata`
+2. `FuncObjConfiguration.ReadsData` / `ReadsMetadata` / `WritesMetadata`
+3. “非函数节点只读 `Data/Metadata`、函数节点单独声明 DataT 交互”的拆分方式
 
-*   **契约与实现可能不一致**: 开发者可能会忘记更新`FuncObject`或`NodeMetadata`中的契约，需要通过代码审查来缓解。
-*   **增加了少量开发负担**: 节点和函数开发者需要额外声明其数据依赖。
+当前代码采用的是更统一的 URI 契约模型，因此：
 
-## 5. 备选方案 (Alternatives)
+- 不再强调“Data / Metadata / DataT”三套字段各自独立声明
+- 更强调“读取什么 URI、写入什么 URI”
+- 更容易和 HTTP packet、object mapper、rulechain projection 等能力对齐
 
-*   **在`NodeMetadata`中定义所有契约**: 此方案因无法解决`function`节点共用`NodeMetadata`的矛盾而被否决。将契约放在`FuncObject`中是更精确的层级。
+## 4. 现行规范入口
 
-## 6. 未解决的问题 (UnresolvedQuestions)
+当前规范性内容已经迁移到这些文档：
 
-*   对于泛型节点或函数，其契约可能是动态的。这需要未来的RFC引入更高级的契约声明机制。
+- `docs/reference/12_node_specification.md`
+- `docs/reference/11_function_registration_spec.md`
+- `docs/migration/20250723_data_contract_adoption_guide.md`
 
-## 7. 常见问题与解答 (FAQ)
+## 5. 结论
 
-<!-- qa_section_start -->
-> **问：这个变更会破坏现有节点吗？**
-> **答：** 不会。所有新字段都是可选的 (`omitempty`)。现有定义中没有这些字段，会被视为空。这是一个向后兼容的增量增强。
-
-> **问：如何保证`function`节点的`NodeMetadata`不被错误地填充？**
-> **答：** `FunctionNode`的`Definition()`方法实现应硬编码返回一个不包含`Reads/Writes`契约的`NodeMetadata`。所有契约信息都应从其持有的`FuncObject`中读取。
-<!-- qa_section_end -->
+这份 RFC 不再是现行规范，只保留为历史背景材料。任何新的节点、函数、DSL 校验或工具开发，都不应再参考本文中的旧字段设计。

@@ -1,10 +1,10 @@
 ---
 # === Node Properties: 定义文档节点自身 ===
-uuid: "dev-patterns-entrypoint-20250911"
+uuid: "60c07c47-df0e-4b76-9ed9-62fabe2e2add"
 type: "ArchitectureOverview"
 title: "参考-08: Matrix节点开发模式"
 status: "Draft"
-owner: "@cline"
+owner: "neohetj"
 version: "1.0.0"
 tags:
   - "matrix"
@@ -17,17 +17,17 @@ tags:
 # === Node Relations: 定义与其他文档节点的关系 ===
 relations:
   - type: "supersedes"
-    target_uuid: "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f" # -> 27_node_development_patterns.md
-    description: "本文档整合并取代了旧的节点开发模式文档。"
+    target_uuid: "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f"
+    description: "[external] 本文档整合并取代了一份仓外历史节点开发模式文档。"
   - type: "references"
-    target_uuid: "ref-func-registration-spec-20250911" # -> 11_function_registration_spec.md
+    target_uuid: "dbf6fb21-5e26-44b6-b1bb-d94d13112ae9" # -> 11_function_registration_spec.md
     description: "本文档引导开发者在需要时，查阅更详细的函数开发规范。"
   - type: "references"
-    target_uuid: "node-spec-20250911" # -> 12_node_specification.md (placeholder)
+    target_uuid: "f745eae6-f75c-4849-b7fb-407d6c439182" # -> 12_node_specification.md
     description: "本文档引导开发者在需要时，查阅更详细的通用节点规范。"
 ---
 
-# 参考-08: Matrix节点开发模式
+# Matrix节点开发模式
 
 本文档是 `Matrix` 生态系统中进行扩展开发的**唯一官方入口**。它旨在帮助开发者根据其目标，自顶向下地做出正确的技术选型，并找到对应的详细开发规范。
 

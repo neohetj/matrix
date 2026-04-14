@@ -3,8 +3,8 @@
 uuid: "becf62ab-9a79-483a-96d9-243928855ff9"
 type: "ADR"
 title: "决策：运维实体建模与DSL扩展方案"
-status: "Stable"
-owner: "@cline"
+status: "Accepted"
+owner: "neohetj"
 version: "1.0.0"
 tags:
   - "adr"
@@ -15,9 +15,9 @@ tags:
 
 # === Node Relations: 定义与其他文档节点的关系 ===
 relations:
-  - type: "documents"
-    target_uuid: "978c1b44-65eb-43ef-bcf8-793c1793a0b3" # -> 指向我们创建的RFC-0006
-    description: "本ADR记录了在起草RFC-0006过程中所做出的关键架构决策及其理由。"
+  - type: "realizes"
+    target_uuid: "978c1b44-65eb-43ef-bcf8-793c1793a0b3"
+    description: "本 ADR 为 RFC-0006 提供最终采纳的架构决策。"
 ---
 
 # ADR: 决策：运维实体建模与DSL扩展方案 (OpsModelingAndDslExtensionsDecision)

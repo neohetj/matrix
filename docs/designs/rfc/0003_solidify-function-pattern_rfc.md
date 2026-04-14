@@ -2,93 +2,98 @@
 uuid: "a4b5c6d7-e8f9-4a0b-1c2d-3e4f5a6b7c8d"
 type: "RFC"
 title: "需求：固化“函数”模式并重构其代码结构"
-status: "Draft"
-owner: "@cline-agent"
-version: "1.0.0"
+status: "Superseded"
+owner: "neohetj"
+version: "2.0.0"
 tags:
   - "rfc"
   - "design"
-  - "refactoring"
   - "functions"
+  - "architecture"
 relations:
-  - type: "based_on"
-    target_uuid: "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f" # -> 08_node_development_patterns.md
-    description: "This RFC is a formal proposal based on the analysis in the node development patterns guide."
-  - type: "based_on"
-    target_uuid: "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d" # -> 09_core_mechanisms_deep_dive.md
-    description: "This RFC is a formal proposal based on the analysis in the core mechanisms deep dive."
+  - type: "superseded_by"
+    target_uuid: "dbf6fb21-5e26-44b6-b1bb-d94d13112ae9"
+    description: "函数模式的现行规范已收敛到 Reference-11。"
 ---
 
-# RFC: 固化“函数”模式并重构其代码结构 (SolidifyFunctionPatternAndRefactor)
+# RFC: 固化“函数”模式并重构其代码结构
 
-## 1. 摘要 (Summary)
+> Historical note: 这份 RFC 的核心判断“函数模式需要被正式化”是对的，但正文里的“创建 `pkg/functions/` 并整体迁移源码”“新增 `0002_function_node_pattern.md` ADR”并没有按原方案落地。
 
-本RFC提议通过创建一份架构决策记录（ADR）和一次代码结构重构，来正式固化Matrix框架中的“通用调用器+可注册函数”设计模式。此举旨在将该模式从隐性知识转变为官方架构，并使其代码的物理结构与逻辑结构保持一致，从而为开发者提供更清晰的扩展指引。
+## 1. 原始目标
 
-## 2. 动机 (Motivation)
+本 RFC 试图解决两个问题：
 
-*   **当前存在的问题**:
-    1.  **隐性知识**: “函数”作为一种轻量级的节点扩展模式，在`Trinity`的实践中被广泛使用，但其设计理念、适用场景和实现细节并未在任何官方架构文档中被定义。它是一种“隐性”的知识，依赖开发者通过阅读源码自行领悟。
-    2.  **代码结构混淆**: 当前，所有“函数”的源码都存放在 `pkg/components/functions/` 目录下。这使得它们在物理结构上与“通用组件节点”（位于`pkg/components/action/`等目录）过于接近，容易让新开发者混淆这两种完全不同的扩展模式。
+1. 函数模式是隐性知识
+2. 开发者容易把“通用组件节点”和“函数节点”混为一谈
 
-*   **用例**: 一位新开发者（或AI Agent）在接到一个新功能需求时，查阅`sop/02_node_development_sop.md`后，可能会模仿`log`节点去创建一个完整的“组件节点”，而实际上一个更轻量的“函数”才是该场景的最佳选择。这种决策困难和潜在的实现不一致性，降低了开发效率。
+这两个问题在当前实现里已经通过**统一函数注册模型 + 文档规范**基本解决，但不是通过文件系统迁移解决。
 
-*   **目标**:
-    1.  将“函数”模式的设计理念、优缺点和实现约定，通过ADR文档进行正式化、权威化。
-    2.  在代码文件系统上，将“函数”的实现与“组件节点”的实现进行物理隔离，使代码结构更清晰。
-    3.  为所有开发者提供关于何时以及如何使用“函数”模式的明确指引。
+### 原始需求点总结
 
-## 3. 设计详解 (Detailed Design)
+1. 把函数模式正式化：原始需求希望把“通过一个通用执行器节点调用注册函数”从实践技巧升级为框架正式能力，而不是继续靠口口相传。
+2. 明确函数与节点的职责差异：函数应该更轻量、聚焦业务处理片段；通用组件节点则承担独立生命周期、复杂配置和更重的运行时职责。
+3. 给函数建立统一注册与调用模型：需要有稳定的函数 ID、配置声明、输入输出描述和 DSL 调用方式，避免每个业务模块各玩一套。
+4. 降低业务扩展门槛：相比写一个完整 Node，函数模式应让开发者更快地增加一段可复用业务逻辑，并便于测试与复审。
+5. 提升工程结构清晰度：原始提案当时还希望通过目录和文档边界，把“平台通用函数能力”与“业务模块内逻辑”在工程层面拉开。
 
-本提案的核心思路是：**先通过文档定义来固化架构，再通过重构来对齐实现。**
+## 2. 当前实现对齐
 
-### 3.1 已完成的准备工作 (Completed Work)
+### 2.1 核心执行器
 
-**状态: 已完成**
+当前函数节点的通用执行器是：
 
-在提出本RFC之前，已完成了对该模式的深入分析，并创建了以下参考文档，它们是本RFC的理论基础：
--   **`reference/08_node_development_patterns.md`**: 清晰地对比了“组件节点”与“函数”模式，以及“平台”与“应用”的开发场景。
--   **`reference/09_core_mechanisms_deep_dive.md`**: 深入剖析了支撑“函数”模式的底层机制，如`DataT`和共享资源管理。
+- `type: "functions"`
 
-### 3.2 待办事项1：架构文档正式化 (ADR Creation)
+对应实现位于：
 
-**状态: 已完成**
+- `internal/builtin/base/functions_node.go`
 
-我们已创建一份新的架构决策记录（ADR）来正式定义“函数”模式。
+### 2.2 注册模型
 
--   **路径**: `designs/adr/0002_function_node_pattern.md`
--   **内容**: 该ADR详细阐述了：
-    -   **背景**: 为什么需要一种比“组件节点”更轻量的扩展机制。
-    -   **决策**: 正式采纳“通用`functions`调用器节点 + 可注册的轻量级函数”的设计模式。
-    -   **后果**: 分析该模式的优缺点（例如，降低开发成本 vs. 配置相对复杂）。
-    -   **实现约定**: 明确“函数”需要实现的接口、注册方式以及与`NodeCtx`和`RuleMsg`的交互模式。
+函数的注册单元是：
 
-### 3.3 待办事项2：代码结构重构 (Code Refactoring)
+- `types.NodeFuncObject`
 
-**状态: 待实现**
+函数元数据和配置模型位于：
 
-我们将对现有代码库进行一次结构性重构，以实现“函数”与“组件节点”的物理隔离。
+- `types.FuncObject`
+- `types.FuncObjConfiguration`
 
-1.  **创建新目录**: 在`pkg/`下创建一个新的顶级目录 `functions/`。
-    -   `Architect/matrix/pkg/functions/`
-2.  **迁移代码**: 将现有 `Architect/matrix/pkg/components/functions/` 目录下的**所有内容**（例如 `redis_command_func.go`）移动到新的 `Architect/matrix/pkg/functions/` 目录下。
-3.  **更新引用**: 调整所有受影响的`import`路径，确保代码能够正常编译和运行。
+### 2.3 当前推荐模式
 
-## 4. 缺点与风险 (Drawbacks & Risks)
+当前实现和文档推荐的模式是：
 
-*   **代码迁移风险**: 移动文件并更新导入路径是一个全局性的变更。虽然风险较低，但需要确保所有相关项目（包括`trinity`）都同步更新了对这些函数的引用。
+1. 用 `NodeFuncObject` 注册函数
+2. 在 DSL 中统一使用 `type: "functions"`
+3. 用 `configuration.functionName` 指定函数 ID
+4. 用 `Inputs` / `Outputs` / `Business` / `FuncReads` / `FuncWrites` 描述输入输出和配置
 
-## 5. 备选方案 (Alternatives)
+这套模式已经是当前稳定实现，不再依赖旧文档里假设的目录迁移。
 
-*   **仅创建文档，不重构代码**: 我们可以只创建ADR和参考文档，而不移动代码。但这治标不治本，代码结构的混淆问题依然存在，新开发者仍可能被误导。
-*   **保持现状**: 完全不处理。这将导致“隐性知识”问题持续存在，影响长期代码的可维护性和开发效率。
+## 3. 与原 RFC 的主要偏差
 
-## 6. 常见问题与解答 (FAQ)
+原 RFC 中这些内容不再成立：
 
-<!-- qa_section_start -->
-> **问：这个变更会影响现有的规则链DSL（JSON文件）吗？**
-> **答：** **完全不会**。本次变更只涉及源码的物理位置和架构文档的补充。函数的注册ID（如`"redisCommand"`）和`functions`节点的调用方式都保持不变，因此所有现有的规则链JSON文件都无需任何修改。
+1. “函数源码位于 `pkg/components/functions/`，需要整体迁移到 `pkg/functions/`”
+2. “存在一个 `designs/adr/0002_function_node_pattern.md` 作为正式 ADR”
+3. “通过物理目录隔离来定义函数模式”
 
-> **问：执行这个RFC后，我应该如何开发一个新的“函数”？**
-> **答：t答：** 你应该在新的 `pkg/functions/` 目录下，根据你的功能创建一个新的Go文件，实现`types.NodeFunc`，并通过`init()`函数注册它。同时，你应该阅读新的ADR文档来理解其设计约束。
-<!-- qa_section_end -->
+当前仓库里：
+
+- 没有 `pkg/components/functions`
+- 也没有 `pkg/functions`
+- 函数模式的稳定边界来自注册模型、运行时校验和 Reference 文档，而不是来自一个专用目录
+
+## 4. 现行规范入口
+
+函数模式的当前规范和辅助材料已经在这些地方稳定存在：
+
+- `docs/reference/11_function_registration_spec.md`
+- `docs/reference/12_node_specification.md`
+- `docs/designs/rfc/0013_function_routing_constraints_rfc.md`
+- `skills/matrix-function-node-creator/`
+
+## 5. 结论
+
+这份 RFC 作为“函数模式需要被正式化”的历史提案保留，但其具体实施方案已被后续实现替代。新的函数节点设计与改造，不应再参考本文中的目录迁移方案。

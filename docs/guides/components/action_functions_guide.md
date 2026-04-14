@@ -4,7 +4,7 @@ uuid: "98c5b4a3-e7f6-4b0d-8c6a-1e2f3a4b5c6d"
 type: "ComponentGuide"
 title: "组件指南：通用函数 (functions)"
 status: "Draft"
-owner: "@cline"
+owner: "neohetj"
 version: "1.0.0"
 tags:
   - "matrix"
@@ -18,8 +18,8 @@ relations:
     target_uuid: "a0b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d"
     description: "本节点是Matrix核心能力层的动作组件之一。"
   - type: "references"
-    target_uuid: "81080378-a3e9-41ee-86ed-807193d45bce"
-    description: "本文档遵循语义化文档规范编写。"
+    target_uuid: "a2b1c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
+    description: "本文档遵循 guides/components 目录的组件指南规范。"
 ---
 
 # 1. 功能概述 (FunctionalOverview)
@@ -30,7 +30,7 @@ relations:
 
 这个节点是 `Matrix` 框架扩展性的关键，它允许开发者用Go编写自定义的、可复用的业务逻辑片段，然后在规则链中通过名字来灵活调用。
 
-> **重要区别**: 此 `functions` 节点 (NodeType: `functions`) 不同于 `pkg/components/functions/` 目录下的具体功能节点 (如 `sql_query`, `redis_command`)。后者是具有独立 `NodeType` 的、功能固化的节点；而前者是一个通用的、可以执行**任何**已注册函数的“空壳”节点。
+> **重要区别**: `functions` 节点 (NodeType: `functions`) 本身只是一个通用执行器。当前 Matrix core 并不内建 `sqlQuery` / `redisCommand` 这类具体函数实现；这些函数 ID 由宿主应用或下游模块通过 `NodeFuncManager` 注册。
 
 # 2. 如何配置 (Configuration)
 
@@ -42,11 +42,26 @@ relations:
 
 `functions` 节点的所有能力都源于其背后的函数注册表 (`registry.Default.NodeFuncManager`)。
 
-*   **注册 (Go)**: 开发者可以在Go代码中实现一个函数，该函数接收 `(types.NodeCtx, types.RuleMsg)` 作为参数，并将其封装在一个 `types.NodeFuncDef` 结构中，然后调用 `NodeFuncManager.Register()` 将其注册到一个全局唯一的名称下。
+*   **注册 (Go)**: 开发者可以在 Go 代码中实现一个函数，该函数接收 `(types.NodeCtx, types.RuleMsg)`，并将其封装在一个 `types.NodeFuncObject` 中，然后调用 `NodeFuncManager.Register()` 注册到全局唯一 ID。
 *   **调用 (DSL)**: 在规则链的DSL中，开发者可以放置一个 `functions` 节点，并将其 `functionName` 配置为注册时使用的那个唯一名称。
 *   **解耦**: 这种机制将函数的**实现**（Go代码）与**调用**（DSL配置）完全解耦，使得在不修改DSL的情况下，可以热更新或替换函数的底层实现。
 
-## 3.1. 如何开发并注册一个函数
+## 3.1. 路由使用建议
+
+对于绝大多数 `functions` 节点，推荐把它视为**处理节点**而不是**路由节点**：
+
+-   默认让函数负责取参、处理、写回输出。
+-   成功走 `TellSuccess`，失败走 `TellFailure` / `HandleError`。
+-   若需要业务分支，优先让函数先产出事实（如 `metadata.userExists=true`），再交给 `action/exprSwitch` 决定流向。
+
+只有在以下条件同时满足时，才建议让函数直接使用自定义 `TellNext`：
+
+-   路由判断确实必须在代码中完成；
+-   该函数被显式注册为 `decision` 模式；
+-   该函数在元数据中声明了允许发出的自定义 relation；
+-   该函数自身以“决策/路由”为主要职责，而不是顺手夹带复杂副作用。
+
+## 3.2. 如何开发并注册一个函数
 
 以下是一个完整的示例，展示了如何开发一个新函数并将其注册到 `NodeFuncManager` 中，使其可以被 `functions` 节点调用。
 
@@ -150,7 +165,7 @@ func EnrichUserProfile(ctx types.NodeCtx, msg types.RuleMsg) {
         return
     }
     
-    // 4. 告诉框架处理成功
+    // 4. 告诉框架处理成功（标准函数默认这样结束）
     ctx.TellSuccess(msg)
 }
 ```
@@ -200,8 +215,9 @@ func EnrichUserProfile(ctx types.NodeCtx, msg types.RuleMsg) {
 
 *   **函数未找到 (`DefFuncNotFound`)**: 这是最常见的错误。如果配置的 `functionName` 在 `NodeFuncManager` 中不存在，节点会立即失败，并将消息路由到 `Failure` 链路。
 *   **函数执行错误**: 被调用的函数在执行过程中遇到的任何错误，应由函数自身通过 `ctx.HandleError()` 或 `ctx.TellFailure()` 来处理。这些错误会正常地在规则链中传播。
+*   **自定义 relation 校验失败**: 如果某个 `functions` 节点连接了 `Success` / `Failure` 之外的 relation，但对应函数未声明为 `decision`，或未在 `DeclaredRelations` 中声明该 relation，运行时会在规则链初始化阶段直接报错。
 
 <!-- 链接定义区域 -->
 [Guide-MatrixOverview-2b3c4d]: ../00_matrix_guide.md
-[Ref-SemanticDoc-d45bce]: ../../reference/04_semantic_documentation_standard.md
+[Ref-SemanticDoc-d45bce]: ./README.md
 [Ref-CoreObj]: ../../reference/09_core_objects.md

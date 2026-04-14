@@ -3,7 +3,7 @@ uuid: "e4a9b8c1-3d2a-4b1e-8c5d-7a4b9c2d8e1f"
 type: "ArchitectureOverview"
 title: "学习Matrix框架架构"
 status: "Draft"
-owner: "@cline-agent"
+owner: "neohetj"
 version: "1.0.0"
 tags:
   - "architecture"
@@ -11,8 +11,8 @@ tags:
   - "core"
 relations:
   - type: "contains"
-    target_uuid: "a2c8d4e1-7b3e-4c2a-8f5d-9e1b3c4d5a6b" # -> Matrix节点/组件开发SOP
-    description: "The development of components is a key part of this architecture."
+    target_uuid: "60c07c47-df0e-4b76-9ed9-62fabe2e2add"
+    description: "节点与函数的开发入口由参考-08统一承接。"
 ---
 
 # 学习Matrix框架架构 (ArchitectureOverview)

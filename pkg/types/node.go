@@ -367,6 +367,7 @@ func (n *BaseNode) ConfigSchema() *openapi3.Schema {
 
 // NodeFunc is the function signature for a node's logic.
 // It receives a node-level context, allowing it to control routing.
+// Custom TellNext relations are subject to the function's routing metadata.
 type NodeFunc func(ctx NodeCtx, msg RuleMsg)
 
 // IOObject defines the metadata for an input or output parameter of a function node.
@@ -377,6 +378,36 @@ type IOObject struct {
 	Required  bool   `json:"required"`
 }
 
+// FunctionRoutingMode declares how a function node is allowed to route messages.
+type FunctionRoutingMode string
+
+const (
+	// FunctionRoutingModeStandard is the default mode for ordinary business functions.
+	// Standard functions are expected to finish via TellSuccess / TellFailure only.
+	FunctionRoutingModeStandard FunctionRoutingMode = "standard"
+	// FunctionRoutingModeDecision is reserved for functions whose primary responsibility
+	// is to emit custom routing relations via TellNext.
+	FunctionRoutingModeDecision FunctionRoutingMode = "decision"
+)
+
+// Normalize returns the effective routing mode, applying the default when omitted.
+func (m FunctionRoutingMode) Normalize() FunctionRoutingMode {
+	if m == "" {
+		return FunctionRoutingModeStandard
+	}
+	return m
+}
+
+// IsValid reports whether the routing mode is supported.
+func (m FunctionRoutingMode) IsValid() bool {
+	switch m.Normalize() {
+	case FunctionRoutingModeStandard, FunctionRoutingModeDecision:
+		return true
+	default:
+		return false
+	}
+}
+
 // FuncObjConfiguration holds the detailed configuration definition of a function node.
 type FuncObjConfiguration struct {
 	Name     string               `json:"name"`
@@ -385,11 +416,22 @@ type FuncObjConfiguration struct {
 	Inputs   []IOObject           `json:"inputs"`
 	Outputs  []IOObject           `json:"outputs"`
 	Errors   []*Fault             `json:"errors"`
+	// RoutingMode constrains whether the function may emit custom TellNext relations.
+	// Empty value defaults to "standard".
+	RoutingMode FunctionRoutingMode `json:"routingMode,omitempty"`
+	// DeclaredRelations lists the allowed custom relations for decision functions.
+	// Success / Failure are implicit standard exits and must not be repeated here.
+	DeclaredRelations []string `json:"declaredRelations,omitempty"`
 
 	// FuncReads declares the static data requirements of the function.
 	FuncReads []ContractDef `json:"funcReads,omitempty"`
 	// FuncWrites declares the static data production of the function.
 	FuncWrites []ContractDef `json:"funcWrites,omitempty"`
+}
+
+// EffectiveRoutingMode returns the effective function routing mode.
+func (c FuncObjConfiguration) EffectiveRoutingMode() FunctionRoutingMode {
+	return c.RoutingMode.Normalize()
 }
 
 // FuncObject represents the metadata and configuration definition of a function.

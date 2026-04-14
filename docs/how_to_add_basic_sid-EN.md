@@ -1,3 +1,21 @@
+---
+uuid: "7086ce1f-c04e-40e2-823a-38701ae1f80f"
+type: "Guide"
+title: "Guide: How to Add a Basic SID"
+status: "Stable"
+owner: "neohetj"
+version: "1.0.0"
+tags:
+  - "matrix"
+  - "guide"
+  - "sid"
+  - "legacy"
+relations:
+  - type: "is_part_of"
+    target_uuid: "a422d409-4b02-431a-b14e-2dec8f75b506"
+    description: "This standalone guide is indexed from the docs root."
+---
+
 # How to Add a Basic SID (Semantic ID)
 
 This guide outlines the steps required to add a new basic Semantic ID (SID) to the Matrix framework. A Basic SID represents a fundamental data type (e.g., String, Int64, SliceAny) used within the system's data contract.

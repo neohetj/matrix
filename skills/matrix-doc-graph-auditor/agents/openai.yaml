@@ -1,0 +1,4 @@
+interface:
+  display_name: "Matrix Doc Graph Auditor"
+  short_description: "检查 Matrix 文档图谱关联、链接与 target_uuid"
+  default_prompt: "Use $matrix-doc-graph-auditor to audit Matrix docs frontmatter, target_uuid relations, and relative links."

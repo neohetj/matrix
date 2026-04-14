@@ -1,110 +1,116 @@
-# RFC 0011: Config URI 协议与规则链统一配置视图
+---
+uuid: "7144507b-2c98-41e1-aeaa-34d4ccad476a"
+type: "RFC"
+title: "需求：Config URI 协议与规则链统一配置视图"
+status: "Implementing"
+owner: "neohetj"
+version: "2.0.0"
+tags:
+  - "rfc"
+  - "config"
+  - "uri"
+  - "design"
+relations:
+  - type: "is_explained_by"
+    target_uuid: "788737cf-d58e-4931-8bbf-37841c6de80c"
+    description: "当前 `config://` 协议与 helper 读取方式见对应指南。"
+  - type: "is_formalized_by"
+    target_uuid: "5a8b3c7e-9f0d-4a1b-8c2d-6e5f4a3b2c1d"
+    description: "当前 DSL 侧 URI 使用约定以 Reference-18 为准。"
+---
 
-## 概要
-本文档旨在规范化节点配置中的变量引用方式，引入专用的 `config://` URI 协议，将配置引用与数据引用 (`rulemsg://`) 分离。同时，定义了基于作用域（Scope）的配置解析逻辑，并设计了一个“规则链统一配置视图”，用于集中管理和配置规则链中分散的配置项。
+# RFC: Config URI 协议与规则链统一配置视图
 
-## 1. 问题背景
-1.  **语法模糊**：目前的 `PromptNode` 混合使用了 `${data...}` 和 `${config...}`，缺乏明确的命名空间区分。
-2.  **解析逻辑僵化**：配置查找逻辑硬编码，缺乏灵活性。用户需要能够定义回退策略（例如：“优先使用节点配置，如果不存在则使用引擎全局配置”）。
-3.  **配置分散**：在复杂的规则链中，关键配置参数（如 Prompt 模板、模型 ID、API Key 等）分散在各个节点中。用户缺乏一个全局视图来统一查看和修改这些参数。
+## 1. 摘要
 
-## 2. `config://` URI 协议设计
+这份 RFC 已经**部分实现**：
 
-我们引入一个新的顶级协议 `config://`，专门用于配置项的注入和解析。
+1. `config://` 资产协议已实现
+2. scope / default / env 回退逻辑已实现
+3. 规则链“统一配置视图”与对应管理 API 仍未实现
 
-### 2.1 URI 格式
-```
-config://<path>?scope=<scope_list>&default=<default_value>
-```
+### 原始需求点总结
 
-*   **path**: 配置项的路径，使用点号（`.`）分隔层级。这直接映射到 JSON/YAML 配置文件的嵌套结构。
-    *   例如：`llm.openai.api_key` 对应如下结构：
-        ```yaml
-        llm:
-          openai:
-            api_key: "sk-..."
-        ```
-*   **scope**: (可选) 定义查找顺序的逗号分隔列表。
-    *   `node`: 在当前节点实例的配置中查找（通常是节点的 `Variables` 或自定义配置区）。
-    *   `engine`: 在全局引擎配置 (`BizConfig`) 中查找。
-    *   `env`: 在系统环境变量中查找。
-    *   *默认值*: `node,engine` (即优先查节点，查不到查引擎)。
-*   **default**: (可选) 如果在所有作用域中都未找到，则使用的默认值。
+1. 统一配置读取入口：原始需求希望节点、函数和 helper 不再各写一套取配置逻辑，而是通过统一的 `config://` 协议读取配置。
+2. 支持分层回退：配置读取应支持业务级、节点级、引擎级和环境变量等多层来源，并定义稳定的查找顺序。
+3. 支持默认值与缺省兜底：配置协议应让 DSL 和代码能统一表达“如果没配就用什么值”，而不是在每个函数里散写默认值逻辑。
+4. 形成统一配置视图：除了解析协议，原始需求还希望最终能够把规则链的配置项集中展示、扫描和编辑。
+5. 降低配置分散问题：这份 RFC 背后的核心痛点，是配置散落在 engine、node、business 和 env 之间，缺乏统一心智模型和治理入口。
 
-### 2.2 使用示例
-*   **基础用法**: `${config://llm.model}` (使用默认作用域 `node,engine`)
-*   **指定回退策略**: `${config://llm.token?scope=node,engine,env}`
-    1.  首先检查节点配置中是否存在 `llm` 对象及其 `token` 字段。
-    2.  如果不存在，检查全局引擎配置中的 `llm.token`。
-    3.  如果仍不存在，检查名为 `llm_token` (自动转换命名规范) 的环境变量。
-*   **仅环境变量**: `${config://SECRET_KEY?scope=env}`
+## 2. 当前实现对齐
 
-## 3. 配置作用域与存储
+### 2.1 协议实现位置
 
-### 3.1 节点作用域 (Node Scope)
-*   **定义**: 仅对当前节点实例生效的配置。
-*   **实现**: 为了支持任意键值的“节点级覆盖”，建议在节点的配置结构体（如 `PromptNodeConfiguration`）中增加一个通用的 `Variables` 字段。
-    *   结构示例：
-        ```go
-        type PromptNodeConfiguration struct {
-            // ... 原有字段
-            Variables map[string]any `json:"variables,omitempty"`
-        }
-        ```
-    *   当解析 `${config://llm.model}` 时，解析器会尝试在 `Variables` map 中查找 key 为 `llm.model` 的值（或支持嵌套查找）。
+当前 `config://` 协议实现位于：
 
-### 3.2 引擎作用域 (Engine Scope)
-*   **定义**: 整个应用或运行时共享的配置，通常由 `config.yaml` 加载。
-*   **访问**: 通过 `ctx.GetRuntime().GetEngine().BizConfig()` 获取。这是一个多层级的 Map 结构，支持通过点号路径（如 `llm.token`）进行深层访问。
+- `pkg/asset/config_asset.go`
 
-### 3.3 环境变量作用域 (Env Scope)
-*   **定义**: 操作系统级别的环境变量。
+### 2.2 当前支持的能力
 
-## 4. 规则链统一配置视图 (RuleChain Configuration View)
+当前已经支持：
 
-为了解决“配置分散”的问题，将在规则链管理界面增加一个“配置视图”或“配置概览”面板。
+- `config:///path`
+- `scope=...`
+- `default=...`
+- 环境变量兜底
+- engine / node / business / env 多层回退
 
-### 4.1 功能概念
-该视图自动扫描规则链中所有节点，识别出所有使用的 `config://` 变量，并提供一个集中的表格来查看和管理这些值。
+### 2.3 当前默认 scope
 
-### 4.2 工作流
-1.  **扫描 (Scan)**: 后端（或前端）遍历规则链的 JSON 定义。
-2.  **提取 (Extract)**: 解析所有节点配置中的字符串字段，正则匹配 `${config://...}` 模式。
-3.  **聚合 (Aggregate)**: 汇总出该规则链依赖的所有配置 Key（去重）。
-4.  **展示 (Display)**:
-    *   **配置项 (Key)**: 例如 `llm.temperature`。
-    *   **来源节点**: 显示哪些节点使用了该配置（例如：“PromptNode A, CheckNode B”）。
-    *   **当前值**:
-        *   **引擎值**: 显示全局配置中的默认值。
-        *   **节点覆盖值**: 如果某个节点定义了覆盖值，在此处高亮显示。
-    *   **操作**: 提供“编辑节点覆盖值”的入口。
+当前默认查找顺序不是 RFC 初稿里的 `node,engine`，而是：
 
-### 4.3 界面布局示意
+- `business,node,engine,env`
 
-**标题**: 规则链配置概览
+这是一个重要差异。
 
-| 配置键 (Key) | 引擎默认值 (Global) | 节点级覆盖 (Node Override) | 来源节点 |
-| :--- | :--- | :--- | :--- |
-| `llm.model` | `gpt-3.5-turbo` | `gpt-4` (仅 Node A) | Node A (GenAI), Node B (Review) |
-| `llm.token` | `******` | - | Node A, Node B |
-| `retry.count` | `3` | `5` | Node C (Http) |
+## 3. 与原 RFC 的主要差异
 
-> **注意**: 在此视图修改“节点级覆盖”，本质上是批量修改对应节点的 `Variables` 字段。
+### 3.1 URI 推荐写法
 
-## 5. 实现计划
+当前更推荐的规范写法是：
 
-### 5.1 后端 (`Matrix`)
-1.  **URI 解析器**: 在 `pkg/helper` 或 `pkg/config` 中实现 `ConfigURIResolver`。
-    *   需传入 `NodeContext` 以访问 Engine 配置。
-    *   需传入节点配置对象（Map形式）以访问 Node 作用域。
-    *   实现基于点号 (`.`) 的嵌套 Map 查找逻辑（用于支持 `llm.token` 这种多层级结构）。
-2.  **字符串工具**: 升级 `ReplacePlaceholders`，使其支持传入自定义的回调函数进行变量解析。
+- `config:///some.key`
 
-### 5.2 前端 / API
-1.  **配置提取 API**: 新增接口，接收规则链 JSON，返回其依赖的 `config://` 键列表。
-    *   `POST /api/chains/analyze-config`
-2.  **配置页面**: 实现 4.3 描述的聚合视图。
+而不是把 path 写在 host 部分的 `config://some.key` 形式。
 
-### 5.3 节点适配
-1.  重构 `PromptNode` (及其他需要配置注入的节点) 的 `OnMsg` 方法，对接新的解析逻辑。
-2.  在节点配置 Schema 中增加 `variables` 字段，用于存储节点级的配置覆盖。
+### 3.2 节点作用域
+
+当前 node scope 并不依赖一个统一强制的 `Variables` 字段模型，而是优先从当前节点配置 map 中读取；如果有 `business` 区，还会先查 `business`。
+
+这意味着原 RFC 里“统一增加 `variables` 字段”的说法，不是当前实现的硬性事实。
+
+### 3.3 已实现的是协议，不是配置管理 UI
+
+当前代码里没有看到这些能力：
+
+- 规则链配置概览 API
+- config key 聚合扫描页面
+- 节点级覆盖的统一编辑视图
+
+所以本文中“统一配置视图”的部分，仍应视为未来工作。
+
+## 4. 当前已实现范围
+
+### 4.1 已实现
+
+- config asset 解析
+- 多 scope 查询
+- engine / env fallback
+- `default=` 默认值
+- 环境变量 key 规范化（点号转下划线、大写）
+
+### 4.2 未实现
+
+- UI 配置总览
+- 配置提取 API
+- 面向规则链的集中配置编辑体验
+
+## 5. 结论
+
+本 RFC 当前应被理解为“**协议层已落地，管理视图层仍未落地**”。任何文档如果只讨论运行时配置解析，应引用已实现部分；如果讨论统一配置视图，则仍然属于提案范围。
+
+## 6. 相关现行文档
+
+1. [指南：Config URI 协议与统一配置读取](../../guides/12_config_uri_usage_guide.md)
+2. [学习 Matrix DSL 规范](../../reference/18_dsl_specification.md)
+3. [参考-11：函数开发与注册规范](../../reference/11_function_registration_spec.md)

@@ -46,7 +46,40 @@ func (m *DefaultNodeFuncManager) Register(funcs ...*types.NodeFuncObject) {
 					panic(fmt.Sprintf("Function %s registration failed: field '%s' is notEditable but missing defaultValue", f.FuncObject.ID, field.ID))
 				}
 			}
+			validateFunctionRouting(f)
 			m.functions.Store(f.FuncObject.ID, f)
+		}
+	}
+}
+
+func validateFunctionRouting(f *types.NodeFuncObject) {
+	cfg := f.FuncObject.Configuration
+	mode := cfg.EffectiveRoutingMode()
+	if !mode.IsValid() {
+		panic(fmt.Sprintf("Function %s registration failed: invalid routingMode '%s'", f.FuncObject.ID, cfg.RoutingMode))
+	}
+
+	switch mode {
+	case types.FunctionRoutingModeStandard:
+		if len(cfg.DeclaredRelations) > 0 {
+			panic(fmt.Sprintf("Function %s registration failed: standard routingMode must not declare custom relations", f.FuncObject.ID))
+		}
+	case types.FunctionRoutingModeDecision:
+		if len(cfg.DeclaredRelations) == 0 {
+			panic(fmt.Sprintf("Function %s registration failed: decision routingMode requires declaredRelations", f.FuncObject.ID))
+		}
+		seen := make(map[string]struct{}, len(cfg.DeclaredRelations))
+		for _, relation := range cfg.DeclaredRelations {
+			if relation == "" {
+				panic(fmt.Sprintf("Function %s registration failed: declaredRelations must not contain empty values", f.FuncObject.ID))
+			}
+			if relation == "Success" || relation == "Failure" {
+				panic(fmt.Sprintf("Function %s registration failed: declaredRelations must not include reserved relation '%s'", f.FuncObject.ID, relation))
+			}
+			if _, ok := seen[relation]; ok {
+				panic(fmt.Sprintf("Function %s registration failed: declaredRelations contains duplicate relation '%s'", f.FuncObject.ID, relation))
+			}
+			seen[relation] = struct{}{}
 		}
 	}
 }

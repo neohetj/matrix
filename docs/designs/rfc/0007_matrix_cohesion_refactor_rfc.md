@@ -2,71 +2,101 @@
 uuid: "9e38d28b-cd7f-49b6-b099-23fdee01329e"
 type: "RFC"
 title: "需求：重构Matrix框架以提升内聚性"
-status: "Draft"
-owner: "@cline"
-version: "1.0.0"
+status: "Accepted"
+owner: "neohetj"
+version: "2.0.0"
 tags:
   - "rfc"
   - "matrix"
   - "refactor"
   - "cohesion"
+relations:
+  - type: "is_explained_by"
+    target_uuid: "a0b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d"
+    description: "项目总览已经按当前统一入口与框架职责描述 Matrix。"
+  - type: "references"
+    target_uuid: "60c07c47-df0e-4b76-9ed9-62fabe2e2add"
+    description: "当前节点与函数开发入口以 Reference-08 为统一阅读起点。"
+  - type: "references"
+    target_uuid: "f745eae6-f75c-4849-b7fb-407d6c439182"
+    description: "当前通用节点生命周期、数据契约和共享资源规范以 Reference-12 为准。"
 ---
 
-# RFC: 重构Matrix框架以提升内聚性 (RefactorMatrixForCohesion)
+# RFC: 重构 Matrix 框架以提升内聚性
 
-## 1. 阐述重构动机 (Motivation)
+## 1. 摘要
 
-当前 `Matrix` 框架的核心初始化逻辑与其“宿主”应用 `Trinity` 存在严重耦合。具体表现在：
-- **DSL加载与解析逻辑外置**: `Matrix` 框架的统一入口 `matrix.New()` 期望调用方（`Trinity`）提前加载并解析好所有规则链定义（`DefMap`），这违反了封装原则。`matrix.go` 中的 `TODO` 注释也明确指出了这一问题。
-- **通用能力散落**: 大量本应属于框架核心的通用能力，如 DSL 加载器 (`fs`)、引擎适配器 (`adapter`)、追踪 (`trace`) 等，目前都实现在 `trinity/matrixext` 目录下，导致 `Matrix` 框架自身不完整、无法独立演进。
-- **应用层结构臃肿**: `Trinity` 项目被迫承担了过多的框架级职责，其 `matrixext` 目录和 `wire` 配置变得异常复杂，模糊了作为“框架使用者”的纯粹定位。
+这份 RFC 的主要目标已经落地：Matrix 现在拥有更完整的统一入口、组件发现、DSL 装载、shared / endpoint 加载和 runtime 初始化流程，不再需要依赖早期文档中描述的“宿主先组装好一切再交给 Matrix”模式。
 
-本次重构旨在解决以上痛点，通过将通用能力上移至框架核心，提升 `Matrix` 的内聚性和独立性，并简化 `Trinity` 的实现。
+### 原始需求点总结
 
-## 2. 提出核心重构方案 (Proposal)
+1. 回收框架装载职责：原始需求希望把 loader、runtime、shared、endpoint、rulechain 等核心装载过程收回 Matrix 核心，而不是让宿主项目自己拼装。
+2. 建立统一入口：Matrix 应提供一个稳定、清晰的统一初始化入口，让宿主不必知道过多内部创建细节。
+3. 提升内聚性与可维护性：原始问题之一是框架能力散落在宿主和扩展层，导致边界模糊、排障困难、重构成本高。
+4. 统一发现与注册机制：框架应自己负责发现 DSL 目录、shared 节点、endpoints 和 runtimes，并形成一致的生命周期。
+5. 澄清 Matrix 与宿主职责：这份 RFC 原本也试图回答“哪些能力应由 Matrix 持有，哪些应留给宿主组合层”这一长期边界问题。
 
-### 2.1. 概括核心思想 (Summary)
+## 2. 当前实现对齐
 
-本提案建议对 `Matrix` 框架进行一次内聚性重构。核心思想是将 `trinity/matrixext` 目录下的通用模块上移并整合进 `Matrix` 框架。重构后的 `matrix.New()` 将成为真正的统一入口，它将自行负责 DSL 的加载、解析和运行时环境的创建，对调用者屏蔽所有内部复杂性，最终返回一个功能完备、接口稳定的 `MatrixEngine` 实例。
+### 2.1 统一入口
 
-### 2.2. 定义设计与实现要点 (KeyDesignAndImplementationPoints)
+当前统一入口是：
 
-- **要点一: 上移DSL加载器**
-    - **动作**: 将 `matrix/pkg/loader/` 整个目录移动到 `matrix/pkg/loader/`。
-    - **收益**: `Matrix` 获得独立加载 DSL 资源（来自文件系统、embed、http等）的能力。
+- `matrix.New(cfg, opts...)`
 
-- **要点二: 内化DSL解析逻辑**
-    - **动作**:
-        1.  重构 `matrix.New()` 函数，使其接受一个 `loader.ResourceProvider` 和一个配置对象（例如 `LoaderConfig{BasePaths: []string{"..."}}`）作为输入，而不是 `DefMap`。
-        2.  将 `trinity/matrixext/provider/rulechain_provider.go` 中遍历、读取、解析 DSL 文件的逻辑，整合进 `matrix.New()` 函数内部。
-    - **收益**: `matrix.New()` 实现了 `TODO` 中描述的目标，对调用者隐藏了 DSL 加载和解析的细节。
+对应实现位于：
 
-- **要点三: 抽象并返回标准引擎实例**
-    - **动作**:
-        1.  在 `matrix` 包中定义一个新的 `MatrixEngine` 结构体，它将作为所有 `Matrix` 核心能力的统一门面，至少包含 `RuntimePool`。
-        2.  `matrix.New()` 函数在完成所有初始化后，返回 `*MatrixEngine` 实例。
-        3.  移除 `trinity/matrixext/adapter/engine.go`，其聚合管理器的功能由新的 `MatrixEngine` 替代。
-    - **收益**: `Trinity` 不再需要手动聚合各种 `Manager`，而是直接与 `Matrix` 框架提供的标准引擎实例交互。
+- `matrix.go`
 
-- **要点四: 上移通用适配器**
-    - **动作**: 有选择地将 `trinity/matrixext` 下的其他通用模块（如 `trace`, `adapter/endpoint`）的核心逻辑上移到 `matrix/pkg/` 下的新目录（如 `matrix/pkg/adapters/`）。
-    - **解耦**: 这些适配器在 `Matrix` 框架中应被设计为**可选模块**。`MatrixEngine` 可以提供 `RegisterTracer(provider)` 或 `RegisterEndpointManager(manager)` 等方法，允许 `Trinity` 在启动时将具体的实现（如 go-zero 的 server）注入进来。
-    - **收益**: 增强了 `Matrix` 框架的可扩展性，同时彻底解除了其与 `go-zero` 等具体技术的硬编码依赖。
+### 2.2 当前 `MatrixEngine` 已提供的能力
 
-## 3. 评估备选方案 (Alternatives)
+`MatrixEngine` 当前已经暴露：
 
-- **方案A**: 保持现状，仅在 `Trinity` 内部进行小范围重构。
-  - **未选择原因**: 无法从根本上解决 `Matrix` 框架缺乏独立性和内聚性的核心问题，技术债务会持续累积。
+- `RuntimePool()`
+- `SharedNodePool()`
+- `NodeManager()`
+- `NodeFuncManager()`
+- `TraceManager()`
+- `BizConfig()`
+- `Loader()`
 
-## 4. 评估潜在影响 (ImpactAssessment)
+### 2.3 当前初始化流程
 
-- **正面影响**:
-    - `Matrix` 框架将变得高度内聚和独立，可单独进行测试、演进和分发。
-    - `Trinity` 应用将得到极大简化，其职责更清晰，`wire` 依赖注入配置将大幅减少。
-    - 整个项目的架构分层将更加合理，符合“核心能力层”与“业务实现层”的设计哲学。
-- **负面影响**:
-    - 这是一项侵入式重构，需要修改 `Trinity` 的 `wire` 配置文件和启动流程以适应新的 `Matrix` API。
-    - 需要投入集中的开发时间来确保重构的正确性和稳定性。
+当前 `New()` 内部已经会完成这些工作：
 
-<!-- qa_section_start -->
-<!-- qa_section_end -->
+1. 根据配置创建 loader
+2. 发现 rulechain / endpoint / shared 路径
+3. 装载 rulechain 定义
+4. 装载 shared nodes
+5. 装载 endpoints
+6. 创建并注册 runtimes
+
+这说明 RFC 里强调的“把框架内聚回 Matrix 核心”的目标已经基本实现。
+
+## 3. 与原 RFC 的差异
+
+原 RFC 中有些路径和术语已经不再准确：
+
+1. 文中仍然用大量 `Trinity` / `trinity/matrixext` 的未来式叙述
+2. 文中假设有 `pkg/loader/` 作为核心实现落点，但当前 loader 创建能力主要落在 builder 流程里
+3. 一些“待重构”的事项，在当前代码里已经不是待办，而是现状
+
+## 4. 当前仍然不应过度承诺的部分
+
+虽然内聚性重构主体已经完成，但这并不意味着：
+
+- 所有宿主适配逻辑都已经完全内建
+- 所有平台集成层都已经统一
+- 所有上层产品都不再需要自己的组合层
+
+也就是说，这份 RFC 已经完成的是“**核心装载与运行时入口内聚**”，而不是“所有外围平台完全归并”。
+
+## 5. 结论
+
+本 RFC 应视为**已接受且主要目标已实现**。后续如果继续讨论 Matrix 与宿主应用之间的职责边界，应在此基础上做增量设计，而不是继续沿用本文中的未来式表述。
+
+## 6. 相关现行文档
+
+1. [Matrix 项目总览：README First](../../guides/00_matrix_guide.md)
+2. [参考-08：Matrix 节点开发模式](../../reference/08_node_development_patterns.md)
+3. [参考-12：通用节点规范](../../reference/12_node_specification.md)

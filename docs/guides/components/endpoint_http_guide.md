@@ -4,8 +4,8 @@ uuid: "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
 type: "ComponentGuide"
 title: "组件指南：HTTP端点 (endpoint/http)"
 status: "Draft"
-owner: "@cline"
-version: "2.0.0"
+owner: "neohetj"
+version: "2.1.0"
 tags:
   - "matrix"
   - "component"
@@ -18,71 +18,93 @@ tags:
 relations:
   - type: "is_part_of"
     target_uuid: "a0b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d"
-    description: "本节点是Matrix规则链的入口点之一。"
+    description: "本节点是 Matrix 规则链的核心入口点之一。"
   - type: "references"
-    target_uuid: "81080378-a3e9-41ee-86ed-807193d45bce"
-    description: "本文档遵循语义化文档规范编写。"
+    target_uuid: "a2b1c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
+    description: "本文档遵循 guides/components 目录的组件指南规范。"
 ---
 
-# 1. 功能概述 (FunctionalOverview)
+# 1. 功能概述
 
-`endpoint/http` 是 `Matrix` 规则链的**核心入口点 (Entrypoint)** 之一。它的主要职责是监听一个特定的HTTP路径和方法，接收传入的HTTP请求，然后将其**声明式地**转换为一个标准的 `RuleMsg` 消息，并以此消息为起点，触发并执行一个指定的规则链。
+`endpoint/http` 是 Matrix 的被动 HTTP 入口。它负责：
 
-> 关于本节点内部工作机制的深度解析，请参阅 **[参考-10: HttpEndpoint 节点深度解析][Ref-HttpEndpointDeepDive]**。
+1. 监听指定的 `httpMethod + httpPath`
+2. 按 `endpointDefinition.request` 把 HTTP 请求映射为 `RuleMsg`
+3. 执行目标规则链
+4. 按 `endpointDefinition.response` 把最终 `RuleMsg` 映射回 HTTP 响应
 
-当规则链执行完毕后，它还会负责将最终的 `RuleMsg` 消息转换回一个标准的HTTP响应（包含状态码、头和JSON响应体），并返回给调用方。
+> 深入实现细节见 **[参考-10: HttpEndpoint 节点深度解析][Ref-HttpEndpointDeepDive]**。
 
-# 2. 如何配置 (Configuration)
+# 2. 顶层配置
 
-| 配置键 (ID) | 名称 | 描述 | 类型 | 是否必须 | 默认值 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `ruleChainId` | 规则链ID | 指定此端点要触发的规则链的ID。 | `string` | 是 | N/A |
-| `startNodeId` | 起始节点ID | (可选) 指定规则链从哪个节点开始执行。**如果为空，则会从所有入度为0的节点并行开始执行**。<br/><br/>**⚠️ 警告**: 并行执行可能引发资源竞争问题（如多个分支同时修改同一`DataT`对象），在没有充分测试的情况下，**强烈建议总是明确指定一个起始节点**。 | `string` | 否 | `""` |
-| `httpMethod` | HTTP方法 | 监听的HTTP方法，例如 `GET`, `POST`, `PUT`, `DELETE`。 | `string` | 是 | N/A |
-| `httpPath` | HTTP路径 | 监听的HTTP路径，支持 `httprouter` 风格的路径参数，例如 `/api/v1/users/:userId`。 | `string` | 是 | N/A |
-| `description` | 描述 | 对该端点功能的简短描述。 | `string` | 否 | `""` |
-| `endpointDefinition` | 端点定义 | **[核心]** 定义了HTTP请求与 `RuleMsg` 之间的详细双向映射规则。 | `EndpointDefinitionObj` | 是 | N/A |
+| 配置键 | 描述 |
+| :--- | :--- |
+| `ruleChainId` | 要触发的规则链 ID |
+| `startNodeId` | 可选起始节点 ID |
+| `httpMethod` | 监听的 HTTP 方法 |
+| `httpPath` | 监听路径，支持 `:param` |
+| `description` | 描述 |
+| `summary` | OpenAPI 摘要 |
+| `tags` | OpenAPI / UI 标签 |
+| `async` | 是否异步执行 |
+| `endpointDefinition` | 请求/响应映射定义 |
+| `errorMappings` | HTTP 状态与内部 Fault 的映射 |
 
-# 3. 核心概念：端点定义 (`EndpointDefinitionObj`) (EndpointDefinition)
+# 3. `endpointDefinition` 结构
 
-这是 `http` 端点节点最核心、最强大的部分。它通过声明式的JSON结构，精确定义了数据如何在HTTP请求和 `RuleMsg` 之间流动。
+当前实现使用的是 `EndpointIOField` / `EndpointIOPacket`，而不是旧版 `mapping.to` / `mapping.defineSid` 结构。
 
-`endpointDefinition` 包含两个主要部分：`request` 和 `response`。
+## 3.1. 请求侧
 
-## 3.1. 请求映射 (`request`) (RequestToMessage)
+`request` 对应 `types.HttpRequestDef`：
 
-`request` 部分定义了如何将HTTP请求的四个部分（路径参数、查询参数、头、请求体）映射到 `RuleMsg` 的 `Metadata` 和 `DataT` 中。
+```go
+type HttpRequestDef struct {
+    PathParams  []EndpointIOField `json:"pathParams,omitempty"`
+    QueryParams EndpointIOPacket  `json:"queryParams,omitempty"`
+    Headers     EndpointIOPacket  `json:"headers,omitempty"`
+    Body        EndpointIOPacket  `json:"body,omitempty"`
+}
+```
 
-每个部分都由一个 `HttpParam` 数组来定义。
-
-### `HttpParam` 结构
+### `EndpointIOField`
 
 | 字段 | 描述 | 示例 |
 | :--- | :--- | :--- |
-| `name` | 要从HTTP请求中提取的参数名。 | `"userId"`, `"X-Request-Id"`, `"user.name"` |
-| `type` | 期望将参数值转换成的数据类型。 | `"string"`, `"int"`, `"bool"`, `"float"`, `"string[]"` |
-| `required` | 该参数是否为必须。如果为 `true` 且请求中未找到，则请求会失败。 | `true` / `false` |
-| `mapping.to` | **[核心]** 指定将提取并转换后的值写入 `RuleMsg` 的目标路径。 | `"metadata.userId"`, `"dataT.userObj.name"` |
-| `mapping.defineSid` | **[核心]** 当 `mapping.to` 指向一个 `dataT` 对象时，此字段指定了该对象的SID。如果目标对象不存在，Matrix会使用此SID自动创建它。<br/><br/>关于SID及其背后的`CoreObj`数据契约的详细定义，请参阅 **[参考: 核心数据契约 (CoreObj)][Ref-CoreObj]**。 | `"User"` |
+| `name` | 外部协议中的字段名 | `deviceId`, `X-Request-Id`, `data.temperature` |
+| `bindPath` | 写入 `RuleMsg` 的 URI | `rulemsg://metadata/deviceId`, `rulemsg://dataT/telemetry.temp?sid=TelemetryData` |
+| `type` | 类型转换目标 | `string`, `int`, `float`, `bool`, `object`, `string[]` |
+| `required` | 是否必填 | `true` |
+| `defaultValue` | 缺省值 | `"ok"` |
+| `description` | 描述 | `"设备 ID"` |
 
-### 映射源
+### `EndpointIOPacket`
 
-*   `pathParams`: 映射URL路径中的参数 (e.g., `/users/:userId` 中的 `userId`)。
-*   `queryParams`: 映射URL查询字符串中的参数 (e.g., `/items?page=1` 中的 `page`)。
-*   `headers`: 映射HTTP请求头。
-*   `bodyFields`: 映射JSON请求体中的字段，支持使用点 `.` 进行嵌套访问。
+| 字段 | 描述 |
+| :--- | :--- |
+| `mapAll` | 把整个 packet 映射到一个 `RuleMsg` URI |
+| `fields` | 对 packet 内部字段逐项映射 |
 
-## 3.2. 响应映射 (`response`) (MessageToResponse)
+`MapAll` 和 `Fields` 可以同时存在：先整体映射，再用字段映射做补充或覆盖。
 
-`response` 部分定义了如何从规则链执行完毕后的最终 `RuleMsg` 中提取数据，并构建成HTTP响应。
+## 3.2. 响应侧
 
-*   `successCode`: 定义了业务成功时返回的HTTP状态码，默认为 `200`。
-*   `bodyFields`: 一个 `HttpParam` 数组，定义了如何从 `RuleMsg` 中提取数据并填充到JSON响应体中。
-*   `headers`: 一个 `HttpParam` 数组，定义了如何从 `RuleMsg` 中提取数据并设置为HTTP响应头。
+`response` 对应 `types.HttpResponseDef`：
 
-# 4. 配置示例 (Example)
+```go
+type HttpResponseDef struct {
+    SuccessCode     int              `json:"successCode,omitempty"`
+    ErrorStatusCode int              `json:"errorStatusCode,omitempty"`
+    Body            EndpointIOPacket `json:"body,omitempty"`
+    Headers         EndpointIOPacket `json:"headers,omitempty"`
+}
+```
 
-假设我们要定义一个 `POST /api/v1/device/:deviceId/telemetry` 接口，用于接收设备遥测数据。
+响应映射会从最终 `RuleMsg` 提取数据，再构造 HTTP Body / Headers。
+
+# 4. 配置示例
+
+下面是一个当前实现可识别的示例：
 
 ```json
 {
@@ -101,82 +123,82 @@ relations:
             "name": "deviceId",
             "type": "string",
             "required": true,
-            "mapping": { "to": "metadata.deviceId" }
+            "bindPath": "rulemsg://metadata/deviceId"
           }
         ],
-        "headers": [
-          {
-            "name": "X-Timestamp",
-            "type": "int",
-            "required": false,
-            "mapping": { "to": "metadata.timestamp" }
-          }
-        ],
-        "bodyFields": [
-          {
-            "name": "temperature",
-            "type": "float",
-            "required": true,
-            "mapping": { "to": "dataT.telemetry.temp", "defineSid": "TelemetryData" }
-          },
-          {
-            "name": "humidity",
-            "type": "float",
-            "required": true,
-            "mapping": { "to": "dataT.telemetry.hum", "defineSid": "TelemetryData" }
-          }
-        ]
+        "headers": {
+          "fields": [
+            {
+              "name": "X-Timestamp",
+              "type": "int",
+              "bindPath": "rulemsg://metadata/timestamp"
+            }
+          ]
+        },
+        "body": {
+          "fields": [
+            {
+              "name": "temperature",
+              "type": "float",
+              "required": true,
+              "bindPath": "rulemsg://dataT/telemetry.temp?sid=TelemetryData"
+            },
+            {
+              "name": "humidity",
+              "type": "float",
+              "required": true,
+              "bindPath": "rulemsg://dataT/telemetry.hum?sid=TelemetryData"
+            }
+          ]
+        }
       },
       "response": {
         "successCode": 202,
-        "bodyFields": [
-          {
-            "name": "status",
-            "mapping": { "to": "'ok'" }
-          },
-          {
-            "name": "processedAt",
-            "mapping": { "to": "metadata.processedTimestamp" }
-          }
-        ]
+        "body": {
+          "fields": [
+            {
+              "name": "status",
+              "defaultValue": "ok"
+            },
+            {
+              "name": "processedAt",
+              "bindPath": "rulemsg://metadata/processedTimestamp"
+            }
+          ]
+        }
       }
     }
   }
 }
 ```
-**流程解析**:
-1.  当一个 `POST` 请求到达 `/api/v1/device/SN-001/telemetry` 时：
-2.  `deviceId` (`"SN-001"`) 被提取并写入 `metadata.deviceId`。
-3.  `X-Timestamp` 请求头的值被提取并写入 `metadata.timestamp`。
-4.  请求体 `{"temperature": 25.5, "humidity": 60.0}` 被解析。
-5.  `temperature` 的值 `25.5` 被写入 `dataT` 中 `id` 为 `telemetry` 的对象的 `temp` 字段。由于 `defineSid` 的存在，如果 `telemetry` 对象不存在，会先用 `TelemetryData` 这个SID创建它。
-6.  `humidity` 的值 `60.0` 被写入同一个对象的 `hum` 字段。
-7.  这个构建好的 `RuleMsg` 被送入 `rc-telemetry-processing` 规则链执行。
-8.  规则链执行完毕后，假设最终的 `RuleMsg` 的 `metadata` 中包含了 `{"processedTimestamp": 1678886400000}`。
-9.  节点会构建一个HTTP响应体 `{"status": "ok", "processedAt": 1678886400000}`，并以 `202 Accepted` 状态码返回。
 
-# 5. 错误处理 (ErrorHandling)
+流程解析：
 
-节点在请求转换阶段可能会因为不匹配 `endpointDefinition` 的定义而失败。
+1. `deviceId` 从路径参数写入 `metadata.deviceId`
+2. `X-Timestamp` 写入 `metadata.timestamp`
+3. 请求体字段写入 `DataT.telemetry`
+4. 规则链执行完成后，从 `metadata.processedTimestamp` 回填响应体
 
-| 错误对象名 | 错误码 | 描述 |
-| :--- | :--- | :--- |
-| `ErrRequestDecodingFailed` | `104001` | 解析请求体失败（例如，非法的JSON）。 |
-| `ErrRequiredFieldMissing` | `104002` | 请求中缺少 `required: true` 的字段。 |
-| `ErrFieldConversionFailed` | `104003` | 字段值无法转换为 `type` 定义的目标类型。 |
-| `ErrInvalidMappingFormat` | `104004` | `mapping.to` 的路径格式不正确。 |
-| `ErrDataTItemCreationFailed`| `104005` | 使用 `defineSid` 创建新的 `DataT` 对象失败。 |
+# 5. 当前实现中的几个重要约束
 
-这些错误会直接导致请求失败，并返回一个标准的HTTP错误响应，而不会触发规则链。
+1. 请求和响应映射都基于 `helper.ProcessInbound` / `ProcessOutbound`。
+2. `bindPath` 必须是合法的 `rulemsg://...` URI，或者留空配合 `defaultValue` 使用。
+3. 当 `bindPath` 指向 `DataT` 且对象不存在时，通常需要在 URI 中携带 `sid`，否则无法自动创建对象。
+4. 如果 `MapAll` 指向非对象值，而同时又声明了 `fields`，运行时会报错。
 
-# 6. 问答环节 (FrequentlyAskedQuestions)
+# 6. 常见错误
+
+| 错误现象 | 常见原因 |
+| :--- | :--- |
+| 请求字段无法写入 `RuleMsg` | `bindPath` 非法或 URI 缺少 `sid` |
+| 响应体构造失败 | `MapAll` 指向非对象，但仍定义了 `fields` |
+| 类型转换失败 | `type` 与实际值不匹配 |
+| 规则链未执行 | 请求阶段映射失败，HTTP 入口提前返回错误 |
+
 <!-- qa_section_start -->
-> **问：`http` 端点和 `httpClient` 节点有什么区别？**
-> **答：** 它们是规则链数据流动的“起点”和“中间点”。`http` 端点是**被动**的，它**接收**外部的HTTP请求并发起一次规则链执行。`httpClient` 节点是**主动**的，它在规则链**执行过程中**，向外部发起一次HTTP请求。
+> **问：`endpoint/http` 和 `external/httpClient` 有什么区别？**
+> **答：** `endpoint/http` 是入口，负责把外部请求转成 `RuleMsg`；`external/httpClient` 是链内节点，负责从 `RuleMsg` 主动构造对外请求。
 <!-- qa_section_end -->
 
 <!-- 链接定义区域 -->
-[Guide-MatrixOverview-2b3c4d]: ../00_matrix_guide.md
-[Ref-SemanticDoc-d45bce]: ../../reference/04_semantic_documentation_standard.md
-[Ref-CoreObj]: ../../reference/09_core_objects.md
 [Ref-HttpEndpointDeepDive]: ../../reference/10_http_endpoint_deep_dive.md

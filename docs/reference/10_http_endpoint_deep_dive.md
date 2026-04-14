@@ -1,11 +1,11 @@
 ---
 # === Node Properties: 定义文档节点自身 ===
-uuid: "ref-http-endpoint-deep-dive-20250911"
+uuid: "f5614284-7536-45c4-8342-b098f005394e"
 type: "Reference"
 title: "参考-10: HttpEndpoint 节点深度解析"
 status: "Draft"
-owner: "@cline"
-version: "1.0.0"
+owner: "neohetj"
+version: "1.1.0"
 tags:
   - "matrix"
   - "reference"
@@ -17,122 +17,128 @@ tags:
 relations:
   - type: "explains"
     target_uuid: "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
-    description: "本参考文档深入解析了 HttpEndpoint 组件指南背后的实现原理。"
+    description: "本文档深入解析 HttpEndpoint 组件指南背后的实现原理。"
   - type: "references"
     target_uuid: "d1e2f3a4-b5c6-d7e8-f9a0-b1c2d3e4f5a6"
-    description: "HttpEndpoint 是消息设计哲学的高级实践，理解该哲学有助于理解本节点的设计。"
+    description: "HttpEndpoint 是消息设计哲学的高级实践。"
 ---
 
-# 参考-10: HttpEndpoint 节点深度解析
+# HttpEndpoint 节点深度解析
 
-本文档基于 `matrix/pkg/components/endpoint/http_endpoint.go` 源码，旨在为高级开发者提供 `HttpEndpoint` 节点内部工作机制的深度剖析。
+本文档基于当前 `internal/builtin/nodes/endpoint/http_endpoint.go` 及相关 helper，实现层面解释 `endpoint/http` 的请求映射和响应映射机制。
 
-## 1. 核心职责与定位
+## 1. 核心职责
 
-`HttpEndpoint` 是一个**被动端点 (PassiveEndpoint)**，其核心职责是充当 **Matrix 引擎与外部 HTTP 世界之间的适配器 (Adapter)**。
+`endpoint/http` 是一个被动入口，它把 HTTP 世界和 `RuleMsg` 世界连接起来：
 
-它在两个关键阶段发挥作用：
-1.  **请求阶段**: 将一个传入的 `http.Request` 对象，转换为一个可供规则链内部处理的 `types.RuleMsg`。
-2.  **响应阶段**: 将规则链执行完毕后的最终 `types.RuleMsg`，转换回一个标准的 `http.Response`。
+1. 从 `http.Request` 提取 path/query/header/body
+2. 根据 `endpointDefinition.request` 写入 `RuleMsg`
+3. 执行目标规则链
+4. 根据 `endpointDefinition.response` 从 `RuleMsg` 提取结果，回填 HTTP 响应
 
-## 2. 核心方法: `HandleHttpRequest`
-
-这是 `HttpEndpoint` 节点作为 HTTP 处理器的主入口。其内部执行流程如下：
+## 2. 主流程
 
 ```mermaid
 flowchart TD
-    httpRequest[http.Request] --> convertRequest{convertRequestToRuleMsg};
-    convertRequest --> getRuntime{Get RuleChain Runtime};
-    getRuntime --> executeAndWait{runtime.ExecuteAndWait};
-    executeAndWait --> convertResponse{convertResponse};
-    convertResponse --> httpResponse[http.Response];
-    convertRequest -- Error --> handleError[Return 4xx/5xx Error];
-    getRuntime -- Error --> handleError;
-    executeAndWait -- Error --> handleError;
-    convertResponse -- Error --> handleError;
+    req["http.Request"] --> mapReq["Map request to RuleMsg"]
+    mapReq --> getRt["Resolve target runtime"]
+    getRt --> exec["Execute runtime"]
+    exec --> mapResp["Map RuleMsg to HTTP response"]
+    mapResp --> resp["http.Response"]
+    mapReq -- error --> err["Return 4xx/5xx"]
+    getRt -- error --> err
+    exec -- error --> err
+    mapResp -- error --> err
 ```
 
-## 3. 请求转换详解: `convertRequestToRuleMsg`
+## 3. 请求侧映射
 
-这是 `HttpEndpoint` 最复杂、最核心的方法。它完全基于 `endpointDefinition` 的声明式配置，将 HTTP 请求的各个部分解构，并重新组装成一个结构化的 `RuleMsg`。
+当前请求映射不再使用旧版 `mapping.to` 闭包，而是统一走 `EndpointIOField` / `EndpointIOPacket` + `helper.ProcessInbound(...)`。
 
-### 3.1. 数据源准备 (伪代码)
+### 3.1. 数据源准备
+
+请求阶段会先准备四类 provider 数据源：
+
+- path params
+- query params
+- headers
+- request body
+
+这些数据源再分别送入 `ProcessInbound(...)`。
+
+### 3.2. `ProcessInbound(...)` 的职责
+
+`ProcessInbound(...)` 会依次处理：
+
+1. `MapAll`
+2. `Fields`
+
+对每个 field 来说，核心动作是：
 
 ```go
-// 1. Prepare data sources
-var bodyData map[string]interface{}
-json.NewDecoder(r.Body).Decode(&bodyData)
-
-queryParams := r.URL.Query()
-headerParams := r.Header
-pathParams := extractPathParams(r.Context())
+rawVal, found, err := provider.GetValue(field.Name)
+convertedVal, err := convertValue(rawVal, field.Type)
+err = message.SetInMsg(msg, field.BindPath, convertedVal)
 ```
 
-### 3.2. 映射处理 (`processMapping`)
+也就是说，当前实现的关键字段是：
 
-函数的核心是一个名为 `processMapping` 的内部闭包，它负责处理每一条 `HttpParam` 映射规则。
+- `name`
+- `type`
+- `required`
+- `defaultValue`
+- `bindPath`
 
-**对于每一条规则 (伪代码):**
-```go
-// 3. Define a generic mapping processor
-processMapping := func(param types.HttpParam, ...) error {
-    // ...
-    // 1. 提取原始值
-    rawValue, found := valueProvider(param.Name)
-    // 2. 校验 `required`
-    // 3. 转换类型 `utils.Convert`
-    convertedValue, err := utils.Convert(rawValue, param.Type)
-    // 4. 根据 `mapping.to` 写入 `msg.Metadata` 或 `pendingDataT`
-    switch msgType {
-    case "metadata":
-        msg.Metadata()[msgKey] = ...
-    case "dataT":
-        pendingDataT[objID][fieldPath] = convertedValue
-        objDefineSids[objID] = param.Mapping.DefineSID
-    }
-    return nil
-}
-```
+而不是旧文档中的 `mapping.to` / `mapping.defineSid`。
 
-### 3.3. `DataT` 的构建
+### 3.3. `bindPath` 的意义
 
-在处理完所有映射规则后，函数会遍历 `pendingDataT` 这个临时 map。
+`bindPath` 是一条 `rulemsg://...` URI，例如：
 
-**对于其中的每一个 `objId` (伪代码):**
-```go
-// 5. Build and set DataT objects
-dataT := msg.DataT()
-for objID, dataMap := range pendingDataT {
-    // 1. 获取SID
-    defineSid := objDefineSids[objID]
-    // 2. 创建空的 CoreObj 实例
-    newObj, err := dataT.NewItem(defineSid, objID)
-    // 3. 将 map 中的数据填充到 Go struct 中
-    utils.Decode(dataMap, newObj.Body())
-}
-```
+- `rulemsg://metadata/deviceId`
+- `rulemsg://dataT/telemetry.temp?sid=TelemetryData`
 
-> **关键洞察**:
-> - `HttpEndpoint` **不使用** `msg.Data` 字段。
-> - 整个从 HTTP 请求到 `RuleMsg` 的转换过程是**高度声明式**的，Go 代码本身是通用的，所有业务逻辑都体现在 `endpointDefinition` 的 JSON 配置中。
+`message.SetInMsg(...)` 会根据 URI 把值写入：
 
-## 4. 响应转换详解: `convertResponse`
+- `Metadata`
+- `Data`
+- `DataT`
 
-这个函数负责反向操作，将最终的 `RuleMsg` 转换为 HTTP 响应。
+如果目标是 `DataT`，通常需要在 URI 中带上 `sid`，这样运行时才能在对象不存在时自动创建。
 
-**核心逻辑 (伪代码):**
-```go
-// Process body fields
-for _, param := range respDef.BodyFields {
-    // 1. 根据 `param.Mapping.To` 路径 (e.g., "dataT.userObj.name") 提取数据
-    val, found, _ := helper.ExtractFromMsgByPath(msg, param.Mapping.To)
-    if found {
-        // 2. 将提取的值设置到响应 map 中
-        setValueByDotPath(responseBody, param.Name, val)
-    }
-}
-// 3. 序列化 responseBody 为 JSON 并返回
-```
+## 4. 响应侧映射
+
+响应阶段统一走 `helper.ProcessOutbound(...)`。
+
+流程与请求侧相反：
+
+1. 先处理 `MapAll`
+2. 再处理 `Fields`
+3. 把结果组装成响应 body / headers
+
+`ProcessOutbound(...)` 的关键行为：
+
+- 如果 `MapAll` 提取到的是对象，会直接 merge 到结果 map
+- 如果 `MapAll` 提取到的是标量或数组，且同时定义了 `Fields`，会报错
+- `Fields` 中 `bindPath == ""` 时，会优先使用 `defaultValue`
+
+## 5. 为什么现在统一用 `EndpointIOPacket`
+
+统一结构的好处是：
+
+1. `endpoint/http` 和 `external/httpClient` 可以共享一套映射 helper
+2. `MapAll + Fields` 模式能覆盖更多协议转换场景
+3. 校验器和 OpenAPI 生成器都能复用同一套 schema 模型
+
+## 6. 调试建议
+
+遇到 HTTP 映射异常时，优先检查：
+
+1. `bindPath` 是否是合法 `rulemsg://...` URI
+2. 指向 `DataT` 时是否缺失 `sid`
+3. `MapAll` 是否和 `Fields` 冲突
+4. `type` 是否和实际值兼容
+5. 静态契约、DSL 映射和运行时 helper 是否仍使用同一套结构
 
 <!-- 链接定义区域 -->
 [Ref-MessageDesign]: ./06_message_design_philosophy.md

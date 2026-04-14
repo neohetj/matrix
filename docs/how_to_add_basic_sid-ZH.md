@@ -1,3 +1,21 @@
+---
+uuid: "8406565b-1f92-4e48-bcf6-a136a38ef9c1"
+type: "Guide"
+title: "指南：如何增加基础 SID（中文）"
+status: "Stable"
+owner: "neohetj"
+version: "1.0.0"
+tags:
+  - "matrix"
+  - "guide"
+  - "sid"
+  - "legacy"
+relations:
+  - type: "is_part_of"
+    target_uuid: "a422d409-4b02-431a-b14e-2dec8f75b506"
+    description: "本独立指南由 docs 根目录统一索引。"
+---
+
 # 如何增加基础 SID (语义 ID)
 
 本文档指南说明了如何在 Matrix 框架中增加一个新的基础语义 ID (SID)。基础 SID 代表系统数据契约中使用的基本数据类型（例如 String, Int64, SliceAny）。

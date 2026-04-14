@@ -32,6 +32,7 @@ description: "校验基于 Matrix 的 DSL 规则链、HTTP endpoint 与函数节
 7. 如果本次改动包含同步查询类 HTTP list endpoint，按 `references/rules.md` 里的 list contract checklist 做一轮人工审查，确认请求参数、响应结构和 DSL 绑定符合统一规范。
 8. 如果 trace 或节点报错里出现 `expected []T, got *[]T`，优先检查对应函数节点的 Matrix adapter 是否把列表输入写成了 `helper.GetParam[[]T](...)`；这类列表型 DataT 输入应改成 `helper.GetParam[*[]T](...)`。
 9. 如果静态检查干净但运行仍失败，再查 trace，确认首个真正失败节点，而不是后续错误处理链的连锁报错。
+10. 如果问题根因不是“写错字段”，而是 packet 设计本身不清晰，回到 `matrix-http-io-designer` 先重做入参/出参边界，再重新校验。
 
 ## Covered Rules
 

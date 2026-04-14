@@ -13,16 +13,21 @@ description: 将产品或业务需求转换为 Matrix DSL 实现方案与实际�
 ## Skill Handoff
 
 - 需求只改 DSL：`matrix-requirement-to-dsl` -> `*-dsl-adapter` -> `matrix-rulechain-validator`
+- 需求包含 `endpoint/http`、`external/httpClient` 或 packet 设计：在 DSL 设计阶段追加 `matrix-http-io-designer`
+- 需求包含 shared/client/pool/provider 资源：在 DSL 设计或代码实现阶段追加 `matrix-shared-node-creator`
 - 需求同时改函数节点：在上述链路中追加 `matrix-function-node-creator`
+- 需求引入新行为或修复回归：实现完成前追加 `matrix-test-author`
 
 ## Workflow
 
 1. 先用 `references/requirement-template.md` 把自然语言需求整理成结构化输入。
 2. 再用 `references/design-output-contract.md` 产出 DSL 设计草案，再决定是否开始改文件。
 3. 如果需求包含同步查询类 HTTP list 接口，先按下面的 list contract 把请求参数、返回结构和 DSL 绑定方式收敛到统一契约。
-4. 再读取项目 adapter，找到最接近的现有 DSL 作为基线。
-5. 按 `references/implementation-workflow.md` 做最小化实现。
-6. 按 `references/acceptance-checklist.md` 做校验，并补充项目自己的验证命令。
+4. 如果需求包含 `endpoint/http`、`external/httpClient` 或复杂出入参 packet，继续使用 `matrix-http-io-designer` 收敛 `bindPath`、`fields`、`mapAll` 和对象边界。
+5. 如果需求需要共享数据库客户端、缓存客户端、浏览器实例或其他池化资源，继续使用 `matrix-shared-node-creator` 收敛 shared DSL、provider node 和 consumer 取用方式。
+6. 再读取项目 adapter，找到最接近的现有 DSL 作为基线。
+7. 按 `references/implementation-workflow.md` 做最小化实现。
+8. 按 `references/acceptance-checklist.md` 做校验，并补充项目自己的验证命令；只要行为有变化，默认再走一遍 `matrix-test-author` 设计或补齐验证。
 
 ## Non-Negotiable Rules
 

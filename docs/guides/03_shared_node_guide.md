@@ -4,8 +4,8 @@ uuid: "a3b4c5d6-e7f8-9a0b-1c2d-3e4f5a6b7c8d"
 type: "Guide"
 title: "指南：理解和使用共享节点 (Shared Node)"
 status: "Draft"
-owner: "@cline"
-version: "1.0.0"
+owner: "neohetj"
+version: "1.1.0"
 tags:
   - "matrix"
   - "guide"
@@ -17,75 +17,110 @@ tags:
 relations:
   - type: "is_part_of"
     target_uuid: "a0b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d"
-    description: "共享节点是Matrix核心架构的关键概念之一。"
+    description: "共享节点是 Matrix 核心架构的重要概念之一。"
 ---
 
-# 1. 什么是共享节点？ (WhatIsASharedNode)
+# 1. 什么是共享节点？
 
-在 `Matrix` 引擎中，**共享节点 (Shared Node)** 是一种特殊的节点类型，其核心职责是**创建和管理可被多个规则链复用的资源实例**。
+共享节点是 Matrix 中专门用于**提供可复用资源实例**的节点类型。它们通常在引擎初始化阶段就被加载进 `SharedNodePool`，而不是等某条规则链运行到它时才临时创建。
 
-与生命周期与单条规则链绑定的普通节点不同，共享节点的实例在 `Matrix` 引擎启动时就会被创建，并在整个引擎的生命周期内保持存在。
+典型示例：
 
-典型的共享节点包括：
-*   数据库连接池 (`external/dbClient`)
-*   Redis客户端 (`external/redisClient`)
-*   HTTP客户端 (`external/httpClient`)
+- `external/sqlClient`
+- `external/redisClient`
+- `external/mongoClient`
+- `resource/channel_manager`
 
-# 2. 为什么需要共享节点？ (WhyUseSharedNodes)
+# 2. 为什么需要共享节点？
 
-共享节点解决了资源管理中的两个核心问题：
+共享节点主要解决两个问题：
 
-1.  **性能与效率**: 像数据库连接、Redis连接这类资源，其初始化和建立连接的开销通常很大。如果每个规则链、甚至每个节点都创建自己的连接，将会造成巨大的性能浪费。通过共享节点，所有规则链可以复用同一个连接池，极大地提高了资源利用率。
-2.  **中心化配置**: 将资源（如数据库）的配置（如DSN、PoolSize）集中在一个共享节点中进行管理，使得配置变更更加方便和安全，避免了在多个规则链中维护重复的配置信息。
+1. **避免重复建连**：数据库、Redis、Mongo 这类连接代价高，重复初始化没有意义。
+2. **统一配置入口**：连接串、连接池大小、TLS 策略等集中管理，不需要散落到每条业务链上。
 
-# 3. 如何定义和使用共享节点 (HowToDefineAndUse)
+# 3. 如何定义共享节点？
 
-## 3.1. 在DSL中定义共享节点 (DefiningInDSL)
-
-共享节点通常在规则链定义的 `metadata.nodes` 数组中被定义，就像普通节点一样。关键在于要为其设置一个在当前规则链中唯一的 `id`。
-
-### 示例：定义一个DB客户端共享节点
+推荐把共享节点放到专门的 shared DSL 文件中：
 
 ```json
 {
-  "id": "shared_mysql_db",
-  "type": "external/dbClient",
-  "name": "共享MySQL连接池",
-  "configuration": {
-    "driverName": "mysql",
-    "dsn": "user:password@tcp(host:port)/dbname"
+  "ruleChain": {
+    "id": "shared_clients"
+  },
+  "metadata": {
+    "nodes": [
+      {
+        "id": "shared_sql_client",
+        "type": "external/sqlClient",
+        "name": "共享 SQL 客户端",
+        "configuration": {
+          "driverName": "postgres",
+          "uri": "postgres://user:pass@localhost:5432/app?sslmode=disable",
+          "poolSize": 20
+        }
+      }
+    ],
+    "connections": []
   }
 }
 ```
 
-## 3.2. 在其他节点中引用共享节点 (ReferencingFromOtherNodes)
+这个文件会在引擎启动时被 `LoadSharedNodes(...)` 扫描并装载。
 
-任何需要使用该共享资源的节点，都可以在其 `configuration` 中通过 `ref://<shared_node_id>` 的特殊URI格式来引用它。
+# 4. 如何引用共享节点？
 
-### 示例：`sqlQuery` 节点引用 `dbClient`
+业务节点应通过 `ref://<shared-node-id>` 引用共享资源：
 
 ```json
 {
-  "id": "get_user_data",
-  "type": "functions/sqlQuery",
-  "name": "获取用户数据",
+  "id": "queryUsers",
+  "type": "functions",
   "configuration": {
-    "dsn": "ref://shared_mysql_db",
-    "query": "SELECT * FROM users WHERE id = ?",
-    "params": ["${metadata.userId}"]
+    "functionName": "sqlQuery",
+    "business": {
+      "dsn": "ref://shared_sql_client",
+      "query": "SELECT * FROM users WHERE id = ?",
+      "params": ["${metadata.userId}"]
+    }
   }
 }
 ```
-`Matrix` 引擎在解析 `sqlQuery` 节点的配置时，如果发现 `dsn` 字段的值是 `ref://` 前缀，它会自动去查找 `id` 为 `shared_mysql_db` 的节点，并将其管理的数据库连接实例注入到 `sqlQuery` 节点中。
+
+这里的 `sqlQuery` 代表宿主应用注册的函数。`Matrix` 核心本身只提供通用 `functions` 节点和共享资源解析能力。
+
+# 5. 业务节点如何拿到资源？
+
+推荐通过 `asset.Asset` 或封装好的 helper 解析：
+
+```go
+func resolveResource(pool types.NodePool, uri string) (any, error) {
+    ast := asset.Asset[any]{URI: uri}
+    assetCtx := asset.NewAssetContext(asset.WithNodePool(pool))
+    return ast.Resolve(assetCtx)
+}
+```
+
+这样可以统一处理：
+
+- `ref://` 解析
+- 类型校验
+- 模板渲染
+- 未来扩展的新 scheme
+
+# 6. 常见误区
+
+1. 把共享节点直接写进业务规则链节点列表里，然后当成普通节点执行。
+2. 在每个业务节点里重复手写 `NodePool.GetInstance(...)`。
+3. 把共享资源字段写成裸 ID，而不是 URI。
+4. 把消费共享资源的业务逻辑塞回共享节点自身。
 
 <!-- qa_section_start -->
-> **问：共享节点可以处理消息（`OnMsg`）吗？**
-> **答：** 理论上可以，但通常不这么做。共享节点的核心职责是资源管理，而非数据处理。因此，它们的 `OnMsg` 方法通常是一个空操作（No-op）。数据处理的逻辑应该由引用它们的功能节点来完成。
+> **问：共享节点可以处理消息吗？**
+> **答：** 理论上可以，但通常不应承担业务消息处理职责。共享节点的核心责任是管理资源实例。
 
-> **问：共享节点的底层实现是怎样的？**
-> **答：** 共享节点的实现基于 `base.Shareable[T]` 泛型工具，它封装了资源池化和懒加载的逻辑。更深入的实现细节和设计哲学，请参阅 **[参考：共享资源管理机制][Ref-SharedResource]**。
+> **问：为什么推荐单独的 shared DSL 文件？**
+> **答：** 因为这样最容易区分“引擎级共享资源”和“某条业务规则链的普通节点”，也更符合当前引擎装载流程。
 <!-- qa_section_end -->
 
 <!-- 链接定义区域 -->
-[Guide-MatrixOverview]: ./00_matrix_guide.md
 [Ref-SharedResource]: ../reference/15_shared_resource_management.md

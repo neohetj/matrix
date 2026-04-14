@@ -1,3 +1,21 @@
+---
+uuid: "28e7a4fb-d0ad-4337-b2d8-94615eff648e"
+type: "Guide"
+title: "指南：通用节点实现规范与最佳实践（中文）"
+status: "Stable"
+owner: "neohetj"
+version: "1.0.0"
+tags:
+  - "matrix"
+  - "guide"
+  - "node"
+  - "legacy"
+relations:
+  - type: "is_part_of"
+    target_uuid: "a422d409-4b02-431a-b14e-2dec8f75b506"
+    description: "本独立指南由 docs 根目录统一索引。"
+---
+
 # 通用节点实现规范与最佳实践
 
 本文档总结了在 Matrix 框架中开发通用节点（Generic Nodes）的规范和注意事项。

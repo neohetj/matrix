@@ -3,8 +3,8 @@
 uuid: "fb5bdc48-90b9-49d7-8b66-8676a72fbfe3"
 type: "ADR"
 title: "决策：Matrix规则链坚持DAG设计"
-status: "Stable"
-owner: "@cline"
+status: "Accepted"
+owner: "neohetj"
 version: "1.0.0"
 tags:
   - "adr"
@@ -15,9 +15,12 @@ tags:
 
 # === Node Relations: 定义与其他文档节点的关系 ===
 relations:
+  - type: "realizes"
+    target_uuid: "f1d4c850-1f6e-4dcb-8d51-1fe6a46701ae"
+    description: "本决策为拓扑与执行流拆分场景提供通用 DAG 约束。"
   - type: "documents"
     target_uuid: "e4a9b8c1-3d2a-4b1e-8c5d-7a4b9c2d8e1f"
-    description: "本决策是对Matrix核心架构中DAG原则的补充和强化说明。"
+    description: "本决策补充并强化 Matrix 核心架构中的 DAG 原则。"
 
 ---
 

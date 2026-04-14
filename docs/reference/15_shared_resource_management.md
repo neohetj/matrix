@@ -3,8 +3,8 @@ uuid: "a1b3d5e7-c4a0-4b1e-9c3a-1f8e6d2c5b4a"
 type: "Concept"
 title: "学习Matrix共享资源管理"
 status: "Stable"
-owner: "@cline-agent"
-version: "2.2.0"
+owner: "neohetj"
+version: "2.3.0"
 tags:
   - "shared-resource"
   - "dependency-injection"
@@ -13,77 +13,76 @@ tags:
   - "NodePool"
 relations:
   - type: "is_part_of"
-    target_uuid: "e4a9b8c1-3d2a-4b1e-8c5d-7a4b9c2d8e1f" # -> Matrix框架架构总览
+    target_uuid: "e4a9b8c1-3d2a-4b1e-8c5d-7a4b9c2d8e1f"
+    description: "共享资源管理是 Matrix 架构总览的一部分。"
 ---
 
 # 如何管理和使用共享资源 (SharedResourceManagement)
 
-本文档解释了Matrix框架中共享资源（Shareable Resource）的管理机制。该机制允许像数据库连接池、HTTP客户端这类昂贵的、可复用的资源被集中管理，并被多个业务节点安全地共享。
+本文档解释 Matrix 中共享资源（Shareable Resource）的当前实现机制。共享资源包括 SQL 客户端、Redis 客户端、Mongo 客户端、通道管理器等长期存活、可跨规则链复用的实例。
 
-## 1. 学习核心概念 (CoreConcept)
+## 1. 核心概念
 
 共享资源机制由两个核心组件构成：
-1.  **`SharedNode` 接口**: 一个节点必须实现此接口，才能成为一个可被共享的资源**提供者**。
-2.  **共享节点池 (`NodePool`)**: 一个由运行时管理的全局池，用于存放所有被实例化的`SharedNode`，供业务节点**消费者**按需获取。
 
-**接口定义 (`pkg/types/node.go`):**
-<!--
-finetune_role: "code_explanation"
-finetune_instruction: "解释Matrix框架中用于定义一个共享资源节点的Go语言`SharedNode`接口"
--->
+1. **`SharedNode`**：资源提供方节点。
+2. **`NodePool`**：引擎级全局池，用于保存已实例化的共享节点。
+
+接口定义如下：
+
 ```go
-// SharedNode represents a node component that manages a shareable resource.
 type SharedNode interface {
-	Node
-	GetInstance() (any, error)
+    Node
+    GetInstance() (any, error)
 }
 ```
-*   **`GetInstance() (any, error)`**: 这是`SharedNode`的核心。它返回该节点所管理的资源的**实际业务实例**（例如 `*sql.DB`）。
 
-## 2. 如何实现一个共享节点 (Provider)
+`GetInstance()` 返回该节点所管理的真实资源实例，例如 `*sqlx.DB`、`*redis.Client` 或 `*mongo.Client`。
 
-实现一个共享资源节点的**标准方式**是通过在其结构体中嵌入 `base.Shareable[T]` 泛型辅助工具。这会自动帮助你的节点实现 `SharedNode` 接口。
+## 2. 共享节点何时创建
 
-以下示例基于 `pkg/components/external/db_client_node.go` 的实现。
+共享节点不是在某条规则链运行时临时创建的。标准流程是：
 
-<!--
-finetune_role: "code_generation_example"
-finetune_instruction: "请展示如何通过嵌入base.Shareable来实现一个标准的SharedNode"
--->
+```mermaid
+flowchart TD
+    discover["1. Discover shared DSL paths"] --> load["2. builder.LoadSharedNodes(...)"]
+    load --> pool["3. NodePool.NewFromNodeDef(...)"]
+    pool --> ready["4. SharedNodePool 持有实例"]
+    ready --> runtime["5. 业务节点或 endpoint 运行时按需引用"]
+```
+
+对应代码入口：
+
+- `matrix.New(...)`
+- `builder.LoadSharedNodes(...)`
+- `NodePool.LoadFromRuleChainDef(...)`
+- `NodePool.NewFromNodeDef(...)`
+
+shared DSL 文件通常本身是一个 `RuleChainDef` 容器，但主要用途是承载 `metadata.nodes` 中的共享节点定义。
+
+## 3. 如何实现共享节点
+
+当前仓库推荐通过嵌入 `internal/builtin/base.Shareable[T]` 来实现：
+
 ```go
-package external
-
-import (
-    "github.com/jmoiron/sqlx"
-    "github.com/neohetj/matrix/pkg/components/base"
-    "github.com/neohetj/matrix/pkg/types"
-)
-
-// 1. 定义配置
-type DBClientNodeConfiguration struct {
-    DriverName string `json:"driverName"`
-    DSN        string `json:"dsn"`
-}
-
-// 2. 定义节点结构体，并嵌入 base.Shareable[T]
-type DBClientNode struct {
+type SQLClientNode struct {
     types.BaseNode
     types.Instance
-    base.Shareable[*sqlx.DB] // T 是要共享的资源实例类型
-    nodeConfig DBClientNodeConfiguration
+    base.Shareable[*sqlx.DB]
+    nodeConfig SQLClientNodeConfiguration
     client     *sqlx.DB
 }
 
-// 3. 在 Init 方法中，初始化嵌入的 Shareable
-func (n *DBClientNode) Init(cfg types.Config) error {
-    // ... 解析配置到 n.nodeConfig ...
+func (n *SQLClientNode) Init(cfg types.ConfigMap) error {
+    if err := utils.Decode(cfg, &n.nodeConfig); err != nil {
+        return err
+    }
 
-    // 定义一个闭包，封装了创建资源的具体逻辑
     initFunc := func() (*sqlx.DB, error) {
         if n.client != nil {
             return n.client, nil
         }
-        db, err := sqlx.Connect(n.nodeConfig.DriverName, n.nodeConfig.DSN)
+        db, err := sqlx.Connect(n.nodeConfig.DriverName, n.nodeConfig.URI)
         if err != nil {
             return nil, err
         }
@@ -91,102 +90,99 @@ func (n *DBClientNode) Init(cfg types.Config) error {
         return n.client, nil
     }
 
-    // 使用资源的DSN和初始化函数来初始化Shareable
-    return n.Shareable.Init(nil, n.nodeConfig.DSN, initFunc)
+    return n.Shareable.Init(nil, n.nodeConfig.URI, initFunc)
 }
 ```
 
-## 3. 如何使用一个共享节点 (Consumer)
+几点说明：
 
-消费一个共享资源的**唯一标准模式**是通过 `NodeCtx` 访问运行时（Runtime），进而获取共享节点池（`NodePool`）。
+1. 共享节点本身负责提供资源实例，而不是消费 `ref://`。
+2. `Shareable[T]` 负责缓存实例和延迟初始化。
+3. `Destroy()` 负责在节点生命周期结束时释放底层连接。
 
-### **工作流程** (Workflow)
+## 4. 如何消费共享节点
 
-<!--
-finetune_role: "code_explanation"
-finetune_instruction: "解释在Matrix中消费一个共享资源（如数据库连接）的完整工作流程图"
--->
-```mermaid
-flowchart TD
-    subgraph "启动时"
-        direction TB
-        sharedNode["1、共享节点（如DB节点）被注册"]
-    end
+消费方推荐把共享资源字段设计成 URI，再通过 `asset.Asset[T]` 或 helper 解析，而不是在每个节点里直接散写 `NodePool.GetInstance(...)`。
 
-    subgraph "运行时"
-        direction TB
-        loadDsl["2、引擎加载规则链DSL"]
-        initShared["3、引擎初始化共享节点<br/>并放入共享池（SharedNodePool）"]
-        onMsg["4、业务节点在OnMsg中被调用"]
-        getNodePool["5、在OnMsg中<br/>通过 ctx.GetRuntime().GetNodePool() 获取池"]
-        getConnection["6、调用辅助函数<br/>从池中获取连接或创建临时连接"]
-        useConnection["7、使用连接实例"]
+### 4.1. 推荐模式
 
-        loadDsl --> initShared
-        initShared --> onMsg
-        onMsg --> getNodePool
-        getNodePool --> getConnection
-        getConnection --> useConnection
-    end
-```
-
-### **实现步骤与示例** (ImplementationExample)
-
-以下示例基于 `redis_command_func.go` 的实现，展示了标准的共享资源消费方法。
-
-<!--
-finetune_role: "code_generation_example"
-finetune_instruction: "请展示在Matrix中获取和使用共享Redis连接的标准方法"
--->
 ```go
-// (Simplified from redis_command_func.go)
-func RedisCommandFunc(ctx types.NodeCtx, msg types.RuleMsg) {
-    // ... 从ctx或msg中获取配置，如 redisDsn ...
-    redisDsn, _ := bizConfig["redisDsn"].(string)
-
-    // 1. 从运行时上下文(NodeCtx)中获取 NodePool
-    var nodePool types.NodePool
-    if rt := ctx.GetRuntime(); rt != nil {
-        nodePool = rt.GetNodePool()
-    }
-
-    // 2. 调用一个自定义的辅助函数来获取连接
-    // 这个辅助函数封装了处理 ref:// 和创建临时连接的逻辑
-    // 这里的 redis.GetRedisConnection 是一个推荐的实现模式
-    client, isTemp, err := redis.GetRedisConnection(nodePool, redisDsn)
-    if err != nil {
-        ctx.HandleError(msg, err)
-        return
-    }
-    
-    // 3. 如果是临时连接，必须使用 defer 手动关闭以防资源泄露
-    if isTemp {
-        defer client.Close()
-    }
-
-    // 4. 使用 client 实例执行业务操作
-    err = client.Do(ctx.GetContext(), "GET", "mykey").Err()
-    if err != nil {
-        ctx.HandleError(msg, err)
-        return
-    }
-    
-    ctx.TellSuccess(msg)
+func resolveClient(pool types.NodePool, resourceURI string) (any, error) {
+    ast := asset.Asset[any]{URI: resourceURI}
+    assetCtx := asset.NewAssetContext(asset.WithNodePool(pool))
+    return ast.Resolve(assetCtx)
 }
 ```
 
-## 4. 学习常见问题 (FAQ)
+优点：
+
+1. `ref://`、模板值和其他 scheme 都走统一入口。
+2. 解析层承担类型校验和错误包装。
+3. 消费方代码可以保持简单，不必关心 `NodePool` 内部细节。
+
+### 4.2. 什么时候直接用 `NodePool`
+
+只有在以下场景才建议直接操作 `NodePool`：
+
+- 你正在实现更底层的 helper / connector。
+- 你需要绕过 `asset.Asset` 做特殊生命周期管理。
+- 你明确知道返回类型，并且不希望引入额外包装。
+
+## 5. DSL 示例
+
+### 5.1. shared DSL 中定义资源
+
+```json
+{
+  "ruleChain": {
+    "id": "shared_clients"
+  },
+  "metadata": {
+    "nodes": [
+      {
+        "id": "shared_sql_client",
+        "type": "external/sqlClient",
+        "name": "共享 SQL 客户端",
+        "configuration": {
+          "driverName": "postgres",
+          "uri": "postgres://user:pass@localhost:5432/app?sslmode=disable",
+          "poolSize": 20
+        }
+      }
+    ],
+    "connections": []
+  }
+}
+```
+
+### 5.2. 业务节点中引用资源
+
+```json
+{
+  "id": "queryUsers",
+  "type": "functions",
+  "configuration": {
+    "functionName": "sqlQuery",
+    "business": {
+      "dsn": "ref://shared_sql_client",
+      "query": "SELECT * FROM users WHERE id = ?",
+      "params": ["${metadata.userId}"]
+    }
+  }
+}
+```
+
+这里的 `sqlQuery` 是宿主应用注册到 `NodeFuncManager` 的函数；`Matrix` 核心只负责提供通用 `functions` 节点和 `ref://` 解析能力。
+
+## 6. FAQ
 
 <!-- qa_section_start -->
-> **问：为什么推荐编写一个辅助函数（如`redis.GetRedisConnection`）来处理连接获取？**
-> **答：** 因为这个辅助函数可以封装标准逻辑：首先检查资源路径是否为`ref://`引用，如果是，则从`NodePool`中安全地获取`SharedNode`实例；如果不是，它可以选择创建一个临时的、一次性的连接。这种模式将连接管理的复杂性从每个业务节点中抽离出来，使业务节点本身更简洁、更专注于业务逻辑。
+> **问：为什么推荐 `asset.Asset` 而不是每个节点都直接 `GetInstance()`？**
+> **答：** 因为它能统一处理 URI、模板、类型转换和错误包装，让消费方节点更简洁，也更容易做复用。
 
-> **问：在辅助函数中，如何从`NodePool`获取实例？**
-> **答：** `NodePool` 接口提供了 `GetInstance(instanceId string)` 方法。你的辅助函数应该调用此方法，然后对返回的`any`类型进行安全的类型断言，转换为具体的资源类型（如`*redis.Client`）。
+> **问：共享节点能处理消息吗？**
+> **答：** 可以，但通常不应该承担业务消息处理职责。共享节点的主要责任是提供和管理资源实例。
 
-> **问：`isTemp`标志和`defer client.Close()`为什么如此重要？**
-> **答：** 这是为了确保资源的正确释放。从`NodePool`中获取的共享连接，其生命周期由框架管理，你不应该关闭它。但如果你的辅助函数创建了一个临时的、非共享的连接，那么调用方就必须负责在使用完毕后将其关闭。`isTemp`标志就是这个责任的明确信号，配合`defer`可以确保即使函数出错也能正确关闭连接，防止资源泄露。
-
-> **问：`base.Shareable` 工具到底是做什么用的？**
-> **答：** 它是一个帮助你**实现** `SharedNode` 的工具。通过在你自己的节点中嵌入它，你的节点就能自动获得 `GetInstance` 方法，从而满足 `SharedNode` 接口的要求。它还内置了懒加载和线程安全等逻辑，极大地简化了资源提供方节点的开发。
+> **问：共享节点必须放在单独的 shared DSL 文件里吗？**
+> **答：** 不是语法强制，但这是当前工程里最推荐、最清晰的装载方式。这样能明确区分“引擎级共享资源”和“某条规则链内部节点”。
 <!-- qa_section_end -->

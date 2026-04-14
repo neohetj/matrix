@@ -2,9 +2,9 @@
 uuid: "a9214860-3b24-4140-96da-81af508c9ec3"
 type: "RFC"
 title: "需求：框架级并行任务聚合器节点"
-status: "Draft"
-owner: "@cline"
-version: "1.0.0"
+status: "Accepted"
+owner: "neohetj"
+version: "2.1.0"
 tags:
   - "rfc"
   - "design"
@@ -13,16 +13,29 @@ tags:
   - "join"
   - "fan-in"
 relations:
-  - type: "relates_to"
-    target_uuid: "d993e6e5-3b34-48e2-a099-367242512851" # -> SOP：Trinity & Matrix 业务开发
-    description: "This RFC proposes a new node to handle the parallel fan-in pattern, which is a common requirement not explicitly addressed in the current development SOP."
+  - type: "is_formalized_by"
+    target_uuid: "a6b7c8d9-e0f1-4a2b-8c3d-4e5f6a7b8c9d"
+    description: "当前组件目录已收录 `action/aggregator` 为内建节点。"
+  - type: "is_explained_by"
+    target_uuid: "9f9f0df6-dbc9-4fcb-8f60-d39971809d7e"
+    description: "当前 `action/aggregator` 的使用方式见对应组件指南。"
 ---
 
 # RFC: 框架级并行任务聚合器节点 (ProposeStatefulAggregatorNode)
 
+> Historical note: 本文保留原始 RFC 提案正文。由于该 RFC 已落地，当前实现差异统一补充在文末附录，原始需求点不得被覆盖。
+
 ## 1. 摘要 (Summary)
 
 本RFC提议在Matrix框架中引入一个全新的、内置的 `aggregator/join` 节点类型，以提供一个声明式的、健壮的机制来同步和聚合多个并行执行任务的结果，解决当前框架在“扇入”（Fan-in）模式上的缺失。
+
+### 原始需求点总结
+
+1. 框架需要内建的 fan-in / join 能力，让多个并行分支在全部完成后只汇合触发一次，而不是重复触发下游。
+2. 并行聚合场景不能再依赖业务函数手动在 `msg.Metadata` 中维护状态，这类同步复杂度应由框架统一承担。
+3. 需要一个声明式节点来表达“等待哪些输入、超时如何处理、是否 fail-fast”这类聚合策略，而不是散落在自定义代码里。
+4. 规则链在运维巡检、并行探测、批量收集结果这类场景里，需要更直观地表达扇出后再扇入的结构。
+5. 新能力应尽量复用现有 RuleMsg 与运行时模型，不要求业务侧引入额外的外部状态管理系统。
 
 ## 2. 动机 (Motivation)
 
@@ -98,3 +111,44 @@ relations:
 > **问：为什么不直接在`default_runtime.go`中修改逻辑，让所有多输入节点都自动等待？**
 > **答：** 因为这会破坏现有规则链的“或”逻辑（例如`alertGenerator`的例子）。框架需要同时支持“或”（任意上游触发即执行）和“与”（所有上游完成才执行）两种模式。引入一个明确的`join`节点是区分这两种模式的最清晰方法。
 <!-- qa_section_end -->
+
+## 8. 附录：当前实现对齐
+
+### 8.1 当前落地形态
+
+当前落地的节点类型是：
+
+- `action/aggregator`
+
+而不是草案中的：
+
+- `aggregator/join`
+
+### 8.2 当前实现语义
+
+当前实现采用：
+
+1. 根据当前节点的所有前驱节点判断是否收齐
+2. 每收到一个上游消息就记录 `PreviousNodeID`
+3. 所有前驱到齐后再继续向下游 `TellSuccess`
+4. 超时则 `TellFailure`
+
+### 8.3 当前与原 RFC 的主要差异
+
+原始提案中这些内容没有按原样落地：
+
+1. `timeoutMs`
+2. `failFast`
+3. `expectedInputs`
+4. 专门的聚合结果合并 DSL
+
+### 8.4 当前应该如何阅读本文
+
+1. 第 `1-7` 节是原始扇入能力提案
+2. 本附录解释它如何以 `action/aggregator` 形式落地
+3. 后续示例与文档应以当前节点类型和配置为准
+
+## 9. 相关现行文档
+
+1. [组件指南：聚合器 (action/aggregator)](../../guides/components/action_aggregator_guide.md)
+2. [学习 Matrix 组件目录](../../reference/21_component_catalog.md)

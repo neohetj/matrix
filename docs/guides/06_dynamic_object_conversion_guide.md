@@ -3,7 +3,7 @@ uuid: "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e"
 type: "Guide"
 title: "指南：动态数据处理核心技巧"
 status: "Stable"
-owner: "@cline"
+owner: "neohetj"
 version: "1.1.0"
 tags:
   - "guide"
@@ -13,8 +13,8 @@ tags:
   - "advanced"
 relations:
   - type: "is_referenced_by"
-    target_uuid: "a2c8d4e1-7b3e-4c2a-8f5d-9e1b3c4d5a6b" # -> Matrix节点/组件开发SOP
-    description: "This guide provides advanced techniques for node/function development."
+    target_uuid: "60c07c47-df0e-4b76-9ed9-62fabe2e2add"
+    description: "参考-08 会在需要时引导开发者阅读这份高级技巧指南。"
 ---
 
 # 指南：动态数据处理核心技巧 (DynamicDataHandlingGuide)
@@ -139,11 +139,11 @@ func (n *HttpClientNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 
 ## 3. 场景三：从请求到消息的灵活映射 (FlexibleRequestToMessageMapping)
 
-**目标**: 将一个外部输入（如HTTP请求）的各个部分，灵活地写入到 `RuleMsg` 的不同位置。
+**目标**: 将一个外部输入（如 HTTP 请求）的各个部分，灵活地写入 `RuleMsg` 的不同位置。
 
-**核心工具**: `utils.ExtractByPath` (读取) + `setValueByDotPath` (写入)
+**核心工具**: `helper.ProcessInbound` + `message.SetInMsg`
 
-这个模式是 **[endpoint/http][Guide-EndpointHttp]** 节点实现其强大 `endpointDefinition` 功能的基石。
+这个模式是 **[endpoint/http][Guide-EndpointHttp]** 节点当前实现 `endpointDefinition` 的基石。
 
 ### 3.1. DSL 配置 (DSLConfiguration)
 
@@ -154,49 +154,53 @@ func (n *HttpClientNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
     {
       "name": "deviceId",
       "type": "string",
-      "mapping": { "to": "metadata.deviceId" }
+      "bindPath": "rulemsg://metadata/deviceId"
     }
   ],
-  "bodyFields": [
-    {
-      "name": "data.temperature",
-      "type": "float",
-      "mapping": { "to": "dataT.telemetry.temp", "defineSid": "TelemetryData" }
-    }
-  ]
+  "body": {
+    "fields": [
+      {
+        "name": "data.temperature",
+        "type": "float",
+        "bindPath": "rulemsg://dataT/telemetry.temp?sid=TelemetryData"
+      }
+    ]
+  }
 }
 ```
 
 ### 3.2. 实现原理解析 (ImplementationDeepDive)
 
-`http` 端点在接收到请求后，其内部的 `convertRequestToRuleMsg` 方法会执行类似如下的逻辑：
+`http` 端点在接收到请求后，会把不同来源包装成 provider，再统一交给 `ProcessInbound(...)`：
 
 ```go
 // 伪代码
 func (n *HttpEndpointNode) convertRequestToRuleMsg(r *http.Request) (types.RuleMsg, error) {
-    // 1. 从HTTP请求中提取各种数据源
-    pathParams := extractPathParams(r) // -> {"deviceId": "SN-001"}
-    bodyData := extractBody(r)         // -> {"data": {"temperature": 25.5}}
-
-    // 2. 创建一个空的消息
     msg := types.NewMsg(...)
+    helper.ProcessInbound(ctx, msg, types.EndpointIOPacket{
+        Fields: []types.EndpointIOField{
+            {
+                Name:     "deviceId",
+                Type:     "string",
+                BindPath: "rulemsg://metadata/deviceId",
+            },
+        },
+    }, pathProvider)
 
-    // 3. 遍历配置中的所有映射规则
-    // --- 处理路径参数 ---
-    // 伪代码: for p in config.pathParams
-    // value, _ := utils.ExtractByPath(pathParams, "deviceId") // value is "SN-001"
-    // setValueByDotPath(msg.Metadata(), "deviceId", value)
-
-    // --- 处理请求体字段 ---
-    // 伪代码: for p in config.bodyFields
-    // value, _ := utils.ExtractByPath(bodyData, "data.temperature") // value is 25.5
-    // obj, _ := msg.DataT().NewItem("TelemetryData", "telemetry")
-    // setValueByDotPath(obj.Body(), "temp", value)
-
+    helper.ProcessInbound(ctx, msg, types.EndpointIOPacket{
+        Fields: []types.EndpointIOField{
+            {
+                Name:     "data.temperature",
+                Type:     "float",
+                BindPath: "rulemsg://dataT/telemetry.temp?sid=TelemetryData",
+            },
+        },
+    }, bodyProvider)
     return msg, nil
 }
 ```
-通过这种方式，`http` 端点将一个扁平的HTTP请求，根据用户定义的规则，精确地“拆解”并“重组”成一个结构化的 `RuleMsg`，为后续的规则链处理做好了准备。
+
+通过这种方式，`endpoint/http` 把一个扁平的 HTTP 请求，根据声明式 `bindPath` 规则，重组为结构化 `RuleMsg`。这也是为什么当前所有 HTTP 映射文档都应围绕 `EndpointIOField` / `EndpointIOPacket` 来理解，而不是继续沿用旧版 `mapping.to` 语法。
 
 <!-- 链接定义区域 -->
 [Guide-ActionLog]: ./components/action_log_guide.md

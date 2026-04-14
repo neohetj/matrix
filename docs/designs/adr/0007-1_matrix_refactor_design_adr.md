@@ -4,7 +4,7 @@ uuid: "37175778-9583-4e9e-9400-f3bdfacc9872"
 type: "ADR"
 title: "设计：Matrix框架重构的抽象层与适配器"
 status: "Draft"
-owner: "@cline"
+owner: "neohetj"
 version: "1.3.0"
 tags:
   - "adr"

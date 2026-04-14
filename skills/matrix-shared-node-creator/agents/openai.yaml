@@ -1,0 +1,5 @@
+version: 1
+interface:
+  display_name: Matrix Shared Node Creator
+  short_description: 设计 Matrix shared/provider 节点与资源消费方式
+  default_prompt: Use $matrix-shared-node-creator to design or refactor Matrix shared/provider nodes, shared DSL containers, and resource consumers that resolve clients or pools through asset-based access.

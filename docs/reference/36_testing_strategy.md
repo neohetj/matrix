@@ -3,8 +3,8 @@ uuid: "f2a1b0c9-d8e7-4f6a-9b5c-4d3e2f1a0b9c"
 type: "TestingStrategy"
 title: "学习Matrix框架测试策略"
 status: "Draft"
-owner: "@Matrix-Core-Team"
-version: "1.0.0"
+owner: "neohetj"
+version: "1.1.0"
 tags:
   - "testing"
   - "strategy"
@@ -12,77 +12,87 @@ tags:
   - "integration-test"
 relations:
   - type: "is_referenced_by"
-    target_uuid: "a2c8d4e1-7b3e-4c2a-8f5d-9e1b3c4d5a6b" # -> Matrix节点/组件开发SOP
-    description: "The node development SOP requires developers to follow the testing strategy outlined here."
+    target_uuid: "60c07c47-df0e-4b76-9ed9-62fabe2e2add"
+    description: "参考-08 会引导开发者查阅当前测试策略。"
 ---
 
-# 如何为Matrix框架贡献测试 (TestingStrategy)
+# 如何为 Matrix 框架贡献测试
 
-本文档定义了为Matrix框架及其组件编写测试的官方策略和最佳实践。所有代码贡献都必须遵循本指南以确保代码质量和稳定性。
+本文档定义当前仓库的测试分层、推荐工具和提交流程。目标不是“测试越多越好”，而是让每次变更至少有与风险等级匹配的验证。
 
-## 1. 核心测试理念 (CorePhilosophy)
+## 1. 测试分层
 
-Matrix框架的测试策略遵循分层测试金字塔模型，主要包括三个层面：
-1.  **单元测试 (Unit Tests)**: 针对单个节点或函数的逻辑进行快速、隔离的验证。
-2.  **集成测试 (Integration Tests)**: 针对一条完整的规则链，验证多个节点协同工作的正确性。
-3.  **端到端测试 (End-to-End Tests)**: (未来规划) 针对承载Matrix核心引擎的完整应用（如Trinity）进行黑盒测试。
+Matrix 推荐三层测试：
 
-## 2. 单元测试最佳实践 (UnitTestingBestPractices)
+1. **单元测试**：验证单个节点、helper、映射器或注册器的局部逻辑。
+2. **集成测试**：验证规则链接线、`inputs/outputs`、relation、共享资源或运行时装配是否正确。
+3. **端到端测试**：验证接近真实入口的链路行为，例如 HTTP 入口、文件上传、告警处理。
 
-### 2.1. 优先使用依赖注入进行Mock (PreferDependencyInjectionForMocking)
+当前仓库中的典型位置：
 
-**核心原则**: 将被测单元与其外部依赖（网络、数据库、文件系统等）完全隔离。
+- 单元/集成：各包内 `*_test.go`
+- 公共测试工具：`test/utils/`
+- E2E 样例：`test/e2e_test/alert/`、`test/e2e_test/image_upload/`
 
-*   **[强制]** 当被测函数依赖于外部服务（如HTTP客户端、数据库连接）时，**禁止**在单元测试中进行真实的网络或I/O调用。
-*   **[推荐]** 最佳实践是将被测代码重构为依赖于一个**接口**，而不是一个具体的实现。例如，`external/httpClient` 节点依赖 `httpDoer` 接口，而不是 `*http.Client` 结构体。
-*   在测试中，可以提供一个实现了该接口的**Mock对象**，从而完全控制被测函数的输入和外部调用的输出，使测试更加稳定和可预测。
+## 2. 单元测试建议
 
-**示例：**
-```go
-// 在被测代码中
-type HttpClientNode struct {
-    // ...
-    client httpDoer // 依赖接口
-}
+### 2.1. 隔离外部依赖
 
-// 在测试代码中
-type mockHttpDoer struct {
-    doFunc func(req *http.Request) (*http.Response, error)
-}
+- 不要在单元测试里发真实 HTTP 请求。
+- 不要连真实数据库、Redis、Mongo。
+- 不要依赖本机环境状态或外部文件系统布局。
 
-func (m *mockHttpDoer) Do(req *http.Request) (*http.Response, error) {
-    return m.doFunc(req)
-}
+如果节点依赖外部系统，优先把依赖抽成接口或可替换 helper。例如 `external/httpClient` 使用 `httpDoer`，从而可以在测试中注入 mock client。
 
-func TestMyNode(t *testing.T) {
-    node := &HttpClientNode{...}
-    node.client = &mockHttpDoer{ // 注入Mock对象
-        doFunc: func(req *http.Request) (*http.Response, error) {
-            // 返回预设的响应或错误
-            return &http.Response{...}, nil
-        },
-    }
-    // ... 执行测试 ...
-}
-```
+### 2.2. 优先复用现有测试工具
 
-### 2.2. 使用通用测试工具 (UseCommonTestUtilities)
+仓库已经提供了通用测试工具，优先复用：
 
-为了简化测试的编写并保持一致性，Matrix在 `matrix/test` 包中提供了一系列通用的测试辅助工具。
+- `test/utils/MockNodeCtx`
+- `test/utils/TestLogger`
+- `test/utils/MockLogger`
+- `test/utils/NewTestRuleMsg`
+- `test/utils/GetRootError`
+- `test/utils/MockNodeManager`
+- `test/utils/MockEndpoint`
+- `test/utils/MockRuntimePool`
 
-*   **位置**: `matrix/test/`
-*   **核心工具**:
-    *   `test.MockNodeCtx`: 一个 `types.NodeCtx` 的Mock实现，用于捕获节点的输出 (`TellSuccess`, `TellFailure`) 以便在测试中断言。
-    *   `test.TestLogger`: 一个简单的 `types.Logger` 实现，它会将日志打印到标准输出，方便在 `go test` 运行时查看日志。
-    *   `test.MockLogger`: 一个 `types.Logger` 的Mock实现，它会捕获日志输出到一个内部缓冲区，用于对日志内容进行断言。
-    *   `test.NewTestRuleMsg()`: 一个辅助函数，用于快速创建一个用于测试的、空的 `RuleMsg`。
-    *   `test.GetRootError()`: 一个辅助函数，用于从一个嵌套的错误链中提取出根 `ErrorObj`。
+这些工具已经覆盖了节点执行、日志断言、builder/runtime 注入等高频场景，避免每个测试文件重复手写一套 mock。
 
-**[推荐]** 在编写新的单元测试时，应优先使用这些在 `matrix/test` 中定义的工具。
+## 3. 集成测试建议
 
-*（本文档为骨架文件，详细内容待后续填充。）*
+以下变更应优先补集成测试，而不是只写单测：
+
+1. 修改了 DSL `inputs` / `outputs` 绑定。
+2. 修改了 `EndpointIOPacket`、`BindPath`、`MapAll` 等映射规则。
+3. 修改了运行时组装逻辑，如 `builder`、`runtime`、`SharedNodePool`。
+4. 修改了 sub-chain、pipeline、forEach、object mapper 等跨节点编排能力。
+
+编写集成测试时，建议：
+
+- 用最小 DSL 只覆盖本次改动链路。
+- 显式断言 `DataT`、`Metadata`、relation 路由结果。
+- 若改动的是函数节点，单测函数实现，集成测 `type: "functions"` 的接线。
+
+## 4. 端到端测试建议
+
+只有在入口行为、序列化协议或跨模块链路发生变化时，才需要补 E2E。例如：
+
+- `endpoint/http` 的入参与回包语义变化
+- 文件上传、二进制处理
+- 真实告警/回调链路
+
+E2E 的目标不是替代单测，而是验证“前面所有拼图拼在一起后仍然成立”。
+
+## 5. 提交前检查清单
+
+- [ ] 是否为改动所在包补了至少一个边界或错误场景。
+- [ ] 是否为 DSL / runtime / mapping 变更补了最小集成测试。
+- [ ] 是否复用了 `test/utils`，而不是复制 mock。
+- [ ] 是否避免真实网络、真实数据库和脆弱环境依赖。
+- [ ] 如果修改了共享资源或映射规则，是否覆盖了失败路径。
 
 <!-- qa_section_start -->
-> **问：我应该为我的新节点优先编写哪种测试？**
-> **答：** 单元测试和集成测试都同样重要，缺一不可。你应该首先为节点内部的复杂业务逻辑编写单元测试，确保其在隔离环境下的正确性。然后，必须编写至少一个集成测试，将你的节点放入一个真实的规则链中，验证其在实际运行环境中的行为是否符合预期。
+> **问：新节点应该先写哪类测试？**
+> **答：** 先写单元测试锁住局部逻辑，再补一个最小集成测试验证接线、契约和 relation。如果变更了入口或跨模块行为，再补 E2E。
 <!-- qa_section_end -->

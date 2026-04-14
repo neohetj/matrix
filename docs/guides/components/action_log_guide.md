@@ -4,7 +4,7 @@ uuid: "c8f2b1d9-e5a6-4c7b-8d9e-0f1a2b3c4d5e"
 type: "ComponentGuide"
 title: "组件指南：日志记录 (action/log)"
 status: "Stable"
-owner: "@cline"
+owner: "neohetj"
 version: "1.0.0"
 tags:
   - "matrix"

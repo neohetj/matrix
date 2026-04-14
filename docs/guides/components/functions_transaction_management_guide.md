@@ -2,10 +2,10 @@
 # === Node Properties: 定义文档节点自身 ===
 uuid: "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"
 type: "ComponentGuide"
-title: "组件指南：数据库事务管理节点"
+title: "组件指南：事务函数编排模式"
 status: "Draft"
-owner: "@cline"
-version: "1.0.0"
+owner: "neohetj"
+version: "2.0.0"
 tags:
   - "matrix"
   - "component"
@@ -18,104 +18,108 @@ tags:
 relations:
   - type: "is_part_of"
     target_uuid: "a0b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d"
-    description: "本节点是Matrix核心能力层的功能组件之一。"
+    description: "本节点是 Matrix 核心能力层的事务编排实践之一。"
 ---
 
 # 1. 功能概述 (Overview)
 
-`Matrix` 提供了一组专门的功能节点来管理数据库事务的生命周期。这组节点通过 `context.Context` 共享事务对象，使得多个 `sqlQuery` 节点可以原子性地执行一系列数据库操作。
+Matrix 当前并不在 core 中硬编码 `startTransaction`、`commitTransaction`、`rollbackTransaction` 这类节点类型。更推荐的做法是：
 
-这组节点包括：
-*   **`startTransaction`**: 开启一个新事务。
-*   **`commitTransaction`**: 提交当前事务。
-*   **`rollbackTransaction`**: 回滚当前事务。
+1. 由宿主仓库注册事务相关 `functionName`
+2. 在 DSL 中统一使用 `type: "functions"`
+3. 通过 `configuration.functionName` 选择具体事务动作
+4. 通过 shared SQL client 或等价 provider 复用数据库连接
 
-这种设计将事务控制逻辑从业务逻辑节点中解耦出来，使得规则链的结构更清晰，逻辑更健壮。
+这样事务控制逻辑仍然能和业务 SQL 操作解耦，同时保持函数模型和当前 Matrix 实现一致。
 
-# 2. 节点详解 (NodeDetails)
+# 2. 推荐模型 (Recommended Model)
 
-## 2.1. `startTransaction`
-<span id="start-transaction"></span>
+典型事务链会包含三类函数：
 
-此节点负责开启一个数据库事务，并将其存储在 `context.Context` 中，以便后续节点使用。
+* **`startTransaction`**: 开启事务，并把事务句柄写入约定上下文
+* **`commitTransaction`**: 提交事务
+* **`rollbackTransaction`**: 回滚事务
 
-### 配置 (Configuration)
+这些 `functionName` 只是示例 ID，是否存在、字段名是什么，取决于宿主仓库自己的函数注册。
 
-| 配置键 (ID) | 名称 | 描述 | 类型 | 是否必须 | 默认值 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `dsn` | DSN或引用 | **必须**是一个指向共享DB节点的引用（格式为 `ref://<shared_node_id>`）。不支持临时连接。 | `string` | 是 | N/A |
-| `txContextKey` | 事务上下文键 | 用于在 `context` 中存储和检索事务对象的唯一键。 | `string` | 是 | `"tx"` |
+## 2.1. 配置建议
 
-## 2.2. `commitTransaction`
-<span id="commit-transaction"></span>
+建议把配置收敛到 `configuration.business`，而不是散落成一批临时字段：
 
-此节点用于提交一个由 `startTransaction` 开启的事务。
+| 配置键 | 描述 | 示例 |
+| :--- | :--- | :--- |
+| `sharedDb` | shared SQL client/provider 的引用或名字 | `ref://shared/sql/main` |
+| `txContextKey` | 事务句柄在上下文中的唯一键 | `"user_tx"` |
+| `query` | 事务内 SQL | `"UPDATE orders SET status = ? WHERE id = ?"` |
+| `args` | SQL 参数 | `["processing", "${data.orderId}"]` |
 
-### 配置 (Configuration)
+如果项目已经有统一的 `Options` struct 或 `business` schema，优先沿用现有命名。
 
-| 配置键 (ID) | 名称 | 描述 | 类型 | 是否必须 | 默认值 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `txContextKey` | 事务上下文键 | 必须与 `startTransaction` 节点中配置的键完全一致。 | `string` | 是 | `"tx"` |
-
-## 2.3. `rollbackTransaction`
-<span id="rollback-transaction"></span>
-
-此节点用于回滚一个由 `startTransaction` 开启的事务。通常连接在业务处理失败的分支上。
-
-### 配置 (Configuration)
-
-| 配置键 (ID) | 名称 | 描述 | 类型 | 是否必须 | 默认值 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `txContextKey` | 事务上下文键 | 必须与 `startTransaction` 节点中配置的键完全一致。 | `string` | 是 | `"tx"` |
-
-# 3. 如何使用 (UsagePattern)
-
-事务管理节点的典型使用模式是构建一个有成功和失败分支的规则链。
+# 3. 使用方式 (Usage Pattern)
 
 ```mermaid
 flowchart TD
-    startTx["1、startTransaction"] --> updateOrder{"2、sqlQuery（更新订单）"};
-    updateOrder -- 成功 --> deductStock{"3、sqlQuery（扣减库存）"};
-    deductStock -- 成功 --> commitTx["4、commitTransaction"];
-    updateOrder -- 失败 --> rollbackTx["5、rollbackTransaction"];
+    startTx["1、functions(startTransaction)"] --> updateOrder{"2、functions(sqlQuery)"};
+    updateOrder -- 成功 --> deductStock{"3、functions(sqlQuery)"};
+    deductStock -- 成功 --> commitTx["4、functions(commitTransaction)"];
+    updateOrder -- 失败 --> rollbackTx["5、functions(rollbackTransaction)"];
     deductStock -- 失败 --> rollbackTx;
 ```
 
-### 3.1. DSL示例 (DSLExample)
+### 3.1. DSL 示例 (DSL Example)
 
 ```json
 {
-  "ruleChain": { ... },
+  "ruleChain": { "...": "..." },
   "metadata": {
     "nodes": [
       {
         "id": "startTx",
-        "type": "functions/startTransaction",
+        "type": "functions",
         "name": "开启事务",
-        "configuration": { "dsn": "ref://my_db", "txContextKey": "user_tx" }
+        "configuration": {
+          "functionName": "startTransaction",
+          "business": {
+            "sharedDb": "ref://shared/sql/main",
+            "txContextKey": "user_tx"
+          }
+        }
       },
       {
         "id": "updateOrder",
-        "type": "functions/sqlQuery",
+        "type": "functions",
         "name": "更新订单状态",
         "configuration": {
-          "dsn": "ref://my_db",
-          "txContextKey": "user_tx",
-          "query": "UPDATE orders SET status = 'processing' WHERE id = ?",
-          "params": ["${data.orderId}"]
+          "functionName": "sqlQuery",
+          "business": {
+            "sharedDb": "ref://shared/sql/main",
+            "txContextKey": "user_tx",
+            "query": "UPDATE orders SET status = ? WHERE id = ?",
+            "args": ["processing", "${data.orderId}"]
+          }
         }
       },
       {
         "id": "commitTx",
-        "type": "functions/commitTransaction",
+        "type": "functions",
         "name": "提交事务",
-        "configuration": { "txContextKey": "user_tx" }
+        "configuration": {
+          "functionName": "commitTransaction",
+          "business": {
+            "txContextKey": "user_tx"
+          }
+        }
       },
       {
         "id": "rollbackTx",
-        "type": "functions/rollbackTransaction",
+        "type": "functions",
         "name": "回滚事务",
-        "configuration": { "txContextKey": "user_tx" }
+        "configuration": {
+          "functionName": "rollbackTransaction",
+          "business": {
+            "txContextKey": "user_tx"
+          }
+        }
       }
     ],
     "connections": [
@@ -127,22 +131,34 @@ flowchart TD
 }
 ```
 
-# 4. 数据契约 (DataContract)
+# 4. 设计要点 (Design Notes)
 
-这组事务管理节点**不会以任何方式修改** `RuleMsg` 的 `Data`、`DataT` 或 `Metadata` 字段。它们只通过 `context.Context` 传递事务状态，对消息本身是透明的。
+1. 事务生命周期应依赖 shared SQL client 或等价 provider，不要在每个函数节点里临时建连接。
+2. 事务句柄的传播建议走上下文或 shared runtime state，而不是把事务对象塞进业务 DataT。
+3. `sqlQuery`、`startTransaction`、`commitTransaction`、`rollbackTransaction` 是否存在，取决于宿主仓库的函数注册；Matrix core 只提供通用 `functions` 节点壳。
+4. 如果事务函数同时依赖 shared SQL client，优先配合 `matrix-shared-node-creator` 设计 provider/consumer 边界。
 
-# 5. 错误处理 (ErrorHandling)
+# 5. 错误处理 (Error Handling)
 
-*   **`startTransaction`**:
-    *   如果 `dsn` 指向的是一个临时连接而不是共享连接 (`ref://...`)，会失败。
-    *   如果数据库无法开启事务，会失败。
-*   **`commitTransaction` / `rollbackTransaction`**:
-    *   如果在 `context` 中找不到指定 `txContextKey` 对应的事务对象，会失败。
-    *   如果数据库提交或回滚操作失败，会失败。
+常见失败点包括：
+
+* shared DB 引用不存在或 provider 未初始化
+* `txContextKey` 不一致，导致提交/回滚节点拿不到事务句柄
+* SQL 执行失败
+* 事务已经结束却重复提交/回滚
+
+# 6. 相关 Skill (Related Skills)
+
+* `matrix-function-node-creator`
+* `matrix-shared-node-creator`
+* `matrix-test-author`
 
 <!-- qa_section_start -->
-> **问：为什么 `startTransaction` 强制要求使用共享数据库连接？**
-> **答：** 因为事务的生命周期必须跨越多个节点。如果 `startTransaction` 使用一个临时的、用完即关的数据库连接，那么它创建的事务在节点执行完毕后就会随着连接的关闭而失效。后续的 `sqlQuery` 或 `commitTransaction` 节点将无法找到这个事务。只有共享的、长生命周期的数据库连接才能保证事务在整个规则链的执行过程中都保持有效。
+> **问：为什么文档不再使用 `type: "functions/sqlQuery"`？**
+> **答：** 因为当前 Matrix core 的通用函数执行器类型是 `functions`，真正决定调用哪个函数的是 `configuration.functionName`。把函数 ID 写进节点类型，会和当前实现脱节。
+
+> **问：事务函数一定是 Matrix core 自带的吗？**
+> **答：** 不一定。它们更常见于宿主仓库或业务模块注册的函数集合。本文档描述的是推荐编排模式，不是 core 内建组件清单。
 <!-- qa_section_end -->
 
 <!-- 链接定义区域 -->

@@ -3,8 +3,8 @@ uuid: "c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f"
 type: "RFC"
 title: "需求：Matrix通用Agent与LLM核心节点"
 status: "Draft"
-owner: "@cline"
-version: "1.0.0"
+owner: "neohetj"
+version: "2.1.0"
 tags:
   - "rfc"
   - "design"
@@ -14,14 +14,24 @@ tags:
 relations:
   - type: "realizes"
     target_uuid: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
-    description: "本RFC是任务“在Matrix中实现大模型与Agent相关节点”的核心需求定义。"
+    description: "[external] 这仍然是一份 Agent 能力需求草案。"
 ---
 
 # RFC: Matrix通用Agent与LLM核心节点 (Title)
 
+> Historical note: 本文保留原始 RFC 提案正文。尚未实现的现状说明统一放在文末附录，原始需求点不得被“当前状态”章节替代。
+
 ## 1. 摘要 (Summary)
 
 本RFC提议在Matrix框架中引入一套通用的、与平台无关的AI Agent核心节点，包括LLM调用、工具执行、记忆管理和循环控制。这将使Matrix具备原生的Agent编排能力，同时将特定平台的交互（如macOS UI操作）解耦为可插拔的工具。
+
+### 原始需求点总结
+
+1. Matrix 需要一套平台无关的 Agent 核心能力，让“思考、记忆、控制、工具调用”成为可复用编排单元，而不是每个 Agent 项目都重写一遍。
+2. LLM 调用和工具执行需要有标准接口，便于把桌面、Web、服务端等不同环境的能力都挂接到同一条 Agent 链路里。
+3. Agent 循环控制不能依赖在 DSL 中画有环图，而应有一个明确的控制节点和状态持久化模型来驱动多轮执行。
+4. 平台相关的观察与动作能力应下沉为工具，而不是和 Agent 主控制逻辑强耦合，这样才能支持多平台扩展。
+5. 新节点体系需要兼容 Matrix 现有函数、共享资源和 tracing 机制，避免把 Agent 子系统做成一套割裂的新运行时。
 
 ## 2. 动机 (Motivation)
 
@@ -90,3 +100,33 @@ relations:
 > **问：这个设计如何支持Web Agent？**
 > **答：** 非常简单。我们只需额外实现一套Web环境的工具（如`WebPageReaderTool`, `DOMClickTool`），并在规则链中让`ToolExecutorNode`加载这些Web工具即可。Agent的核心控制和思考逻辑完全不需要改变。
 <!-- qa_section_end -->
+
+## 8. 附录：当前状态
+
+截至当前代码状态，仓库中还没有本文描述的通用 Agent 核心节点实现。
+
+### 8.1 当前未发现的能力
+
+当前仓库中未发现：
+
+- `AgentControllerNode`
+- `LLMNode`
+- `ToolExecutorNode`
+- `MemoryNode`
+- `StoreNode`
+
+### 8.2 可视为未来底座的现有能力
+
+目前已有的一些基础能力，可以作为未来实现本 RFC 的底座：
+
+- `functions` 节点与函数注册机制
+- shared/provider 资源模型
+- HTTP endpoint / httpClient
+- trace 与运行时执行链
+- `config://` / `rulemsg://` 资产解析
+
+### 8.3 当前应该如何阅读本文
+
+1. 第 `1-7` 节是原始需求与设计提案
+2. 本附录只是解释“为什么它仍然是 Draft”
+3. 不应把本文中的节点清单当成当前已经存在的内建能力

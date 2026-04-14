@@ -23,6 +23,8 @@ Skill 触发口令：`$matrix-function-node-creator`
 ## Skill Handoff
 
 - 只做 DSL 设计与编排：先走 `matrix-requirement-to-dsl`（项目内再接 `*-dsl-adapter`）。
+- 函数节点依赖 shared/client/pool 资源：并行使用 `matrix-shared-node-creator` 统一 provider/consumer 边界。
+- 需要补测试方案或回归覆盖：实现完成后使用 `matrix-test-author`。
 - 需要落地/改造函数节点代码：使用本 skill。
 
 ## Mandatory Rules
@@ -43,12 +45,14 @@ Skill 触发口令：`$matrix-function-node-creator`
 14. 测试默认使用外部包（`xxx_test`）；仅在必要时保留极小的测试缝隙，避免长期维护 `testing_exports.go` 这类生产代码污染。
 15. `support` 不定义域错误 sentinel（`ErrXxx`）与存储实现（`*_store.go`）；错误定义放 `errors`（必要时 `errdefs`），存储实现放 `infrastructure`。
 16. 需要对外暴露函数时，直接把实现函数定义为导出（`PascalCase`）；禁止新增“导出壳函数仅 `return privateFn(...)`”的双函数形态。
+17. 普通函数默认只能通过 `TellSuccess/TellFailure/HandleError` 结束；如果必须直接发自定义 `TellNext`，必须把该函数显式声明为 `decision` 路由模式，并在元数据中完整声明 `DeclaredRelations`。
+18. 如果路由判断可以先产出事实再交给 `action/exprSwitch`，必须优先采用 `exprSwitch`；不要把普通业务函数做成隐式路由器。
 
 ## Workflow
 
 1. 选择最近似函数节点作为基线，优先复用同类参数和输出结构。
 2. 先定义边界：哪些参数由 Matrix adapter 负责读取，哪些配置收敛为 `Options` struct，logger 适配点放在哪里；如果仓库已有通用 `AdaptNodeLogger/ResolveLogger/StdLogger`，优先直接复用。
-3. 编写 `XxxFuncObj` 并声明完整 `Inputs/Outputs/Business`。
+3. 编写 `XxxFuncObj` 并声明完整 `Inputs/Outputs/Business`；默认不声明路由模式，按标准函数处理。只有在确实需要代码内路由时，才显式设置 `RoutingMode=decision` 和 `DeclaredRelations`。
 4. 编写 `Xxx(ctx, msg)`：取参/读配置 -> 构造 `Options` -> 通过通用 logger adapter 适配 logger -> 调 `XxxImpl` -> 写回输出 -> `TellSuccess`。
    列表输入如果要传给 `XxxImpl`，在 adapter 层先用 `GetParam[*[]T]` 取值并解引用，再把普通 `[]T` 传下去。
 5. 编写 `XxxImpl(context.Context, bizlog.Logger, ...)`，保证业务逻辑可被非 Matrix 场景直接调用；该实现与入口函数放在同一个 `node_<capability>.go` 文件。

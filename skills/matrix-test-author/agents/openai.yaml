@@ -1,0 +1,5 @@
+version: 1
+interface:
+  display_name: Matrix Test Author
+  short_description: 为 Matrix 改动设计最小有效测试方案
+  default_prompt: Use $matrix-test-author to choose and add the smallest effective tests for Matrix function nodes, shared providers, HTTP mappings, and DSL behavior changes.

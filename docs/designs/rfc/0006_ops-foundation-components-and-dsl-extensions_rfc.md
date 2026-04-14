@@ -2,27 +2,42 @@
 uuid: "978c1b44-65eb-43ef-bcf8-793c1793a0b3"
 type: "RFC"
 title: "需求：运维基础组件与DSL扩展"
-status: "Draft"
-owner: "@cline"
-version: "1.0.0"
+status: "Implementing"
+owner: "neohetj"
+version: "2.1.0"
 tags:
   - "rfc"
   - "design"
   - "ops"
   - "dsl"
   - "node"
-
 relations:
   - type: "is_based_on"
-    target_uuid: "task-0004-uuid" # -> 指向我们创建的任务定义
-    description: "本RFC是为实现任务0004中定义的目标而创建的。"
+    target_uuid: "eff7782a-52fe-4a3e-a38f-85321e43208a"
+    description: "[external] 本 RFC 仍然对应一条外部运维建模需求。"
+  - type: "is_explained_by"
+    target_uuid: "4231ef33-0963-4b9c-87c9-76277c7e8472"
+    description: "当前已落地的 `ops/*` 节点与建模方式见对应组件指南。"
+  - type: "is_formalized_by"
+    target_uuid: "5a8b3c7e-9f0d-4a1b-8c2d-6e5f4a3b2c1d"
+    description: "当前 DSL 中 `relations` / `imports` / `attrs` 的现行语义以 Reference-18 为准。"
 ---
 
 # RFC: 运维基础组件与DSL扩展 (OpsFoundationComponentsAndDslExtensions)
 
+> Historical note: 本文保留原始 RFC 提案正文。后续实现状态、与现状的偏差和已落地范围，统一追加在“附录：当前实现对齐”部分，原始需求点不得被覆盖。
+
 ## 1. 摘要 (Summary)
 
 本RFC提议为Matrix规则引擎框架引入一套可复用的运维（Ops）基础组件，并对现有的规则链DSL进行向上兼容的扩展。目标是建立一个灵活、可维护的运维自动化模型，该模型能够将静态的拓扑定义与动态的、可执行的工作流分离开来，同时支持多视角的建模和分析。
+
+### 原始需求点总结
+
+1. Matrix 需要能直接表达机器、服务、应用、数据库等运维实体，而不是只靠通用节点间接拼出拓扑。
+2. DSL 需要同时承载“可执行流程”和“逻辑/部署关系”，避免执行链路与拓扑建模混在同一套连接语义里。
+3. 基础拓扑定义应可以被多个工作流复用，因此需要 `imports` 一类机制把“拓扑即数据”和“流程即控制器”拆开。
+4. 可视化和静态分析工具需要读取更丰富的关系信息，以支持执行视图、拓扑视图和混合视图等多视角渲染。
+5. 这套扩展必须尽量向后兼容，不能让现有 DSL 和运行时因为新增 ops 建模能力而大面积破坏。
 
 ## 2. 动机 (Motivation)
 
@@ -94,3 +109,39 @@ relations:
 > **问：`Matrix` 运行时会如何处理 `relations`？**
 > **答：** `Matrix` 运行时将**完全忽略** `relations` 数组。它的存在纯粹是为了外部工具（如拓扑图生成器、静态分析器）使用。这确保了对核心执行引擎的零影响。
 <!-- qa_section_end -->
+
+## 8. 附录：当前实现对齐
+
+### 8.1 已落地部分
+
+当前仓库已经具备：
+
+1. `ops/*` 基础节点
+2. `ruleChain.attrs.executable`
+3. `ruleChain.attrs.viewType`
+4. `ruleChain.attrs.imports`
+5. `metadata.relations`
+6. `imports` 递归合并逻辑
+
+### 8.2 与原始 RFC 的主要偏差
+
+原始提案与当前实现之间的主要差异是：
+
+1. DSL 扩展最终落在 `ruleChain.attrs.*`，而不是原文里的根级 `metadata.*`
+2. `relations` 最终落在 `metadata.relations`
+3. `imports` 递归合并最终在 builder merge 阶段完成，而不是独立 parser 包
+4. `ops/*` 节点目前更偏静态拓扑建模，尚未完整落地“消息驱动探测 + 内部动态 state”
+
+### 8.3 当前应该如何阅读本文
+
+阅读这份 RFC 时：
+
+1. 第 `1-7` 节视为原始需求与设计提案
+2. 本附录视为“实现回写”
+3. 现行规范与代码行为，应再结合 Reference 文档一起理解
+
+## 9. 相关现行文档
+
+1. [组件指南：运维拓扑节点 (ops/*)](../../guides/components/ops_topology_nodes_guide.md)
+2. [学习 Matrix DSL 规范](../../reference/18_dsl_specification.md)
+3. [0006-1：Ops Components and DSL Implementation Plan](../plan/0006-1_ops-components-and-dsl-impl_plan.md)

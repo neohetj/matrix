@@ -366,11 +366,82 @@ func (r *DefaultRuntime) buildChainInstance(chainDef *types.RuleChainDef) (types
 	}
 
 	// Validate data contracts between connected nodes.
+	if err := r.validateFunctionRouting(instance); err != nil {
+		return nil, fmt.Errorf("function routing validation failed: %w", err)
+	}
+
+	// Validate data contracts between connected nodes.
 	if err := r.validateDataContract(instance); err != nil {
 		return nil, fmt.Errorf("data contract validation failed: %w", err)
 	}
 
 	return instance, nil
+}
+
+func (r *DefaultRuntime) validateFunctionRouting(instance types.ChainInstance) error {
+	var funcMgr types.NodeFuncManager
+	if r.engine != nil && r.engine.NodeFuncManager() != nil {
+		funcMgr = r.engine.NodeFuncManager()
+	} else if types.DefaultRegistry != nil {
+		funcMgr = types.DefaultRegistry.GetNodeFuncManager()
+	}
+	if funcMgr == nil {
+		return nil
+	}
+
+	for _, def := range instance.Definition().Metadata.Nodes {
+		if def.Type != "functions" {
+			continue
+		}
+
+		functionName, ok := types.GetConfigMap[string](def.Configuration, "functionName")
+		if !ok || strings.TrimSpace(functionName) == "" {
+			continue
+		}
+
+		funcObj, ok := funcMgr.Get(functionName)
+		if !ok || funcObj == nil {
+			// Preserve existing behavior: unresolved functions fail at execution time.
+			continue
+		}
+
+		cfg := funcObj.FuncObject.Configuration
+		mode := cfg.EffectiveRoutingMode()
+		allowed := map[string]struct{}{
+			"Success": {},
+			"Failure": {},
+		}
+		if mode == types.FunctionRoutingModeDecision {
+			for _, relation := range cfg.DeclaredRelations {
+				allowed[relation] = struct{}{}
+			}
+		}
+
+		for _, conn := range instance.GetConnections(def.ID) {
+			if _, ok := allowed[conn.Type]; ok {
+				continue
+			}
+			switch mode {
+			case types.FunctionRoutingModeDecision:
+				return fmt.Errorf(
+					"functions node '%s' uses relation '%s' not declared by decision function '%s' (declared: %v)",
+					def.ID,
+					conn.Type,
+					functionName,
+					cfg.DeclaredRelations,
+				)
+			default:
+				return fmt.Errorf(
+					"functions node '%s' uses unsupported relation '%s'; standard function '%s' may only connect via Success/Failure",
+					def.ID,
+					conn.Type,
+					functionName,
+				)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (r *DefaultRuntime) validateDataContract(instance types.ChainInstance) error {

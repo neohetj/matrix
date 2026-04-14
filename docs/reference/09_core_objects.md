@@ -4,7 +4,7 @@ uuid: "b8c1d4e1-7b3e-4c2a-8f5d-9e1b3c4d5a6b"
 type: "Specification"
 title: "参考: 核心数据契约 (CoreObj)"
 status: "Stable"
-owner: "@cline"
+owner: "neohetj"
 version: "2.0.0"
 tags:
   - "core-objects"

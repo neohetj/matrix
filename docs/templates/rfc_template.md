@@ -1,11 +1,11 @@
 ---
 uuid: "GENERATED_UUID" # (必填) 创建新文档时，AI Agent应自动生成一个符合RFC 4122标准的小写UUID；人类开发者可使用`uuidgen | tr '[:upper:]' '[:lower:]'`等工具生成。
 type: "RFC"
-# [重要] 请确保本文档的文件名遵循《设计文档命名规范》中定义的 `NNNN_<description>_rfc.md` 格式，并与下方的标题保持一致。
-# 规范文档链接: ../../../../docs/reference/04_semantic_documentation_standard.md#5-文件命名规范-filenameconvention
+# [重要] 请确保本文档的文件名遵循 `NNNN_<description>_rfc.md` 格式，并与下方的标题保持一致。
+# [重要] `<description>` 应为小写主题描述，允许使用 `_` 或 `-` 分隔单词。
 title: "需求：[一个简洁且描述性的标题]"
 status: "Draft" # -> InReview -> Accepted/Rejected/Superseded
-owner: "@your-name"
+owner: "neohetj"
 version: "1.0.0"
 tags:
   - "rfc"
@@ -15,13 +15,30 @@ relations:
   - type: "relates_to"
     target_uuid: "[UUID of related doc]"
     description: "Describes the relationship."
+# 如果暂时没有关联文档，允许改为 `relations: []`，但不要保留空的 target_uuid。
+# 当 RFC 进入 Accepted / Implementing 阶段后，请至少补一条指向 `docs/guides/` 或 `docs/migration/`
+# 当前使用文档的 relation；如果还没有对应 guide，应先创建 guide 再回写 RFC。
 ---
+
+<!--
+维护约定：
+1. 本模板生成的第 1-7 节应视为“原始 RFC 正文”。
+2. 后续如果需要回写实现状态，请在文末追加“附录：当前实现对齐”或“附录：历史注记”。
+3. 不要直接把第 1-7 节改写成“当前实现说明”，否则会丢失原始需求点。
+4. 当 RFC 进入 Accepted / Implementing 阶段后，应在文末补“相关现行文档”章节，链接当前 guide / migration / reference。
+5. 正文前部必须包含一个明确命名为 `原始需求点总结` 的小节，用分点方式保留最初需求，而不是只保留后来的实现说明。
+6. 当 RFC 进入 Accepted / Implementing 阶段后，必须补 `当前实现对齐`（或 `附录：当前实现对齐`）章节，说明已落地范围、偏差、剩余缺口与当前入口文档。
+-->
 
 # RFC: [一个简洁且描述性的标题] (Title)
 
 ## 1. 摘要 (Summary)
 
 *（用一到两句话高度概括这个RFC的核心提议。读者应该能通过摘要快速了解这个变更的目的。）*
+
+### 原始需求点总结
+
+*（用 3-6 个要点总结最初的需求点。建议覆盖：当前痛点、典型用例、核心目标、关键边界/约束。这里应是对原始需求的提炼，而不是“当前实现状态”的摘要。）*
 
 ## 2. 动机 (Motivation)
 
@@ -71,3 +88,11 @@ relations:
 > **问：这个功能的性能如何？是否做过基准测试？**
 > **答：** ...
 <!-- qa_section_end -->
+
+## 8. 附录：当前实现对齐 (进入 Accepted / Implementing 后必填)
+
+*（当 RFC 进入 Accepted / Implementing 阶段后，本节必须补充。至少说明：哪些能力已落地、哪些部分仍未落地或与原提案不同、当前应参考哪些 guide / reference / migration 文档。）*
+
+## 9. 相关现行文档 (进入 Accepted / Implementing 后补)
+
+*（当 RFC 进入 Accepted / Implementing 阶段后，请在这里补充当前 guide / migration / reference 链接；如果涉及新节点或新协议但没有 guide，应先创建对应 guide。）*

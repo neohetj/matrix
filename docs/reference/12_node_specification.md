@@ -1,11 +1,11 @@
 ---
 # === Node Properties: 定义文档节点自身 ===
-uuid: "node-spec-20250911"
+uuid: "f745eae6-f75c-4849-b7fb-407d6c439182"
 type: "Specification"
 title: "参考-12: 通用节点规范"
 status: "Draft"
-owner: "@cline"
-version: "1.0.0"
+owner: "neohetj"
+version: "1.1.0"
 tags:
   - "matrix"
   - "reference"
@@ -16,190 +16,180 @@ tags:
 # === Node Relations: 定义与其他文档节点的关系 ===
 relations:
   - type: "is_referenced_by"
-    target_uuid: "dev-patterns-entrypoint-20250911" # -> 08_node_development_patterns.md
-    description: "本文档为节点开发模式提供了底层的、详细的实现规范。"
+    target_uuid: "60c07c47-df0e-4b76-9ed9-62fabe2e2add"
+    description: "本文档为节点开发模式提供底层实现规范。"
   - type: "supersedes"
-    target_uuid: "d8a3bfe2-0a7e-4b3a-9c1d-8e7f6a5b4c3d" # -> 24_data_contract_specification.md
-    description: "本文档吸收并取代了旧的数据合约规范。"
+    target_uuid: "d8a3bfe2-0a7e-4b3a-9c1d-8e7f6a5b4c3d"
+    description: "[external] 本文档吸收并取代了一份仓外历史数据合约规范。"
   - type: "supersedes"
-    target_uuid: "d9e8f7c6-4b1f-4b9e-9c3a-1f8e6d2c5b4a" # -> 12_node_lifecycle.md
-    description: "本文档吸收并取代了旧的节点生命周期文档。"
+    target_uuid: "d9e8f7c6-4b1f-4b9e-9c3a-1f8e6d2c5b4a"
+    description: "[external] 本文档吸收并取代了一份仓外历史节点生命周期文档。"
 ---
 
 # 参考-12: 通用节点规范
 
-本文档为 `Matrix` 框架中所有**通用组件节点 (Component Node)** 的开发者，提供了权威的技术规范和最佳实践。
+本文档定义 Matrix 通用节点的当前实现规范，重点覆盖生命周期、数据契约和共享资源依赖。本文档以当前代码为准，而不是早期的 `ReadsData` / `ReadsMetadata` 旧字段口径。
 
-## 1. 核心接口与生命周期 (CoreInterfaceAndLifecycle)
+## 1. 生命周期 (Lifecycle)
 
-一个节点（Node）从注册到销毁的完整生命周期如下图所示。理解生命周期对于正确地开发和使用节点至关重要。
+一个节点从注册到销毁的主流程如下：
 
 ```mermaid
 flowchart TD
-    subgraph "设计时"
-        direction TB
-        code["1、编码<br/>实现types.Node接口"]
+    subgraph "启动时"
+        register["1. 通过 init() 注册 prototype"]
     end
 
-    subgraph "启动时（App Startup）"
-        direction TB
-        register["2、注册<br/>通过init()函数调用registry.Register()"]
-        code --> register
+    subgraph "运行时"
+        create["2. NodeManager.NewNode() 创建实例"]
+        setMeta["3. runtime 设置 ID / Name"]
+        init["4. Init(configuration)"]
+        bind["5. 可选 BindNodeDef(def)"]
+        onMsg["6. OnMsg(ctx, msg)"]
+        destroy["7. Destroy()"]
     end
 
-    subgraph "运行时（RuleChain Execution）"
-        direction TB
-        create["3、创建实例<br/>引擎调用节点的New()方法"]
-        init["4、初始化<br/>引擎调用节点的Init(config)方法"]
-        process["5、处理消息<br/>引擎调用节点的OnMsg(ctx, msg)方法"]
-        destroy["6、销毁<br/>规则链结束时调用节点的Destroy()方法"]
-        
-        register --> create
-        create --> init
-        init --> process
-        process -- 循环处理 --> process
-        process --> destroy
-    end
+    register --> create --> setMeta --> init --> bind --> onMsg --> destroy
 ```
 
-### 1.1. 阶段一：注册 (Registration)
+关键点：
 
-*   **时机**: 应用程序启动时，由Go语言的 `init()` 函数触发。
-*   **动作**: 开发者调用 `registry.Default.NodeManager.Register()` 方法，将一个节点的“原型”实例注册到全局管理器中。
-*   **目的**: 让框架知道存在这样一种类型的节点，并保留一个原型用于后续创建实例。
+1. 节点 prototype 在启动期注册到 `NodeManager`。
+2. 规则链加载时，运行时按 `NodeDef.Type` 创建实例。
+3. 实例会先被设置 `ID` / `Name`，再收到 `Init(configuration)`。
+4. 如果节点实现了 `types.NodeDefBinding`，运行时会在 `Init` 后注入 `NodeDef`，便于读取 `inputs` / `outputs` 等 DSL 绑定信息。
 
-### 1.2. 阶段二：创建 (Instantiation)
+## 2. 数据合约 (DataContract)
 
-*   **时机**: 运行时引擎加载一条规则链（Rule Chain）的定义时。
-*   **动作**: 引擎从注册中心找到该节点类型的原型，并调用其 `New()` 方法来创建一个新的、干净的节点实例。
-*   **核心方法**: `New() Node`
-*   **目的**: 为规则链中的每个节点定义创建一个独立的、隔离的实例。
+当前实现使用统一的读写 URI 契约，而不是旧版的三段式字段。
 
-### 1.3. 阶段三：初始化 (Initialization)
+### 2.1. 静态声明入口
 
-*   **时机**: 节点实例被创建之后，处理任何消息之前。
-*   **动作**: 引擎调用节点实例的 `Init(configuration Config)` 方法，将该节点在规则链DSL中定义的配置信息传递给它。
-*   **核心方法**: `Init(configuration Config) error`
-*   **目的**: 使节点实例进入可处理消息的状态。节点在此阶段应解析配置、初始化内部状态、获取共享资源引用等。
-
-### 1.4. 阶段四：处理消息 (Message Processing)
-
-*   **时机**: 当有 `RuleMsg` 流入该节点时。
-*   **动作**: 引擎调用节点的 `OnMsg(ctx NodeCtx, msg RuleMsg)` 方法。这是节点执行其核心业务逻辑的地方。此方法可能会被反复调用多次。
-*   **核心方法**: `OnMsg(ctx NodeCtx, msg RuleMsg)`
-*   **目的**: 执行业务逻辑，处理和传递消息。
-
-### 1.5. 阶段五：销毁 (Destruction)
-
-*   **时机**: 当规则链执行完毕，或者运行时引擎关闭时。
-*   **动作**: 引擎调用节点实例的 `Destroy()` 方法。节点在此阶段应释放其占用的所有资源。
-*   **核心方法**: `Destroy()`
-*   **目的**: 防止资源泄露，确保系统稳定。
-
-## 2. 数据合约规范 (DataContractSpecification)
-
-数据合约的核心思想是：**让节点通过元数据，静态地声明其对消息（`RuleMsg`）中不同数据层的访问模式。** 这使得框架能够进行静态分析、UI智能提示，并保证节点间数据交互的正确性。
-
-### 2.1. 契约声明API (ContractDeclarationAPI)
-
-对于通用组件节点，数据合约直接在其 `NodeMetadata` 结构体中声明。
+通用节点通过 `NodeMetadata` 声明契约：
 
 ```go
-// in: matrix/pkg/types/node.go
-
-// MetadataDef 描述了对一个元数据键的读或写
-type MetadataDef struct {
-    Key         string `json:"key"`
+type ContractDef struct {
+    URI         string `json:"uri"`
     Description string `json:"description"`
 }
 
-// NodeMetadata 描述一个节点的静态元数据
 type NodeMetadata struct {
     Type        string   `json:"type"`
     Name        string   `json:"name"`
-    // ... (其他字段)
+    Description string   `json:"description"`
+    Dimension   string   `json:"dimension"`
+    Tags        []string `json:"tags"`
+    Version     string   `json:"version"`
+    Icon        string   `json:"icon,omitempty"`
 
-    // [数据合约] 声明节点从原始 RuleMsg.Data 中读取的字段路径列表。
-    // 例如: ["customer.name", "order.id"]
-    ReadsData []string `json:"readsData,omitempty"`
-
-    // [数据合约] 声明节点读取的元数据键。
-    ReadsMetadata []MetadataDef `json:"readsMetadata,omitempty"`
-
-    // [数据合约] 声明节点写入的元数据键。
-    WritesMetadata []MetadataDef `json:"writesMetadata,omitempty"`
+    NodeReads  []ContractDef `json:"nodeReads,omitempty"`
+    NodeWrites []ContractDef `json:"nodeWrites,omitempty"`
 }
 ```
 
-### 2.2. 与 `function` 节点的区别 (DifferenceFromFunctions)
+对运行时和分析工具暴露的统一视图是：
 
--   **通用节点**: 如上所示，在 `NodeMetadata` 中声明对 `RuleMsg.Data` 和 `RuleMsg.Metadata` 的访问。它们通常不直接操作类型化的 `DataT` 容器。
--   **`function`**: `function` 是 `DataT` 的主要生产者和消费者。因此，它的**完整数据合约**（包括对 `DataT` 的 `Inputs/Outputs`）被定义在其更具体的 `FuncObject.Configuration` 中。详情请参阅 **[参考-11: 函数开发与注册规范][Ref-FuncSpec]**。
+```go
+type DataContract struct {
+    Reads  []string
+    Writes []string
+}
+```
 
-## 3. 共享资源依赖规范 (SharedResourceDependency)
+嵌入 `types.BaseNode` 的节点通常不需要自己实现 `DataContract()`；`BaseNode` 会自动把 `NodeReads` / `NodeWrites` 展开成 `[]string`。
 
-通用节点经常需要与外部的、共享的、昂贵的资源（如数据库连接池、HTTP客户端）进行交互。`Matrix` 提供了一套基于 `SharedNode` 和 `NodePool` 的标准机制来管理这类依赖。
+### 2.2. 常见 URI 约定
 
-### 3.1. `SharedNode`: 资源提供者
+当前仓库里最常用的契约 URI 包括：
 
-一个节点如果需要提供一个可被共享的资源实例（如 `*sql.DB`），它必须实现 `SharedNode` 接口。最佳实践是嵌入 `base.Shareable[T]` 泛型工具来自动实现。
+- `rulemsg://metadata/requestId`
+- `rulemsg://data`
+- `rulemsg://data/result?format=JSON`
+- `rulemsg://dataT/userProfile?sid=UserProfileV1`
+- `rulemsg://dataT/userProfile.name?sid=UserProfileV1`
 
-### 3.2. `ref://`: 资源引用协议
+约定说明：
 
-一个节点如果需要消费一个共享资源，它应该在其 `configuration` 中接收一个字符串参数，该参数的值遵循 `ref://` 协议。
+- `metadata`：声明读写消息元数据。
+- `data`：声明读写原始消息体。
+- `dataT`：声明读写结构化业务对象。
+- `sid`：补充 `DataT` 对象类型信息。
+- `format`：补充 `msg.Data()` 的序列化格式信息。
 
-**示例 (来自 `sql_query` 节点的DSL配置)**:
+### 2.3. 与函数节点的关系
+
+- **通用节点**：通过 `NodeMetadata.NodeReads` / `NodeWrites` 声明静态契约。
+- **`functions` 节点**：基础契约来自被调用函数的 `FuncReads` / `FuncWrites`，再由运行时叠加 DSL 中 `inputs` / `outputs` 的对象绑定结果，形成最终契约视图。
+
+## 3. 共享资源依赖 (SharedResourceDependency)
+
+很多通用节点会消费共享资源，例如数据库连接、Redis 客户端、Mongo 客户端或通道管理器。
+
+### 3.1. 提供方：`SharedNode`
+
+如果节点要提供共享实例，它需要实现：
+
+```go
+type SharedNode interface {
+    Node
+    GetInstance() (any, error)
+}
+```
+
+当前仓库推荐通过嵌入 `internal/builtin/base.Shareable[T]` 来实现这一能力。
+
+### 3.2. 消费方：`ref://` URI
+
+消费共享资源时，建议在配置中接收 URI 字段，例如：
+
 ```json
 {
-    "id": "myQueryNode",
-    "type": "sql_query",
-    "configuration": {
-        "dataSource": "ref://local_mysql_client",
-        "query": "SELECT * FROM users WHERE id = :userId;"
+  "id": "queryUsers",
+  "type": "functions",
+  "configuration": {
+    "functionName": "sqlQuery",
+    "business": {
+      "dsn": "ref://local_sql_client",
+      "query": "SELECT * FROM users WHERE id = ?"
     }
+  }
 }
 ```
-这里的 `"dataSource"` 配置项的值 `"ref://local_mysql_client"`，指向了在别处（如 `default_shared_clients.json`）定义的、ID为 `local_mysql_client` 的共享节点。
 
-### 3.3. 连接器辅助函数：最佳实践
+这里的 `ref://local_sql_client` 指向一个已预加载进 `NodePool` 的共享节点。
 
-消费方的最佳实践是调用一个平台提供的“连接器”辅助函数来获取资源，而不是直接与 `NodePool` 交互。
+### 3.3. 当前推荐的解析模式
 
-**实践示例 (在节点的 `Init()` 方法中)**:
+消费方更推荐通过 `pkg/asset` 统一解析资源，而不是在每个节点里直接到处写 `NodePool.GetInstance()`：
+
 ```go
-func (n *SQLQueryNode) Init(config types.Config) error {
-    // ... 从配置中获取 dsn = "ref://local_mysql_client" ...
-    dsn, _ := config.GetString("dataSource")
-
-    // 1. 从运行时获取NodePool
-    var nodePool types.NodePool
-    if rt := n.GetRuntime(); rt != nil { // 假设节点嵌入了BaseNode
-        nodePool = rt.GetNodePool()
-    }
-
-    // 2. 调用连接器辅助函数
-    dbClient, isTemp, err := db.GetDBConnection(nodePool, dsn)
-    if err != nil {
-        return err
-    }
-    if isTemp {
-        // 通常在 Init 阶段不应创建临时连接，这里应返回错误或警告
-        // 并且需要考虑谁来负责关闭这个临时连接
-    }
-    
-    // 3. 将获取到的 dbClient 实例存入节点内部字段
-    n.dbClient = dbClient
-    return nil
-}
+resource := asset.Asset[types.SomeClient]{URI: resourceURI}
+assetCtx := asset.NewAssetContext(asset.WithNodePool(pool))
+client, err := resource.Resolve(assetCtx)
 ```
-连接器辅助函数（如 `db.GetDBConnection`）封装了所有复杂性：它会解析 `dsn` 字符串，如果发现是 `ref://` 协议，就从 `nodePool` 中获取共享实例；否则，它可能会创建一个临时的、一次性的连接，并返回 `isTemp=true`，提示调用方必须手动管理其生命周期。
+
+这样做的好处：
+
+1. `ref://`、模板值、其他 scheme 都能走统一入口。
+2. 解析逻辑可以复用类型校验和错误包装。
+3. 业务节点不需要知道 `NodePool` 的底层细节。
+
+`NodePool.GetInstance()` 仍然是可用的底层能力，但更适合封装在 helper / connector 层，而不是散落在每个业务节点实现中。
+
+## 4. 开发建议 (PracticalGuidelines)
+
+1. 新节点默认嵌入 `types.BaseNode` 与 `types.Instance`。
+2. `Init()` 只做配置解码、静态校验和轻量初始化；不要在其中执行与消息相关的业务逻辑。
+3. 若节点依赖 DSL `inputs` / `outputs`，优先实现 `NodeDefBinding`，不要在 `Init()` 时猜测运行时绑定。
+4. 为节点补齐 `NodeReads` / `NodeWrites`，否则静态分析、图谱和校验器会失真。
+5. 当节点消费共享资源时，优先收配置 URI，再用 `asset.Asset` / helper 解析。
 
 <!-- qa_section_start -->
 > **问：数据合约机制是强制性的吗？**
-> **答：** 不是强制性的，但**强烈推荐**。所有相关字段都使用了 `omitempty` 标签，这是一个向后兼容的增量增强。未声明契约的旧节点仍然可以工作，但它们将无法从静态分析和未来的工具链增强中受益。
+> **答：** 对编译而言通常不是强制性的，但对静态分析、链路审计、OpenAPI/图谱生成和 DSL 校验非常重要。新节点和持续维护的节点都应尽量补齐。
 
-> **问：如果一个节点的契约与它的实际代码实现不一致怎么办？**
-> **答：** 这是数据合约的主要风险。在初期，这需要通过严格的代码审查来保证。未来，我们计划开发一个静态分析工具，它可以读取节点的契约，并扫描其代码以验证数据访问是否与声明一致。
+> **问：如果契约与代码实现不一致怎么办？**
+> **答：** 这会导致静态分析和问题排查结果失真。当前最稳妥的做法仍然是代码评审加规则校验，尤其要同步检查 `NodeMetadata`、函数签名和 DSL 绑定是否一致。
 <!-- qa_section_end -->
 
 <!-- 链接定义区域 -->

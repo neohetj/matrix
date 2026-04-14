@@ -4,7 +4,7 @@ uuid: "d2c3b4a5-f6e7-8a9b-0c1d-2e3f4a5b6c7d"
 type: "ComponentGuide"
 title: "组件指南：解析与验证功能节点 (parseValidate)"
 status: "Draft"
-owner: "@cline"
+owner: "neohetj"
 version: "1.0.0"
 tags:
   - "matrix"

@@ -3,7 +3,7 @@ uuid: "GENERATED_UUID"
 type: "ADR"
 title: "决策：[一个简洁且描述性的标题]"
 status: "Draft" # -> Accepted/Rejected/Superseded
-owner: "@your-name"
+owner: "neohetj"
 version: "1.0.0"
 tags:
   - "adr"

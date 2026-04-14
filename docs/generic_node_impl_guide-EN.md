@@ -1,3 +1,21 @@
+---
+uuid: "9b9a828e-c9fd-4ce9-a156-c806ac1cf1d3"
+type: "Guide"
+title: "Guide: Generic Node Implementation Guidelines"
+status: "Stable"
+owner: "neohetj"
+version: "1.0.0"
+tags:
+  - "matrix"
+  - "guide"
+  - "node"
+  - "legacy"
+relations:
+  - type: "is_part_of"
+    target_uuid: "a422d409-4b02-431a-b14e-2dec8f75b506"
+    description: "This standalone guide is indexed from the docs root."
+---
+
 # Guidelines and Best Practices for Generic Node Implementation
 
 This document summarizes the guidelines and best practices for developing generic nodes within the Matrix framework.

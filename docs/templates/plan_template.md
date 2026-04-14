@@ -3,7 +3,7 @@ uuid: "GENERATED_UUID"
 type: "Plan"
 title: "计划：[一个简洁且描述性的标题]"
 status: "Draft" # -> Implementing -> Stable/Superseded
-owner: "@your-name"
+owner: "neohetj"
 version: "1.0.0"
 tags:
   - "plan"
