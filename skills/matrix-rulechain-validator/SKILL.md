@@ -1,6 +1,6 @@
 ---
 name: matrix-rulechain-validator
-description: "校验基于 Matrix 的 DSL 规则链、HTTP endpoint 与函数节点配置。用于排查规则链执行失败、审查 DSL 改动、批量扫描 `EndpointIOPacket` 风险映射、识别函数输入输出与签名不一致、`collection SID + type: object`、typed whole-object 跨 SID 转换，以及发现无意义的 `transform/object_mapper` 整体搬运节点。"
+description: "校验基于 Matrix 的 DSL 规则链、HTTP endpoint 与函数节点配置。用于排查规则链执行失败、审查 DSL 改动、批量扫描 `EndpointIOPacket` 风险映射、识别函数输入输出与签名不一致、Struct/Map/Slice 自动转换边界、`collection SID + type: object`、typed whole-object 跨 SID 转换，以及发现无意义的 `transform/object_mapper` 整体搬运节点。"
 ---
 
 # Matrix Rulechain Validator
@@ -21,18 +21,27 @@ description: "校验基于 Matrix 的 DSL 规则链、HTTP endpoint 与函数节
 ## Workflow
 
 1. 从工作区根目录运行仓库本地的 `scripts/validate_rulechain_mappings.py`，或用本 skill 的 `scripts/run_validator.py` 自动定位工作区。
-2. 先处理 `function-*` 规则：
+2. 先找真实契约源，再看报错：
+   - `NodeFuncObject.Configuration.Inputs/Outputs`
+   - endpoint packet `bindPath`
+   - rulechain 节点 `inputs/outputs`
+3. 先处理 `function-*` 规则：
    `function-input-not-defined` / `function-output-not-defined` 往往说明 DSL 还留着伪输入、旧字段名或 UI 会直接报警的配置。
    `function-required-input-missing` 说明节点少绑了必填参数。
    `function-*-sid-mismatch` 说明 DSL `defineSid` 和函数签名已经漂移。
-3. 再处理映射规则。如果命中 `collection-sid-object-conversion`，优先检查是否在 helper-based packet 中把集合 SID 显式写成了 `"type": "object"`。
-4. 如果命中 `typed-whole-object-cross-sid-conversion`，优先检查是不是把完整业务对象直接灌进另一个 typed SID，尤其是 `*Patch*_V*`；这类场景必须显式按字段映射。
-5. 如果命中 `object-mapper-alias-copy`，评估这个 `transform/object_mapper` 是否只是把同一个 SID 换了个 objId；能直读原对象就直接删掉。
-6. 如果 trace 里看到 `assignment to entry in nil map`，优先检查是不是在用 `transform/object_mapper` 往 `rulemsg://dataT/<obj>.<field>?sid=MapStringInterface` 写嵌套字段；旧版 Matrix 运行时会在这里 panic。
-7. 如果本次改动包含同步查询类 HTTP list endpoint，按 `references/rules.md` 里的 list contract checklist 做一轮人工审查，确认请求参数、响应结构和 DSL 绑定符合统一规范。
-8. 如果 trace 或节点报错里出现 `expected []T, got *[]T`，优先检查对应函数节点的 Matrix adapter 是否把列表输入写成了 `helper.GetParam[[]T](...)`；这类列表型 DataT 输入应改成 `helper.GetParam[*[]T](...)`。
-9. 如果静态检查干净但运行仍失败，再查 trace，确认首个真正失败节点，而不是后续错误处理链的连锁报错。
-10. 如果问题根因不是“写错字段”，而是 packet 设计本身不清晰，回到 `matrix-http-io-designer` 先重做入参/出参边界，再重新校验。
+4. 再处理映射规则。如果命中 `collection-sid-object-conversion`，优先检查是否在 helper-based packet 中把集合 SID 显式写成了 `"type": "object"`。
+5. 如果命中 `typed-whole-object-cross-sid-conversion`，优先检查是不是把完整业务对象直接灌进另一个 typed SID，尤其是 `*Patch*_V*`；这类场景必须显式按字段映射。
+6. 再人工判断自动转换边界：
+   - 可以接受：Struct -> `MapStringInterface`
+   - 默认不接受：Struct -> Slice、Map -> Slice、跨不同 typed SID 的 whole-object 透传
+   - 如果下游函数只吃 `MapStringInterface`，优先在 rulechain 或 mapper 边界显式转换，不要在 endpoint 边界提前降级
+7. 如果命中 `object-mapper-alias-copy`，评估这个 `transform/object_mapper` 是否只是把同一个 SID 换了个 objId；能直读原对象就直接删掉。
+8. 如果 trace 里看到 `assignment to entry in nil map`，优先检查是不是在用 `transform/object_mapper` 往 `rulemsg://dataT/<obj>.<field>?sid=MapStringInterface` 写嵌套字段；旧版 Matrix 运行时会在这里 panic。
+9. 如果本次改动包含同步查询类 HTTP list endpoint，按 `references/rules.md` 里的 list contract checklist 做一轮人工审查，确认请求参数、响应结构和 DSL 绑定符合统一规范。
+10. 如果 trace 或节点报错里出现 `expected []T, got *[]T`，优先检查对应函数节点的 Matrix adapter 是否把列表输入写成了 `helper.GetParam[[]T](...)`；这类列表型 DataT 输入应改成 `helper.GetParam[*[]T](...)`。
+11. 如果静态检查干净但运行仍失败，再查 trace，确认首个真正失败节点，而不是后续错误处理链的连锁报错。
+12. 如果问题根因不是“写错字段”，而是 packet 设计本身不清晰，回到 `matrix-http-io-designer` 先重做入参/出参边界，再重新校验。
+13. 如果问题根因是 rulechain 主干、stage 边界、连接方式或 shared ref namespace 混乱，回到 `matrix-rulechain-authoring` 先重做链路结构，再重新校验。
 
 ## Covered Rules
 
@@ -89,6 +98,8 @@ description: "校验基于 Matrix 的 DSL 规则链、HTTP endpoint 与函数节
 - 字符串 JSON 解析成对象：保留 `"type": "object"`，但确保源是 `sid=String` 或原始 JSON 字符串。
 - 跨 SID 的 typed whole-object 转换：不要整对象透传，改成显式字段映射。
 - 目标是 `Patch` SID：只映射 patch 所需字段，不要把完整业务对象直接塞进去。
+- 下游函数只吃 `MapStringInterface`：endpoint 层保留 typed business SID，在 rulechain / mapper 边界显式降级。
+- Struct -> Slice / Map -> Slice：不要赌运行时自动转换，直接补显式转换流程或函数节点。
 - 目标是 `MapStringInterface` 且 trace 命中 `assignment to entry in nil map`：先确认 Matrix 运行时是否已包含 `rulemsg://dataT` nil-map 初始化修复；若未升级，改用函数节点先构造完整 map 再整对象写入。
 - 仅换 objId 的 mapper：优先删除中间 `object_mapper`，直接让下游节点读取原对象。
 

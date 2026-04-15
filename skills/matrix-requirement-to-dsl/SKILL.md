@@ -1,6 +1,6 @@
 ---
 name: matrix-requirement-to-dsl
-description: 将产品或业务需求转换为 Matrix DSL 实现方案与实际改动。用于把自然语言需求落成 `endpoint/http`、`endpoint/pipeline`、`rulechain`、`prompt`、`shared` 等 DSL 文件，并强制执行需求收敛、设计草案、契约映射和实现后验证。若需求同时涉及函数节点代码实现，需串联 `matrix-function-node-creator`。
+description: 将产品或业务需求转换为 Matrix DSL 实现方案与实际改动。用于把自然语言需求落成 `endpoint/http`、`endpoint/pipeline`、`rulechain`、`prompt`、`shared` 等 DSL 文件，并强制执行需求收敛、设计草案、rulechain authoring、契约映射和实现后验证。若需求同时涉及函数节点代码实现，需串联 `matrix-function-node-creator`。
 ---
 
 # Matrix Requirement To DSL
@@ -13,6 +13,7 @@ description: 将产品或业务需求转换为 Matrix DSL 实现方案与实际�
 ## Skill Handoff
 
 - 需求只改 DSL：`matrix-requirement-to-dsl` -> `*-dsl-adapter` -> `matrix-rulechain-validator`
+- 需求以 rulechain 结构改造为主：`matrix-requirement-to-dsl` -> `matrix-rulechain-authoring` -> `matrix-rulechain-validator`
 - 需求包含 `endpoint/http`、`external/httpClient` 或 packet 设计：在 DSL 设计阶段追加 `matrix-http-io-designer`
 - 需求包含 shared/client/pool/provider 资源：在 DSL 设计或代码实现阶段追加 `matrix-shared-node-creator`
 - 需求同时改函数节点：在上述链路中追加 `matrix-function-node-creator`
@@ -22,24 +23,29 @@ description: 将产品或业务需求转换为 Matrix DSL 实现方案与实际�
 
 1. 先用 `references/requirement-template.md` 把自然语言需求整理成结构化输入。
 2. 再用 `references/design-output-contract.md` 产出 DSL 设计草案，再决定是否开始改文件。
-3. 如果需求包含同步查询类 HTTP list 接口，先按下面的 list contract 把请求参数、返回结构和 DSL 绑定方式收敛到统一契约。
-4. 如果需求包含 `endpoint/http`、`external/httpClient` 或复杂出入参 packet，继续使用 `matrix-http-io-designer` 收敛 `bindPath`、`fields`、`mapAll` 和对象边界。
-5. 如果需求需要共享数据库客户端、缓存客户端、浏览器实例或其他池化资源，继续使用 `matrix-shared-node-creator` 收敛 shared DSL、provider node 和 consumer 取用方式。
-6. 再读取项目 adapter，找到最接近的现有 DSL 作为基线。
-7. 按 `references/implementation-workflow.md` 做最小化实现。
-8. 按 `references/acceptance-checklist.md` 做校验，并补充项目自己的验证命令；只要行为有变化，默认再走一遍 `matrix-test-author` 设计或补齐验证。
+3. 如果需求包含 rulechain，先用 `matrix-rulechain-authoring` 把作者视角的骨架定清楚：`ruleChain.id`、主执行链、转换节点、共享资源消费者、关键 `objId -> SID`。
+4. 如果需求包含同步查询类 HTTP list 接口，先按下面的 list contract 把请求参数、返回结构和 DSL 绑定方式收敛到统一契约。
+5. 如果需求包含 `endpoint/http`、`external/httpClient` 或复杂出入参 packet，继续使用 `matrix-http-io-designer` 收敛 `bindPath`、`fields`、`mapAll`、`ruleChainId/startNodeId` 和对象边界。
+6. 如果需求需要共享数据库客户端、缓存客户端、浏览器实例或其他池化资源，继续使用 `matrix-shared-node-creator` 收敛 shared DSL、provider node 和 consumer 取用方式。
+7. 再读取项目 adapter，找到最接近的现有 DSL 作为基线。
+8. 按 `references/implementation-workflow.md` 做最小化实现。
+9. 按 `references/acceptance-checklist.md` 做校验，并补充项目自己的验证命令；只要行为有变化，默认再走一遍 `matrix-test-author` 设计或补齐验证。
 
 ## Non-Negotiable Rules
 
 - 不要从自然语言直接跳到 JSON 编辑。
 - 优先复用现有 endpoint、pipeline、rulechain、prompt、shared 结构。
 - 同步查询类 HTTP list 接口默认遵守 `GET + page/pageSize + data/total [+ meta]` 契约。
+- `ruleChain.id` 必须使用 `namespace/id` 形式，不要写裸 ID。
+- rulechain `connections` 只使用 `fromId`、`toId`，不要回退到 `fromIndex`、`toIndex`。
 - 不允许跨 `SID` 的整对象透传。
 - 目标为 `Patch` 类型时，必须显式字段映射。
 - 目标为 `MapStringInterface` patch 时，先确认运行时 Matrix 版本是否支持嵌套字段写入自动初始化；如果要兼容旧运行时，优先用函数节点先产出完整 map，再交给 `storage_update`。
 - DSL 节点 `inputs/outputs` 必须与函数签名一致。
+- `functions` 节点的业务配置必须放在 `configuration.business`，不要把自定义字段平铺到配置根层。
 - 不允许引入伪输入来“保活”上下文对象。
 - 如果 stage 依赖持久化后的对象，必须消费保存后的对象，而不是保存前的临时对象。
+- Pipeline stage 场景下，不要手动把结果再推回同一个 `outputChannel`。
 - 新增 `objId` 必须使用稳定的可识别缩写，统一全小写连续命名且不要下划线；固定为 `12` 位，建议遵循 `[a-z][a-z0-9]{11}`，不要再引入随机串、下划线风格或 CamelCase。历史链路可暂时保留旧命名，但只要触达该链路就优先顺手收敛。
 
 ## List Contract

@@ -1,0 +1,5 @@
+version: 1
+interface:
+  display_name: "Matrix Rulechain Authoring"
+  short_description: "设计和改造 Matrix rulechain 的结构与数据流"
+  default_prompt: "Use $matrix-rulechain-authoring to design or refactor a Matrix rulechain with clear IDs, connections, stage data flow, and function-node boundaries."
