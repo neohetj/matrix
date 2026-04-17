@@ -100,6 +100,14 @@ func SetCoreObjBody(obj types.CoreObj, value any, sid string) (bool, error) {
 		if err := Decode(valToDecode, body); err == nil {
 			return true, nil
 		}
+		// Fallback through map conversion for nested types like time.Time.
+		// Direct struct->struct Decode can fail when hooks such as
+		// jsonUnmarshalHook see a concrete time.Time value instead of a JSON string.
+		if objMap, err := ToMap(valToDecode); err == nil {
+			if err := Decode(objMap, body); err == nil {
+				return true, nil
+			}
+		}
 	}
 
 	return false, nil

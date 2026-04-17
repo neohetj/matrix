@@ -3,6 +3,7 @@ package utils_test
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/utils"
@@ -12,6 +13,22 @@ import (
 
 type MyStruct struct {
 	Name string
+}
+
+type TimeItemInput struct {
+	Timestamp time.Time `json:"timestamp"`
+}
+
+type TimeListInput struct {
+	Items []TimeItemInput `json:"items"`
+}
+
+type TimeItemOutput struct {
+	Timestamp time.Time `json:"timestamp"`
+}
+
+type TimeListOutput struct {
+	Items []TimeItemOutput `json:"items"`
 }
 
 func TestSetCoreObjBody_SliceAny(t *testing.T) {
@@ -156,5 +173,30 @@ func TestSetCoreObjBody_GenericSliceToStructSlice(t *testing.T) {
 	}
 	if structSlice[1].Name != "test2" {
 		t.Errorf("Expected Name test2, got %s", structSlice[1].Name)
+	}
+}
+
+func TestSetCoreObjBody_PointerToStructWithTimeSlice_FallbackViaMap(t *testing.T) {
+	mockObj := new(testutils.MockCoreObj)
+	var out TimeListOutput
+	mockObj.On("Body").Return(&out)
+
+	input := &TimeListInput{
+		Items: []TimeItemInput{{Timestamp: time.Date(2026, time.April, 17, 11, 0, 0, 0, time.UTC)}},
+	}
+
+	ok, err := utils.SetCoreObjBody(mockObj, input, "SomeSID")
+	if err != nil {
+		t.Fatalf("SetCoreObjBody failed: %v", err)
+	}
+	if !ok {
+		t.Fatalf("SetCoreObjBody returned false")
+	}
+
+	if len(out.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(out.Items))
+	}
+	if !out.Items[0].Timestamp.Equal(input.Items[0].Timestamp) {
+		t.Fatalf("expected timestamp %v, got %v", input.Items[0].Timestamp, out.Items[0].Timestamp)
 	}
 }
