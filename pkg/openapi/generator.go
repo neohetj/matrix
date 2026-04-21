@@ -1,6 +1,7 @@
 package openapi
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -276,26 +277,7 @@ func (g *Generator) buildSchemaFromPacket(spec *openapi3.T, packet types.Endpoin
 		}
 
 		for _, field := range packet.Fields {
-			var fieldSchemaRef *openapi3.SchemaRef
-
-			// Try to resolve SID from BindPath for detailed object schema
-			if field.BindPath != "" {
-				sid := extractSID(field.BindPath)
-				if sid != "" {
-					// Ensure component exists
-					if spec.Components.Schemas[sid] == nil {
-						if coreObj, ok := g.registry.Get(sid); ok {
-							spec.Components.Schemas[sid] = &openapi3.SchemaRef{
-								Value: coreObj.OpenAPISchema(),
-							}
-						}
-					}
-					// If component exists, use Ref
-					if spec.Components.Schemas[sid] != nil {
-						fieldSchemaRef = &openapi3.SchemaRef{Ref: "#/components/schemas/" + sid}
-					}
-				}
-			}
+			fieldSchemaRef := g.schemaRefForEndpointField(spec, field)
 
 			// Fallback to MType if no Ref
 			if fieldSchemaRef == nil {
@@ -316,7 +298,9 @@ func (g *Generator) buildSchemaFromPacket(spec *openapi3.T, packet types.Endpoin
 				fieldSchemaRef = &openapi3.SchemaRef{Value: wrapper}
 			} else if fieldSchemaRef.Value != nil {
 				// Inline schema, apply directly
-				fieldSchemaRef.Value.Description = field.Description
+				if field.Description != "" {
+					fieldSchemaRef.Value.Description = field.Description
+				}
 				if field.DefaultValue != nil {
 					fieldSchemaRef.Value.Default = field.DefaultValue
 				}
@@ -354,6 +338,131 @@ func (g *Generator) buildSchemaFromPacket(spec *openapi3.T, packet types.Endpoin
 
 	// Empty body
 	return nil, nil
+}
+
+func (g *Generator) schemaRefForEndpointField(spec *openapi3.T, field types.EndpointIOField) *openapi3.SchemaRef {
+	if field.BindPath == "" {
+		return nil
+	}
+
+	assetObj, err := asset.ParseRuleMsg(field.BindPath)
+	if err != nil || assetObj.Host != cnst.DATAT {
+		return nil
+	}
+
+	sid := assetObj.Query.Get(asset.RuleMsgQuerySID)
+	if sid == "" {
+		return nil
+	}
+
+	componentRef := g.ensureComponentSchema(spec, sid)
+	if componentRef == nil {
+		return nil
+	}
+
+	fieldPath := extractDataTFieldPath(assetObj.Path)
+	if fieldPath == "" {
+		return &openapi3.SchemaRef{Ref: "#/components/schemas/" + sid}
+	}
+
+	fieldSchemaRef := schemaRefAtPath(componentRef, fieldPath, spec.Components.Schemas)
+	if fieldSchemaRef == nil {
+		return nil
+	}
+	return cloneSchemaRef(fieldSchemaRef)
+}
+
+func (g *Generator) ensureComponentSchema(spec *openapi3.T, sid string) *openapi3.SchemaRef {
+	if spec == nil {
+		return nil
+	}
+	if spec.Components == nil {
+		spec.Components = &openapi3.Components{}
+	}
+	if spec.Components.Schemas == nil {
+		spec.Components.Schemas = make(openapi3.Schemas)
+	}
+
+	if spec.Components.Schemas[sid] == nil && g.registry != nil {
+		if coreObj, ok := g.registry.Get(sid); ok {
+			spec.Components.Schemas[sid] = &openapi3.SchemaRef{
+				Value: coreObj.OpenAPISchema(),
+			}
+		}
+	}
+	return spec.Components.Schemas[sid]
+}
+
+func extractDataTFieldPath(path string) string {
+	parts := strings.SplitN(strings.TrimSpace(path), ".", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	return strings.TrimSpace(parts[1])
+}
+
+func schemaRefAtPath(root *openapi3.SchemaRef, path string, components openapi3.Schemas) *openapi3.SchemaRef {
+	current := root
+	for _, segment := range strings.Split(path, ".") {
+		segment = strings.TrimSpace(segment)
+		if segment == "" {
+			return nil
+		}
+
+		schema := resolveSchemaRefForTraversal(current, components)
+		for schema != nil && schema.Type != nil && schema.Type.Is(openapi3.TypeArray) && schema.Items != nil {
+			schema = resolveSchemaRefForTraversal(schema.Items, components)
+		}
+		if schema == nil || schema.Properties == nil {
+			return nil
+		}
+
+		next := schema.Properties[segment]
+		if next == nil {
+			return nil
+		}
+		current = next
+	}
+	return current
+}
+
+func resolveSchemaRefForTraversal(ref *openapi3.SchemaRef, components openapi3.Schemas) *openapi3.Schema {
+	if ref == nil {
+		return nil
+	}
+	if ref.Value != nil {
+		return ref.Value
+	}
+
+	const componentsPrefix = "#/components/schemas/"
+	if strings.HasPrefix(ref.Ref, componentsPrefix) {
+		name := strings.TrimPrefix(ref.Ref, componentsPrefix)
+		return resolveSchemaRefForTraversal(components[name], components)
+	}
+	return nil
+}
+
+func cloneSchemaRef(ref *openapi3.SchemaRef) *openapi3.SchemaRef {
+	if ref == nil {
+		return nil
+	}
+
+	bytes, err := json.Marshal(ref)
+	if err == nil {
+		var cloned openapi3.SchemaRef
+		if err := json.Unmarshal(bytes, &cloned); err == nil {
+			return &cloned
+		}
+	}
+
+	if ref.Ref != "" {
+		return &openapi3.SchemaRef{Ref: ref.Ref}
+	}
+	if ref.Value == nil {
+		return &openapi3.SchemaRef{}
+	}
+	schema := *ref.Value
+	return &openapi3.SchemaRef{Value: &schema}
 }
 
 func extractSID(uri string) string {
