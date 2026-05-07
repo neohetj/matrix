@@ -72,24 +72,37 @@ func (n *ChannelPushNode) Init(config types.ConfigMap) error {
 	if err := utils.Decode(config, &n.nodeConfig); err != nil {
 		return types.InvalidConfiguration.Wrap(err)
 	}
+	if err := validateChannelPushDynamicCandidates(CfgPipelineID, n.nodeConfig.PipelineID); err != nil {
+		return types.InvalidConfiguration.Wrap(err)
+	}
+	if err := validateChannelPushDynamicCandidates(CfgChannelName, n.nodeConfig.ChannelName); err != nil {
+		return types.InvalidConfiguration.Wrap(err)
+	}
 	if n.nodeConfig.Timeout == 0 {
 		n.nodeConfig.Timeout = 5000
 	}
 	return nil
 }
 
-func (n *ChannelPushNode) DataContract() types.DataContract {
-	// Channel push should only expose its local configuration dependencies.
-	reads := make([]string, 0, 2)
-	reads = append(reads, collectRuleMsgReadsFromConfigString(n.nodeConfig.PipelineID)...)
-	reads = append(reads, collectRuleMsgReadsFromConfigString(n.nodeConfig.ChannelName)...)
-
-	return types.DataContract{
-		Reads: dedupeContractURIs(reads),
+func validateChannelPushDynamicCandidates(fieldName string, raw string) error {
+	uris := collectRuleMsgURIsFromConfigString(raw)
+	for _, uri := range uris {
+		parsed, err := asset.ParseRuleMsg(uri)
+		if err != nil {
+			return fmt.Errorf("%s contains invalid rulemsg uri %q: %w", fieldName, uri, err)
+		}
+		candidates, err := asset.CollectRuleMsgCandidates(parsed.Query)
+		if err != nil {
+			return fmt.Errorf("%s contains invalid candidates in %q: %w", fieldName, uri, err)
+		}
+		if len(candidates) == 0 {
+			return fmt.Errorf("%s dynamic rulemsg uri must include candidates in %q", fieldName, uri)
+		}
 	}
+	return nil
 }
 
-func collectRuleMsgReadsFromConfigString(raw string) []string {
+func collectRuleMsgURIsFromConfigString(raw string) []string {
 	value := strings.TrimSpace(raw)
 	if value == "" {
 		return nil
@@ -109,7 +122,22 @@ func collectRuleMsgReadsFromConfigString(raw string) []string {
 			result = append(result, uri)
 		}
 	}
-	return result
+	return dedupeContractURIs(result)
+}
+
+func (n *ChannelPushNode) DataContract() types.DataContract {
+	// Channel push should only expose its local configuration dependencies.
+	reads := make([]string, 0, 2)
+	reads = append(reads, collectRuleMsgReadsFromConfigString(n.nodeConfig.PipelineID)...)
+	reads = append(reads, collectRuleMsgReadsFromConfigString(n.nodeConfig.ChannelName)...)
+
+	return types.DataContract{
+		Reads: dedupeContractURIs(reads),
+	}
+}
+
+func collectRuleMsgReadsFromConfigString(raw string) []string {
+	return collectRuleMsgURIsFromConfigString(raw)
 }
 
 func dedupeContractURIs(uris []string) []string {

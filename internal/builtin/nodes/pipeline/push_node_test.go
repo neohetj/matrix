@@ -132,15 +132,41 @@ func TestChannelPushNode_DataContract_DynamicRuleMsgConfigReadsAreExplicit(t *te
 	node.BaseNode = *types.NewBaseNode(ChannelPushNodeType, types.NodeMetadata{})
 
 	err := node.Init(map[string]any{
-		CfgPipelineID:  "${rulemsg://dataT/obj_route_pipeline?sid=String}",
-		CfgChannelName: "${rulemsg://dataT/obj_route_channel?sid=String}",
+		CfgPipelineID:  "${rulemsg://dataT/obj_route_pipeline?sid=String&candidates=ep-ins,ep-koc}",
+		CfgChannelName: "${rulemsg://dataT/obj_route_channel?sid=String&candidates=ch-ins,ch-koc}",
 	})
 	assert.NoError(t, err)
 
 	contract := node.DataContract()
-	assert.True(t, containsURI(contract.Reads, "rulemsg://dataT/obj_route_pipeline?sid=String"))
-	assert.True(t, containsURI(contract.Reads, "rulemsg://dataT/obj_route_channel?sid=String"))
+	assert.True(t, containsURI(contract.Reads, "rulemsg://dataT/obj_route_pipeline?sid=String&candidates=ep-ins,ep-koc"))
+	assert.True(t, containsURI(contract.Reads, "rulemsg://dataT/obj_route_channel?sid=String&candidates=ch-ins,ch-koc"))
 	assert.Empty(t, contract.Writes)
+}
+
+func TestChannelPushNode_Init_DynamicPipelineWithoutCandidatesShouldFail(t *testing.T) {
+	node := &ChannelPushNode{}
+	node.BaseNode = *types.NewBaseNode(ChannelPushNodeType, types.NodeMetadata{})
+
+	err := node.Init(map[string]any{
+		CfgPipelineID:  "${rulemsg://dataT/obj_route_pipeline?sid=String}",
+		CfgChannelName: "ch-static",
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "pipelineId")
+	assert.Contains(t, err.Error(), "must include candidates")
+}
+
+func TestChannelPushNode_Init_DynamicChannelWithoutCandidatesShouldFail(t *testing.T) {
+	node := &ChannelPushNode{}
+	node.BaseNode = *types.NewBaseNode(ChannelPushNodeType, types.NodeMetadata{})
+
+	err := node.Init(map[string]any{
+		CfgPipelineID:  "ep-static",
+		CfgChannelName: "${rulemsg://dataT/obj_route_channel?sid=String}",
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "channelName")
+	assert.Contains(t, err.Error(), "must include candidates")
 }
 
 func TestChannelPushNode_DataContract_StaticConfigOnlyKeepsLocalDependencies(t *testing.T) {
