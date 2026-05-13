@@ -893,6 +893,19 @@ func TestHttpEndpointNode_Init_ErrorHandling(t *testing.T) {
 	}
 }
 
+func TestHttpEndpointNode_Init_AcceptsDomainConfiguration(t *testing.T) {
+	node := newNodeForTest(t, types.ConfigMap{
+		"ruleChainId": "chain123",
+		"httpMethod":  "GET",
+		"httpPath":    "/test",
+		"domain":      "Admin",
+	})
+
+	if got := node.Configuration().Domain; got != "Admin" {
+		t.Fatalf("expected domain to be decoded, got %q", got)
+	}
+}
+
 // TestConvertResponse 测试 convertResponse 函数能否正确地将 RuleMsg 转换为 HTTP 响应。
 // 这个测试用例确保了 RuleMsg 中的 DataT 数据和 Metadata 能够被正确地映射到
 // HTTP 响应的 Body 和 Headers 中，同时验证了状态码的正确设置。

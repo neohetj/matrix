@@ -43,12 +43,28 @@ relations:
 | `startNodeId` | 可选起始节点 ID |
 | `httpMethod` | 监听的 HTTP 方法 |
 | `httpPath` | 监听路径，支持 `:param` |
+| `domain` | 可选业务领域名称，用于 Morpheus 等宿主界面分组 |
 | `description` | 描述 |
 | `summary` | OpenAPI 摘要 |
 | `tags` | OpenAPI / UI 标签 |
 | `async` | 是否异步执行 |
 | `endpointDefinition` | 请求/响应映射定义 |
 | `errorMappings` | HTTP 状态与内部 Fault 的映射 |
+
+`domain` 是 endpoint 的业务配置，宿主界面应优先使用它进行领域分组；缺失时宿主可以继续按 endpoint ID 命名约定兜底推导。
+
+```json
+{
+  "id": "ep-identityx-admin-users-list",
+  "type": "endpoint/http",
+  "name": "IdentityX Admin List Users Endpoint",
+  "configuration": {
+    "domain": "Admin",
+    "httpMethod": "GET",
+    "httpPath": "/api/identityx/admin/users"
+  }
+}
+```
 
 # 3. `endpointDefinition` 结构
 

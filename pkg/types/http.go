@@ -69,6 +69,7 @@ type HttpEndpointNodeConfiguration struct {
 	StartNodeID        string          `json:"startNodeId,omitempty"`
 	HttpMethod         string          `json:"httpMethod"`
 	HttpPath           string          `json:"httpPath"`
+	Domain             string          `json:"domain,omitempty"`
 	Description        string          `json:"description"`
 	Summary            string          `json:"summary,omitempty"`
 	Tags               []string        `json:"tags,omitempty"`
