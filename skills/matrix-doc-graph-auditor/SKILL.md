@@ -7,7 +7,7 @@ description: Audit Matrix markdown docs for frontmatter completeness, README ind
 
 ## Overview
 
-Use this skill when you need to audit Matrix documentation as a graph instead of reading files one by one. The canonical source now lives in the Matrix repo at `/Users/hejiajun/Documents/开发设计/Evolution/platform/Matrix/skills/matrix-doc-graph-auditor`, and `~/.codex/skills/matrix-doc-graph-auditor` should remain only a symlink to that repo directory.
+Use this skill when you need to audit Matrix documentation as a graph instead of reading files one by one. The canonical source now lives in the Matrix repo at `./platform/Matrix/skills/matrix-doc-graph-auditor`, and `~/.codex/skills/matrix-doc-graph-auditor` should remain only a symlink to that repo directory.
 
 It is especially useful for:
 
