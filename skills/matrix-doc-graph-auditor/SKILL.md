@@ -16,6 +16,7 @@ It is especially useful for:
 - enforcing lowercase hyphenated UUID format for both `uuid` and `target_uuid`
 - comparing each directory `README.md` index against the actual files and child directories on disk
 - validating whether an RFC/ADR/Plan status chain is consistent with the document graph it points to
+- detecting repo-local RFC/ADR/Plan documents placed outside `docs/designs/{rfc,adr,plan}`
 - enforcing that `Accepted` / `Implementing` RFCs point to at least one current usage document under `docs/guides/` or `docs/migration/`
 - enforcing that every RFC contains a dedicated `原始需求点总结` section near the front of the document
 - enforcing that `Accepted` / `Implementing` RFCs contain a dedicated `当前实现对齐` section
@@ -60,6 +61,8 @@ The bundled script checks:
 - missing `README.md` in any docs subdirectory
 - `README.md` index drift for files and child directories
 - RFC / ADR / Plan filename convention and status values
+- misplaced repo-local design directories such as `docs/rfc`, `docs/adr`, `docs/plan`, or `docs/plans`
+- RFC / ADR / Plan documents outside `docs/designs/{rfc,adr,plan}`, except cross-repo coordination docs under `docs/cross-repo`
 - `Accepted` / `Implementing` RFCs include at least one current usage-doc relation
 - RFCs include a dedicated `原始需求点总结` section
 - `Accepted` / `Implementing` RFCs include a dedicated `当前实现对齐` section

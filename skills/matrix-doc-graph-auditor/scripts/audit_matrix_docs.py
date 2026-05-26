@@ -71,6 +71,17 @@ SKIP_LINK_PREFIXES = (
 SPECIAL_INDEX_FREE_POLICIES = {"latest"}
 SHARED_REQUIRED_FIELDS = ("uuid", "type", "title", "status", "owner", "version", "tags", "relations")
 USAGE_DOC_ROOTS = {"guides", "migration"}
+DESIGN_DOC_POLICIES = {
+    "RFC": "rfc",
+    "ADR": "adr",
+    "Plan": "plan",
+}
+LEGACY_REPO_LOCAL_DESIGN_DIRS = {
+    "rfc": "designs/rfc",
+    "adr": "designs/adr",
+    "plan": "designs/plan",
+    "plans": "designs/plan",
+}
 
 
 @dataclass
@@ -328,6 +339,47 @@ def get_directory_policy(relpath: Path) -> str:
     return "generic"
 
 
+def get_root_policy(root: Path) -> str | None:
+    parts = root.parts
+    if len(parts) >= 2 and parts[-2] == "designs":
+        if parts[-1] == "rfc":
+            return "rfc"
+        if parts[-1] == "adr":
+            return "adr"
+        if parts[-1] == "plan":
+            return "plan"
+    if root.name == "reference":
+        return "reference"
+    if root.name == "guides":
+        return "guides"
+    if len(parts) >= 2 and parts[-2] == "guides" and parts[-1] == "components":
+        return "guides_components"
+    if root.name == "migration":
+        return "migration"
+    if root.name == "templates":
+        return "templates"
+    if root.name == "latest":
+        return "latest"
+    return None
+
+
+def get_doc_policy(root: Path, doc: Doc) -> str:
+    policy = get_directory_policy(doc.parent_relpath)
+    if policy == "docs_root":
+        root_policy = get_root_policy(root)
+        if root_policy:
+            return root_policy
+    return policy
+
+
+def is_cross_repo_context(root: Path, doc: Doc | None = None) -> bool:
+    if "cross-repo" in root.parts:
+        return True
+    if doc and doc.relpath.parts and doc.relpath.parts[0] == "cross-repo":
+        return True
+    return False
+
+
 def is_placeholder_uuid(value: str) -> bool:
     return value in TEMPLATE_UUID_PLACEHOLDERS
 
@@ -380,6 +432,16 @@ def audit_directory_structure(root: Path, scope_path: Path, issues: list[Issue])
         readme = directory / "README.md"
         rel_dir = directory.relative_to(root)
         policy = get_directory_policy(rel_dir if rel_dir != Path(".") else Path("."))
+        rel_dir_text = rel_dir.as_posix()
+
+        if not is_cross_repo_context(root) and rel_dir_text in LEGACY_REPO_LOCAL_DESIGN_DIRS:
+            add_issue(
+                issues,
+                "error",
+                "legacy_design_directory",
+                directory,
+                f"repo-local design docs must live under {LEGACY_REPO_LOCAL_DESIGN_DIRS[rel_dir_text]}, not {rel_dir_text}",
+            )
 
         if not readme.exists():
             add_issue(issues, "error", "missing_directory_readme", directory, "目录缺少 README.md")
@@ -517,11 +579,21 @@ def has_current_implementation_alignment(doc: Doc) -> bool:
     return bool(RFC_CURRENT_ALIGNMENT_RE.search(doc.body))
 
 
-def audit_policy(doc: Doc, docs_by_uuid: dict[str, Doc], issues: list[Issue]) -> None:
+def audit_policy(root: Path, doc: Doc, docs_by_uuid: dict[str, Doc], issues: list[Issue]) -> None:
     if not doc.has_frontmatter or doc.is_readme:
         return
 
-    policy = get_directory_policy(doc.parent_relpath)
+    policy = get_doc_policy(root, doc)
+    expected_policy = DESIGN_DOC_POLICIES.get(doc.type)
+    if expected_policy and policy != expected_policy and not is_cross_repo_context(root, doc):
+        add_issue(
+            issues,
+            "error",
+            "misplaced_design_doc",
+            doc.path,
+            f"{doc.type} documents must live under docs/designs/{expected_policy}, not {doc.parent_relpath.as_posix()}",
+        )
+        return
 
     if policy == "rfc":
         if doc.type != "RFC":
@@ -606,7 +678,7 @@ def audit_docs(root: Path, scope_path: Path, strict_targets: bool) -> tuple[list
         audit_doc_fields(doc, issues)
         audit_relations(doc, docs_by_uuid, strict_targets, issues)
         audit_relative_links(doc, issues)
-        audit_policy(doc, docs_by_uuid, issues)
+        audit_policy(root, doc, docs_by_uuid, issues)
 
     return issues, scoped_docs
 
