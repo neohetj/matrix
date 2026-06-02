@@ -42,6 +42,7 @@ description: 将产品或业务需求转换为 Matrix DSL 实现方案与实际�
 - 目标为 `Patch` 类型时，必须显式字段映射。
 - 目标为 `MapStringInterface` patch 时，先确认运行时 Matrix 版本是否支持嵌套字段写入自动初始化；如果要兼容旧运行时，优先用函数节点先产出完整 map，再交给 `storage_update`。
 - DSL 节点 `inputs/outputs` 必须与函数签名一致。
+- 函数节点 `inputs/outputs` key 是 Go 侧 `IOObject.ParamName`，必须使用语义化 `lower_snake_case`；`objId` 才是 DataT 对象实例 ID，不要把 `company01`、`accesspol001` 这类 objId 风格名称作为 ParamName。
 - `functions` 节点的业务配置必须放在 `configuration.business`，不要把自定义字段平铺到配置根层。
 - 不允许引入伪输入来“保活”上下文对象。
 - 如果 stage 依赖持久化后的对象，必须消费保存后的对象，而不是保存前的临时对象。

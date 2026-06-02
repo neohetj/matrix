@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a repo-local Matrix rulechain validator from any workspace subdirectory."""
+"""Run a Matrix rulechain validator from any workspace subdirectory."""
 
 from __future__ import annotations
 
@@ -9,10 +9,7 @@ from pathlib import Path
 
 
 def is_matrix_dsl_workspace(candidate: Path) -> bool:
-    return (
-        (candidate / "scripts" / "validate_rulechain_mappings.py").exists()
-        and (candidate / "code" / "dsl").exists()
-    )
+    return (candidate / "code" / "dsl").exists()
 
 
 def find_workspace_root(start: Path) -> Path | None:
@@ -42,7 +39,17 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     script = workspace_root / "scripts" / "validate_rulechain_mappings.py"
-    command = [sys.executable, str(script), *argv]
+    shared_script = Path(__file__).resolve().with_name("validate_rulechain_mappings.py")
+    if script.exists() and script.resolve() != shared_script:
+        command = [sys.executable, str(script), *argv]
+    else:
+        command = [
+            sys.executable,
+            str(shared_script),
+            "--repo-root",
+            str(workspace_root),
+            *argv,
+        ]
     completed = subprocess.run(command, cwd=workspace_root)
     return completed.returncode
 

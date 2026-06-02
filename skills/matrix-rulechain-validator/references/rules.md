@@ -59,6 +59,23 @@
 - 按函数签名补齐输入
 - 如果参数不该是必填，回到函数定义修改 `Required`
 
+### `function-param-name-invalid`
+
+触发条件：
+- 节点类型为 `functions`
+- DSL 节点 `inputs` / `outputs` 的 key 不是语义化 `lower_snake_case`
+- 典型坏味道包括数字后缀、CamelCase、随机串、DataT `objId` 风格名称
+
+为什么危险：
+- `ParamName` 是函数节点公开形参名，语义上应像普通函数参数，而不是 rulechain 内的临时对象 ID
+- 把 `accesspol001`、`company01` 这类 `objId` 风格名称写进函数签名，会让 DSL key、Go adapter 和 DataT 实例 ID 的职责混在一起
+- 后续为了让 DSL 通过校验，容易把更多链路复制成旧式随机名，扩大契约漂移
+
+建议修复：
+- 优先修改 Go 侧 `IOObject.ParamName` 为语义名，例如 `access_policy`、`company`、`runtime_stats`
+- 同步修改 DSL `inputs` / `outputs` key
+- 保留 `objId` 作为 DataT 对象实例 ID；如果没有必要，不要为了 ParamName 迁移而改 endpoint 的 `mapAll` 或 `rulemsg://dataT/<objId>`
+
 ### `function-input-sid-mismatch` / `function-output-sid-mismatch`
 
 触发条件：

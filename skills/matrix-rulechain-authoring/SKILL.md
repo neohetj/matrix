@@ -28,7 +28,8 @@ description: 设计和改造 Matrix rulechain DSL。用于组织 `ruleChain.id`�
 2. `connections` 只使用 `fromId`、`toId`，不要回退到 `fromIndex`、`toIndex`。
 3. `functions` 节点的业务配置必须放在 `configuration.business`，不要把自定义业务字段平铺到配置根层。
 4. DSL 节点 `inputs/outputs` 必须与函数签名一致，不允许引入伪输入来“保活”上下文对象。
-5. 新增 `objId` 必须使用稳定的可识别缩写，统一全小写连续命名且不要下划线；固定为 `12` 位，建议遵循 `[a-z][a-z0-9]{11}`。
+5. 函数节点 `inputs/outputs` 的 key 是 Go 侧 `IOObject.ParamName`，必须使用语义化 `lower_snake_case`；不要把 DataT `objId` 风格名称、数字后缀或 CamelCase 当作函数形参名。
+6. 新增 `objId` 必须使用稳定的可识别缩写，统一全小写连续命名且不要下划线；固定为 `12` 位，建议遵循 `[a-z][a-z0-9]{11}`。
 6. 如果流程依赖模块私有 shared ref，对应 rulechain ID、endpoint ID、shared 顶层 ID 和 HTTP path 都必须模块命名空间化。
 7. Pipeline stage 场景下，不要手动把结果再推回同一个 `outputChannel`。
 8. `transform/object_mapper` 只在真正需要字段转换时引入；不要为了 alias copy 或整体搬运强行加 mapper。
@@ -48,6 +49,7 @@ description: 设计和改造 Matrix rulechain DSL。用于组织 `ruleChain.id`�
 
 3. 再定节点契约。
    - `functions` 节点的 `inputs/outputs` 必须和函数定义一致
+   - `inputs/outputs` key 看 `ParamName`，`objId` 看 DataT 对象实例 ID，不要混用
    - `ParamName`、`defineSid`、`objId` 三者一起看
    - endpoint 或 stage 注入的入口对象要明确，不要靠“顺手经过”保活
 

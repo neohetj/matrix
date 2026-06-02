@@ -21,6 +21,9 @@ description: "校验基于 Matrix 的 DSL 规则链、HTTP endpoint 与函数节
 ## Workflow
 
 1. 从工作区根目录运行仓库本地的 `scripts/validate_rulechain_mappings.py`，或用本 skill 的 `scripts/run_validator.py` 自动定位工作区。
+   - 通用校验规则由本 skill 的 `scripts/validate_rulechain_mappings.py` 维护。
+   - 业务模块内的 `scripts/validate_rulechain_mappings.py` 应只是 thin wrapper；模块私有适配放在 `scripts/function_catalog/main.go` 或显式配置里，不要复制一套通用 validator。
+   - 函数签名校验默认运行 `go run ./scripts/function_catalog`，由模块本地 exporter blank import 当前模块的 executors/common 后输出函数 catalog JSON。
 2. 先找真实契约源，再看报错：
    - `NodeFuncObject.Configuration.Inputs/Outputs`
    - endpoint packet `bindPath`
@@ -29,6 +32,7 @@ description: "校验基于 Matrix 的 DSL 规则链、HTTP endpoint 与函数节
    `function-input-not-defined` / `function-output-not-defined` 往往说明 DSL 还留着伪输入、旧字段名或 UI 会直接报警的配置。
    `function-required-input-missing` 说明节点少绑了必填参数。
    `function-*-sid-mismatch` 说明 DSL `defineSid` 和函数签名已经漂移。
+   `function-param-name-invalid` 说明函数节点参数名混入了 `objId` 风格、数字后缀、CamelCase 或随机串；`ParamName` 应像普通函数形参一样使用语义化 `lower_snake_case`。
 4. 再处理映射规则。如果命中 `collection-sid-object-conversion`，优先检查是否在 helper-based packet 中把集合 SID 显式写成了 `"type": "object"`。
 5. 如果命中 `typed-whole-object-cross-sid-conversion`，优先检查是不是把完整业务对象直接灌进另一个 typed SID，尤其是 `*Patch*_V*`；这类场景必须显式按字段映射。
 6. 再人工判断自动转换边界：
@@ -62,6 +66,11 @@ description: "校验基于 Matrix 的 DSL 规则链、HTTP endpoint 与函数节
   只检查 `type=functions` 节点。
   当函数签名里的必填输入没有在 DSL 节点上绑定时，判为错误。
 
+- `function-param-name-invalid`
+  只检查 `type=functions` 节点的 `inputs` / `outputs` key。
+  当参数名不是语义化 `lower_snake_case`，或包含数字、CamelCase、随机串、DataT `objId` 风格后缀时，判为错误。
+  `ParamName` 是函数节点公开形参名，应使用 `access_policy`、`company_status_patch`、`pagination` 这类名称；`accesspol001`、`company01`、`pageSize` 应留给旧对象 ID 或迁移掉。
+
 - `function-input-sid-mismatch` / `function-output-sid-mismatch`
   只检查 `type=functions` 节点。
   当 DSL 里的 `defineSid` 和函数签名声明的 `DefineSID` 不一致时，判为错误。
@@ -93,6 +102,7 @@ description: "校验基于 Matrix 的 DSL 规则链、HTTP endpoint 与函数节
 
 - 函数节点多余输入/输出：删除 DSL 上不在函数签名中的绑定，不要把“保对象”当成函数参数传。
 - 函数节点缺少必填输入：按函数签名补齐参数；如果函数确实不该必填，改函数定义而不是靠 DSL 猜测。
+- 函数节点参数名不规范：优先修改 Go 侧 `IOObject.ParamName` 为语义化 `lower_snake_case`，再同步 DSL `inputs`/`outputs` key；不要只把 DSL key 改成 `objId` 风格来迎合旧签名。
 - 函数节点 SID 不一致：以函数签名为准修正 `defineSid`，不要让 DSL 和 `NodeFuncObject` 各写各的。
 - 集合整体透传：去掉字段上的 `"type"`，让 typed DataT 原样流转。
 - 字符串 JSON 解析成对象：保留 `"type": "object"`，但确保源是 `sid=String` 或原始 JSON 字符串。
@@ -105,8 +115,10 @@ description: "校验基于 Matrix 的 DSL 规则链、HTTP endpoint 与函数节
 
 ## Resources
 
+- `scripts/validate_rulechain_mappings.py`
+  通用 Matrix DSL 静态校验器。支持 `--repo-root`、`--dsl-root`、`--function-catalog-command`、`--function-catalog-json` 与 `--skip-function-signatures`。
 - `scripts/run_validator.py`
-  自动定位包含 `code/dsl` 与 `scripts/validate_rulechain_mappings.py` 的工作区，并转调仓库本地校验器。
+  自动定位包含 `code/dsl` 的工作区；有 repo-local thin wrapper 时优先转调，否则直接使用本 skill 的通用校验器。
 - `references/rules.md`
   汇总当前静态校验规则和常见修复方式。
 

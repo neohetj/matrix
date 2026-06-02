@@ -24,6 +24,8 @@
 - [ ] `configuration.functionName` 与 `FuncObject.ID` 完全一致。
 - [ ] `inputs` 键名与 `IOObject.ParamName` 一致。
 - [ ] `outputs` 键名与 `IOObject.ParamName` 一致。
+- [ ] `IOObject.ParamName` 使用语义化 `lower_snake_case`，不使用数字后缀、CamelCase、随机串或 DataT `objId` 风格名称。
+- [ ] `objId` 仅作为 rulechain 内部 DataT 对象实例 ID；不要用 `objId` 反向污染函数形参名。
 - [ ] `defineSid` 与 Go 侧类型 SID 一致。
 
 ## Reuse Checks
