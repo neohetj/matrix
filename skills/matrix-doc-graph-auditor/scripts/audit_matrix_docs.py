@@ -151,6 +151,17 @@ USAGE_DOC_ROOTS = {"guides", "migration"}
 REFERENCE_DIR = "reference"
 DECISION_TRACEABILITY_FILENAME = "00_decision_traceability.md"
 REPO_MAPPING_FILENAME = "01_repo_mapping.md"
+DESIGN_DOC_POLICIES = {
+    "RFC": "rfc",
+    "ADR": "adr",
+    "Plan": "plan",
+}
+LEGACY_REPO_LOCAL_DESIGN_DIRS = {
+    "rfc": "designs/rfc",
+    "adr": "designs/adr",
+    "plan": "designs/plan",
+    "plans": "designs/plan",
+}
 
 
 @dataclass
@@ -418,6 +429,47 @@ def get_directory_policy(relpath: Path) -> str:
     return "generic"
 
 
+def get_root_policy(root: Path) -> str | None:
+    parts = root.parts
+    if len(parts) >= 2 and parts[-2] == "designs":
+        if parts[-1] == "rfc":
+            return "rfc"
+        if parts[-1] == "adr":
+            return "adr"
+        if parts[-1] == "plan":
+            return "plan"
+    if root.name == "reference":
+        return "reference"
+    if root.name == "guides":
+        return "guides"
+    if len(parts) >= 2 and parts[-2] == "guides" and parts[-1] == "components":
+        return "guides_components"
+    if root.name == "migration":
+        return "migration"
+    if root.name == "templates":
+        return "templates"
+    if root.name == "latest":
+        return "latest"
+    return None
+
+
+def get_doc_policy(root: Path, doc: Doc) -> str:
+    policy = get_directory_policy(doc.parent_relpath)
+    if policy == "docs_root":
+        root_policy = get_root_policy(root)
+        if root_policy:
+            return root_policy
+    return policy
+
+
+def is_cross_repo_context(root: Path, doc: Doc | None = None) -> bool:
+    if "cross-repo" in root.parts:
+        return True
+    if doc and doc.relpath.parts and doc.relpath.parts[0] == "cross-repo":
+        return True
+    return False
+
+
 def is_placeholder_uuid(value: str) -> bool:
     return value in TEMPLATE_UUID_PLACEHOLDERS
 
@@ -435,11 +487,32 @@ def is_formal_doc(doc: Doc) -> bool:
     return rel.startswith(("designs/rfc/", "designs/adr/", "designs/plan/", "reference/"))
 
 
+def root_doc_set_base(root: Path) -> Path:
+    parts = root.parts
+    if len(parts) >= 2 and parts[-2] == "designs" and parts[-1] in {"rfc", "adr", "plan"}:
+        return root.parent.parent
+    if len(parts) >= 2 and parts[-2] == "guides" and parts[-1] == "components":
+        return root.parent.parent
+    if root.name in {"reference", "guides", "migration", "templates", "latest"}:
+        return root.parent
+    return root
+
+
 def doc_set_root(root: Path, doc: Doc) -> Path:
+    base = root_doc_set_base(root)
     parts = doc.relpath.parts
     if len(parts) >= 2 and parts[0] == "cross-repo":
-        return root / parts[0] / parts[1]
-    return root
+        return base / parts[0] / parts[1]
+    if root.name == "cross-repo" and parts:
+        return root / parts[0]
+    return base
+
+
+def doc_set_relative_path(root: Path, path: Path) -> Path | None:
+    try:
+        return path.relative_to(root_doc_set_base(root))
+    except ValueError:
+        return None
 
 
 def final_fact_doc(doc: Doc) -> bool:
@@ -463,9 +536,8 @@ def markdown_link_points_to_final_fact(root: Path, doc: Doc) -> bool:
         if not target_no_anchor:
             continue
         target_path = (doc.path.parent / target_no_anchor).resolve()
-        try:
-            rel = target_path.relative_to(doc_set_root(root, doc))
-        except ValueError:
+        rel = doc_set_relative_path(root, target_path)
+        if rel is None:
             continue
         if rel.parts and rel.parts[0] in {"reference", "guides"} and target_path.exists():
             return True
@@ -488,9 +560,8 @@ def decision_traceability_mentions_final_fact(doc: Doc, root: Path) -> bool:
         if not target_no_anchor:
             continue
         target_path = (traceability.parent / target_no_anchor).resolve()
-        try:
-            rel = target_path.relative_to(doc_set_root(root, doc))
-        except ValueError:
+        rel = doc_set_relative_path(root, target_path)
+        if rel is None:
             continue
         if rel.parts and rel.parts[0] in {"reference", "guides"} and target_path.exists():
             return True
@@ -559,6 +630,16 @@ def audit_directory_structure(root: Path, scope_path: Path, issues: list[Issue])
         readme = directory / "README.md"
         rel_dir = directory.relative_to(root)
         policy = get_directory_policy(rel_dir if rel_dir != Path(".") else Path("."))
+        rel_dir_text = rel_dir.as_posix()
+
+        if not is_cross_repo_context(root) and rel_dir_text in LEGACY_REPO_LOCAL_DESIGN_DIRS:
+            add_issue(
+                issues,
+                "error",
+                "legacy_design_directory",
+                directory,
+                f"repo-local design docs must live under {LEGACY_REPO_LOCAL_DESIGN_DIRS[rel_dir_text]}, not {rel_dir_text}",
+            )
 
         if not readme.exists():
             add_issue(issues, "error", "missing_directory_readme", directory, "目录缺少 README.md")
@@ -781,7 +862,17 @@ def audit_policy(root: Path, doc: Doc, docs_by_uuid: dict[str, Doc], issues: lis
     if not doc.has_frontmatter or doc.is_readme:
         return
 
-    policy = get_directory_policy(doc.parent_relpath)
+    policy = get_doc_policy(root, doc)
+    expected_policy = DESIGN_DOC_POLICIES.get(doc.type)
+    if expected_policy and policy != expected_policy and not is_cross_repo_context(root, doc):
+        add_issue(
+            issues,
+            "error",
+            "misplaced_design_doc",
+            doc.path,
+            f"{doc.type} documents must live under docs/designs/{expected_policy}, not {doc.parent_relpath.as_posix()}",
+        )
+        return
 
     if policy == "rfc":
         if doc.type != "RFC":
