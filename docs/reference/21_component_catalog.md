@@ -42,6 +42,7 @@ relations:
 | 源码锚点 | 说明 |
 | :--- | :--- |
 | `endpoint/http` | HTTP 入口 |
+| `endpoint/mcp` | MCP tool 入口，transport host 由 WhiteRoom 等宿主承载 |
 | `endpoint/pipeline` | Pipeline 入口 |
 
 ## 4. Pipeline / Shared Resources

@@ -31,3 +31,4 @@ relations:
 
 - [0006-1_ops-components-and-dsl-impl_plan.md](./0006-1_ops-components-and-dsl-impl_plan.md): 运维基础组件与 DSL 扩展的实现计划。
 - [0012-1_topology-driven-deployment-platform_plan.md](./0012-1_topology-driven-deployment-platform_plan.md): 拓扑驱动部署平台的阶段化工程蓝图。
+- [0014-1_mcp_business_endpoint_adapter_plan.md](./0014-1_mcp_business_endpoint_adapter_plan.md): MCP 业务入口适配器的阶段化实施方案。

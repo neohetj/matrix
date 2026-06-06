@@ -20,8 +20,12 @@ RFC_FILENAME_RE = re.compile(r"^\d{4}_[a-z0-9][a-z0-9_-]*_rfc\.md$")
 ADR_FILENAME_RE = re.compile(r"^\d{4}-\d+_[a-z0-9][a-z0-9_-]*_adr\.md$")
 PLAN_FILENAME_RE = re.compile(r"^\d{4}-\d+_[a-z0-9][a-z0-9_-]*_plan\.md$")
 REFERENCE_FILENAME_RE = re.compile(r"^\d{2}_[a-z0-9][a-z0-9_]*\.md$")
-RFC_ORIGINAL_REQUIREMENTS_RE = re.compile(r"(?m)^#{2,6}\s+原始需求点总结\s*$")
+GUIDE_FILENAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*-guide\.md$")
+RFC_ORIGINAL_REQUIREMENTS_RE = re.compile(r"(?m)^##\s+原始需求点总结\s*$")
 RFC_CURRENT_ALIGNMENT_RE = re.compile(r"(?m)^#{2,6}\s+(?:\d+(?:\.\d+)*\.?\s+)?(?:附录：)?当前实现对齐(?:\s*\(.*\))?\s*$")
+TRACEABILITY_MATRIX_RE = re.compile(r"(?:traceability\s+matrix|追踪矩阵)", re.I)
+MERMAID_DIAGRAM_RE = re.compile(r"```mermaid\s+(.*?)```", re.S)
+KEY_DIAGRAM_RE = re.compile(r"\b(?:flowchart|sequenceDiagram|stateDiagram(?:-v2)?|graph|erDiagram|classDiagram)\b")
 
 RFC_ALLOWED_STATUSES = {
     "Draft",
@@ -43,6 +47,72 @@ PLAN_ALLOWED_STATUSES = {
     "Stable",
     "Superseded",
 }
+REFERENCE_ALLOWED_STATUSES = {
+    "Draft",
+    "Stable",
+    "Deprecated",
+    "Superseded",
+}
+GUIDE_ALLOWED_STATUSES = {
+    "Draft",
+    "Stable",
+    "Deprecated",
+    "Superseded",
+}
+CANONICAL_RELATION_TYPES = {
+    "indexes",
+    "is_part_of",
+    "is_indexed_by",
+    "has_plan",
+    "is_plan_for",
+    "has_adr",
+    "realizes",
+    "is_refined_by",
+    "refines",
+    "extends",
+    "has_related_rfc",
+    "has_reference",
+    "is_specified_by",
+    "specifies",
+    "has_guide",
+    "implemented_by",
+    "implements",
+    "operates",
+    "uses_reference",
+    "uses_guide",
+    "depends_on",
+    "supports",
+    "validates",
+    "has_repo_mapping",
+    "relates_to",
+    "references",
+    "complements",
+    "supersedes",
+    "superseded_by",
+}
+LEGACY_RELATION_TYPE_REPLACEMENTS = {
+    "is_part of": "is_part_of",
+    "implemented-by": "implemented_by",
+    "specified-by": "is_specified_by 或 has_reference",
+    "formalized_by": "has_adr、is_refined_by 或 realizes，按方向选择",
+    "is_formalized_by": "has_adr 或 is_refined_by",
+    "is_implemented_by": "implemented_by",
+    "is_operated_by": "has_guide 或 implemented_by",
+    "is_guided_by": "has_guide 或 uses_guide",
+    "decides": "realizes",
+    "plans": "is_plan_for；如果目标是 ADR，则用 implements",
+    "documents": "indexes 或 is_part_of",
+    "contains": "indexes 或 is_part_of",
+    "explains": "references、has_guide 或 supports",
+    "is_explained_by": "references、has_guide 或 supports",
+    "is_referenced_by": "在引用方使用 references",
+    "is_supported_by": "在支撑方使用 supports",
+    "is_based_on": "depends_on",
+    "is_governed_by": "uses_reference 或 depends_on",
+    "is_applied_in": "supports",
+    "is_extended_by": "在扩展方使用 extends",
+    "extends_plan": "is_refined_by、refines 或 depends_on",
+}
 UNSTABLE_STATUSES = {"Draft", "InReview", "Implementing"}
 FORMALIZATION_RELATION_TYPES = {
     "formalized_by",
@@ -52,6 +122,13 @@ FORMALIZATION_RELATION_TYPES = {
     "formalizes",
     "implements",
 }
+FINAL_FACT_DOC_TYPES = {"Reference", "Guide"}
+NON_CURRENT_FINAL_FACT_STATUSES = {"Draft", "Deprecated", "Superseded", "Rejected"}
+REFERENCE_DIAGRAM_TITLE_RE = re.compile(
+    r"(?:流程|调用链|时序|状态流|架构|边界|契约|合同|适配器|端点|能力|数据模型|"
+    r"flow|call|sequence|state|architecture|boundary|contract|adapter|endpoint|capability|data[_ -]?model)",
+    re.I,
+)
 TEMPLATE_UUID_PLACEHOLDERS = {
     "GENERATED_UUID",
     "[UUID of parent RFC]",
@@ -71,6 +148,9 @@ SKIP_LINK_PREFIXES = (
 SPECIAL_INDEX_FREE_POLICIES = {"latest"}
 SHARED_REQUIRED_FIELDS = ("uuid", "type", "title", "status", "owner", "version", "tags", "relations")
 USAGE_DOC_ROOTS = {"guides", "migration"}
+REFERENCE_DIR = "reference"
+DECISION_TRACEABILITY_FILENAME = "00_decision_traceability.md"
+REPO_MAPPING_FILENAME = "01_repo_mapping.md"
 
 
 @dataclass
@@ -105,6 +185,10 @@ class Doc:
     @property
     def is_readme(self) -> bool:
         return self.path.name == "README.md"
+
+    @property
+    def is_hidden(self) -> bool:
+        return any(part.startswith(".") for part in self.relpath.parts)
 
 
 @dataclass
@@ -305,6 +389,12 @@ def get_directory_policy(relpath: Path) -> str:
     rel = relpath.as_posix()
     if rel == ".":
         return "docs_root"
+    parts = relpath.parts
+    if len(parts) >= 4 and parts[0] == "cross-repo":
+        nested = "/".join(parts[2:])
+        return get_directory_policy(Path(nested))
+    if len(parts) >= 2 and parts[0] == "reference":
+        return "reference"
     if rel == "designs":
         return "designs_root"
     if rel == "designs/rfc":
@@ -334,6 +424,95 @@ def is_placeholder_uuid(value: str) -> bool:
 
 def is_valid_uuid(value: str) -> bool:
     return bool(HEX_UUID_RE.match(value))
+
+
+def is_formal_doc(doc: Doc) -> bool:
+    if doc.is_readme or doc.is_template or doc.is_hidden:
+        return False
+    if doc.type in {"RFC", "ADR", "Plan", "Reference"}:
+        return True
+    rel = doc.relpath.as_posix()
+    return rel.startswith(("designs/rfc/", "designs/adr/", "designs/plan/", "reference/"))
+
+
+def doc_set_root(root: Path, doc: Doc) -> Path:
+    parts = doc.relpath.parts
+    if len(parts) >= 2 and parts[0] == "cross-repo":
+        return root / parts[0] / parts[1]
+    return root
+
+
+def final_fact_doc(doc: Doc) -> bool:
+    if doc.is_readme or doc.is_template:
+        return False
+    if doc.type in FINAL_FACT_DOC_TYPES:
+        return doc.status not in NON_CURRENT_FINAL_FACT_STATUSES
+    return bool(doc.relpath.parts) and doc.relpath.parts[0] in {"reference", "guides"}
+
+
+def target_is_final_fact(target: Doc | None) -> bool:
+    return target is not None and final_fact_doc(target)
+
+
+def markdown_link_points_to_final_fact(root: Path, doc: Doc) -> bool:
+    for raw_target in iter_markdown_links(doc.body):
+        target = raw_target.strip()
+        if not target or target.startswith(SKIP_LINK_PREFIXES):
+            continue
+        target_no_anchor = target.split("#", 1)[0]
+        if not target_no_anchor:
+            continue
+        target_path = (doc.path.parent / target_no_anchor).resolve()
+        try:
+            rel = target_path.relative_to(doc_set_root(root, doc))
+        except ValueError:
+            continue
+        if rel.parts and rel.parts[0] in {"reference", "guides"} and target_path.exists():
+            return True
+    return False
+
+
+def decision_traceability_mentions_final_fact(doc: Doc, root: Path) -> bool:
+    traceability = doc_set_root(root, doc) / REFERENCE_DIR / DECISION_TRACEABILITY_FILENAME
+    if not traceability.exists():
+        return False
+    text = traceability.read_text(encoding="utf-8")
+    identifiers = [value for value in (doc.uuid, doc.path.name, doc.relpath.as_posix()) if value]
+    if not identifiers or not any(identifier in text for identifier in identifiers):
+        return False
+    for raw_target in iter_markdown_links(text):
+        target = raw_target.strip()
+        if not target or target.startswith(SKIP_LINK_PREFIXES):
+            continue
+        target_no_anchor = target.split("#", 1)[0]
+        if not target_no_anchor:
+            continue
+        target_path = (traceability.parent / target_no_anchor).resolve()
+        try:
+            rel = target_path.relative_to(doc_set_root(root, doc))
+        except ValueError:
+            continue
+        if rel.parts and rel.parts[0] in {"reference", "guides"} and target_path.exists():
+            return True
+    return False
+
+
+def has_key_mermaid_diagram(doc: Doc) -> bool:
+    for block in MERMAID_DIAGRAM_RE.findall(doc.body):
+        if KEY_DIAGRAM_RE.search(block):
+            return True
+    return False
+
+
+def reference_needs_key_diagram(doc: Doc) -> bool:
+    if doc.type != "Reference" or doc.is_readme or doc.status != "Stable":
+        return False
+    if doc.path.name in {DECISION_TRACEABILITY_FILENAME, REPO_MAPPING_FILENAME}:
+        return False
+    if "flows" in doc.relpath.parts:
+        return True
+    haystack = " ".join([doc.path.stem, doc.title])
+    return bool(REFERENCE_DIAGRAM_TITLE_RE.search(haystack))
 
 
 def index_expected_entries(directory: Path) -> set[str]:
@@ -446,6 +625,19 @@ def audit_relations(doc: Doc, docs_by_uuid: dict[str, Doc], strict_targets: bool
     if not doc.has_frontmatter:
         return
     for relation in doc.relations:
+        if not relation.type:
+            add_issue(issues, "error", "blank_relation_type", doc.path, "relations 中存在空的 type")
+        elif relation.type in LEGACY_RELATION_TYPE_REPLACEMENTS:
+            add_issue(
+                issues,
+                "warning",
+                "legacy_relation_type",
+                doc.path,
+                f"relation type 使用历史写法: {relation.type}；建议改为 {LEGACY_RELATION_TYPE_REPLACEMENTS[relation.type]}",
+            )
+        elif relation.type not in CANONICAL_RELATION_TYPES:
+            add_issue(issues, "error", "unknown_relation_type", doc.path, f"relation type 不在规范词表中: {relation.type}")
+
         if not relation.target_uuid:
             add_issue(issues, "error", "blank_target_uuid", doc.path, "relations 中存在空的 target_uuid")
             continue
@@ -509,6 +701,13 @@ def has_usage_doc_relation(doc: Doc, docs_by_uuid: dict[str, Doc]) -> bool:
     return False
 
 
+def has_final_fact_relation(doc: Doc, docs_by_uuid: dict[str, Doc]) -> bool:
+    for relation in doc.relations:
+        if target_is_final_fact(docs_by_uuid.get(relation.target_uuid)):
+            return True
+    return False
+
+
 def has_original_requirements_summary(doc: Doc) -> bool:
     return bool(RFC_ORIGINAL_REQUIREMENTS_RE.search(doc.body))
 
@@ -517,7 +716,68 @@ def has_current_implementation_alignment(doc: Doc) -> bool:
     return bool(RFC_CURRENT_ALIGNMENT_RE.search(doc.body))
 
 
-def audit_policy(doc: Doc, docs_by_uuid: dict[str, Doc], issues: list[Issue]) -> None:
+def audit_doc_text_policy(doc: Doc, issues: list[Issue]) -> None:
+    if not doc.has_frontmatter or doc.is_template:
+        return
+    searchable = "\n".join([doc.path.name, doc.title, strip_code_spans(doc.body)])
+    if TRACEABILITY_MATRIX_RE.search(searchable):
+        add_issue(
+            issues,
+            "error",
+            "forbidden_traceability_matrix_naming",
+            doc.path,
+            "避免使用 Traceability Matrix / 追踪矩阵 命名；请统一使用 decision traceability / 决策追踪索引。",
+        )
+
+
+def audit_doc_set_policy(root: Path, all_docs: Iterable[Doc], scoped_docs: Iterable[Doc], issues: list[Issue]) -> None:
+    all_docs_list = list(all_docs)
+    scoped_set_roots = {doc_set_root(root, doc) for doc in scoped_docs if is_formal_doc(doc)}
+    if not scoped_set_roots:
+        return
+
+    docs_by_set: dict[Path, list[Doc]] = {}
+    for doc in all_docs_list:
+        if is_formal_doc(doc):
+            docs_by_set.setdefault(doc_set_root(root, doc), []).append(doc)
+
+    for set_root, formal_docs in sorted(docs_by_set.items(), key=lambda item: str(item[0])):
+        if set_root not in scoped_set_roots or not formal_docs:
+            continue
+
+        reference_dir = set_root / REFERENCE_DIR
+        decision_traceability = reference_dir / DECISION_TRACEABILITY_FILENAME
+        if not decision_traceability.exists():
+            add_issue(
+                issues,
+                "error",
+                "missing_decision_traceability",
+                decision_traceability,
+                "正式 RFC / ADR / Plan / Reference 文档集必须维护 reference/00_decision_traceability.md。",
+            )
+
+        if reference_dir.exists():
+            for candidate in sorted(reference_dir.glob("00_*.md")):
+                if candidate.name != DECISION_TRACEABILITY_FILENAME:
+                    add_issue(
+                        issues,
+                        "error",
+                        "reserved_reference_00_filename",
+                        candidate,
+                        "reference/00_* 是固定保留序号，必须命名为 00_decision_traceability.md。",
+                    )
+            for candidate in sorted(reference_dir.glob("*repo_mapping*.md")):
+                if candidate.name != REPO_MAPPING_FILENAME:
+                    add_issue(
+                        issues,
+                        "error",
+                        "invalid_repo_mapping_filename",
+                        candidate,
+                        "repo mapping 是条件固定序号；需要 repo mapping 时必须命名为 reference/01_repo_mapping.md。",
+                    )
+
+
+def audit_policy(root: Path, doc: Doc, docs_by_uuid: dict[str, Doc], issues: list[Issue]) -> None:
     if not doc.has_frontmatter or doc.is_readme:
         return
 
@@ -536,7 +796,7 @@ def audit_policy(doc: Doc, docs_by_uuid: dict[str, Doc], issues: list[Issue]) ->
                 "error",
                 "missing_original_requirements_summary",
                 doc.path,
-                "RFC 必须包含一个明确命名为“原始需求点总结”的小节，用于保留最初需求。",
+                "RFC 必须包含一个二级标题“## 原始需求点总结”，用于保留最初需求。",
             )
         if doc.status in {"Accepted", "Implementing"} and not has_current_implementation_alignment(doc):
             add_issue(
@@ -546,13 +806,17 @@ def audit_policy(doc: Doc, docs_by_uuid: dict[str, Doc], issues: list[Issue]) ->
                 doc.path,
                 "Accepted/Implementing RFC 必须包含“当前实现对齐”章节，用于回写当前实现范围与偏差。",
             )
-        if doc.status in {"Accepted", "Implementing"} and not has_usage_doc_relation(doc, docs_by_uuid):
+        if doc.status in {"Accepted", "Implementing"} and not (
+            has_final_fact_relation(doc, docs_by_uuid)
+            or markdown_link_points_to_final_fact(root, doc)
+            or decision_traceability_mentions_final_fact(doc, root)
+        ):
             add_issue(
                 issues,
                 "error",
-                "missing_usage_doc_relation",
+                "missing_final_fact_relation",
                 doc.path,
-                "Accepted/Implementing RFC 必须至少关联一份当前使用文档（guides/ 或 migration/ 下的非 README 文档）",
+                "Accepted/Implementing RFC 必须能追踪到一个或多个当前 Reference 或 Guide；仅关联 Plan/ADR 不算完成闭环。",
             )
         if doc.status == "Accepted":
             targets = [
@@ -568,6 +832,8 @@ def audit_policy(doc: Doc, docs_by_uuid: dict[str, Doc], issues: list[Issue]) ->
         return
 
     if policy == "adr":
+        if doc.type != "ADR":
+            add_issue(issues, "error", "invalid_adr_type", doc.path, f"ADR 目录文档的 type 应为 ADR，当前为 {doc.type!r}")
         if not ADR_FILENAME_RE.match(doc.path.name):
             add_issue(issues, "warning", "adr_filename_convention", doc.path, f"文件名不符合 ADR 命名规范: {doc.path.name}")
         if doc.status and doc.status not in ADR_ALLOWED_STATUSES:
@@ -577,6 +843,8 @@ def audit_policy(doc: Doc, docs_by_uuid: dict[str, Doc], issues: list[Issue]) ->
         return
 
     if policy == "plan":
+        if doc.type != "Plan":
+            add_issue(issues, "error", "invalid_plan_type", doc.path, f"Plan 目录文档的 type 应为 Plan，当前为 {doc.type!r}")
         if not PLAN_FILENAME_RE.match(doc.path.name):
             add_issue(issues, "warning", "plan_filename_convention", doc.path, f"文件名不符合 Plan 命名规范: {doc.path.name}")
         if doc.status and doc.status not in PLAN_ALLOWED_STATUSES:
@@ -585,8 +853,30 @@ def audit_policy(doc: Doc, docs_by_uuid: dict[str, Doc], issues: list[Issue]) ->
             add_issue(issues, "error", "missing_parent_rfc_relation", doc.path, "Plan 必须至少有一条 type=is_plan_for 且指向 RFC 的关系")
         return
 
-    if policy == "reference" and not REFERENCE_FILENAME_RE.match(doc.path.name):
-        add_issue(issues, "warning", "reference_filename_convention", doc.path, f"Reference 文件名应遵循 NN_topic.md: {doc.path.name}")
+    if policy == "reference":
+        if doc.type != "Reference":
+            add_issue(issues, "error", "invalid_reference_type", doc.path, f"Reference 目录文档的 type 应为 Reference，当前为 {doc.type!r}")
+        if doc.status and doc.status not in REFERENCE_ALLOWED_STATUSES:
+            add_issue(issues, "error", "invalid_reference_status", doc.path, f"Reference status 不在允许集合中: {doc.status}")
+        if not REFERENCE_FILENAME_RE.match(doc.path.name):
+            add_issue(issues, "warning", "reference_filename_convention", doc.path, f"Reference 文件名应遵循 NN_topic.md: {doc.path.name}")
+        if reference_needs_key_diagram(doc) and not has_key_mermaid_diagram(doc):
+            add_issue(
+                issues,
+                "error",
+                "missing_reference_key_diagram",
+                doc.path,
+                "Stable Reference 涉及流程、调用链、架构、边界、contract 或数据模型时，必须包含关键流程图、时序图或状态图。",
+            )
+        return
+
+    if policy == "guides":
+        if doc.type != "Guide":
+            add_issue(issues, "error", "invalid_guide_type", doc.path, f"Guide 目录文档的 type 应为 Guide，当前为 {doc.type!r}")
+        if doc.status and doc.status not in GUIDE_ALLOWED_STATUSES:
+            add_issue(issues, "error", "invalid_guide_status", doc.path, f"Guide status 不在允许集合中: {doc.status}")
+        if not GUIDE_FILENAME_RE.match(doc.path.name):
+            add_issue(issues, "warning", "guide_filename_convention", doc.path, f"Guide 文件名应遵循 <slug>-guide.md: {doc.path.name}")
 
 
 def audit_docs(root: Path, scope_path: Path, strict_targets: bool) -> tuple[list[Issue], list[Doc]]:
@@ -601,12 +891,14 @@ def audit_docs(root: Path, scope_path: Path, strict_targets: bool) -> tuple[list
 
     audit_uuid_uniqueness(all_docs, issues)
     audit_directory_structure(root, scope_path, issues)
+    audit_doc_set_policy(root, all_docs, scoped_docs, issues)
 
     for doc in scoped_docs:
         audit_doc_fields(doc, issues)
+        audit_doc_text_policy(doc, issues)
         audit_relations(doc, docs_by_uuid, strict_targets, issues)
         audit_relative_links(doc, issues)
-        audit_policy(doc, docs_by_uuid, issues)
+        audit_policy(root, doc, docs_by_uuid, issues)
 
     return issues, scoped_docs
 

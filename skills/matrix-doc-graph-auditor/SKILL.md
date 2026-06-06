@@ -19,6 +19,15 @@ It is especially useful for:
 - enforcing that `Accepted` / `Implementing` RFCs point to at least one current usage document under `docs/guides/` or `docs/migration/`
 - enforcing that every RFC contains a dedicated `原始需求点总结` section near the front of the document
 - enforcing that `Accepted` / `Implementing` RFCs contain a dedicated `当前实现对齐` section
+- enforcing that every formal RFC / ADR / Plan / Reference document set has `reference/00_decision_traceability.md`
+- enforcing that repo mapping uses `reference/01_repo_mapping.md` when it is needed, while allowing ordinary reference docs to start at `01_` when no repo mapping exists
+- rejecting `Traceability Matrix` / `追踪矩阵` naming in favor of `decision traceability` / `决策追踪索引`
+- enforcing that `Accepted` / `Implementing` RFCs are traceable to current Reference or Guide documents, not only Plan / ADR documents
+- enforcing key Mermaid flow / sequence / state diagrams for Stable Reference documents that describe stable flows, contracts, boundaries, adapters, endpoints, capabilities, architectures, or data models
+- checking relation vocabulary against the canonical relation types in `docs/reference/00_documentation_governance.md` when relation-type migration is in scope
+- enforcing ADR / Plan / Reference / Guide directory type and status constraints
+- warning when Guide filenames do not follow `<slug>-guide.md`
+- warning on legacy relation types and failing unknown relation types
 - allowing template-only placeholder UUIDs inside `docs/templates`, while flagging those placeholders elsewhere
 
 This skill is intentionally structural. It can prove whether references resolve and whether README rules are followed, but code-implementation alignment for an RFC still needs a short manual review after the structural scan.
@@ -60,9 +69,17 @@ The bundled script checks:
 - missing `README.md` in any docs subdirectory
 - `README.md` index drift for files and child directories
 - RFC / ADR / Plan filename convention and status values
+- ADR / Plan / Reference / Guide directory type and status values
+- Guide filename convention
+- canonical relation vocabulary, with legacy relation names reported as warnings
 - `Accepted` / `Implementing` RFCs include at least one current usage-doc relation
-- RFCs include a dedicated `原始需求点总结` section
+- RFCs include a dedicated `## 原始需求点总结` section
 - `Accepted` / `Implementing` RFCs include a dedicated `当前实现对齐` section
+- formal document sets include `reference/00_decision_traceability.md`
+- repo mapping files use `reference/01_repo_mapping.md` when present
+- docs avoid `Traceability Matrix` / `追踪矩阵` naming
+- `Accepted` / `Implementing` RFCs can be traced to current Reference or Guide documents
+- relevant Stable Reference docs include key Mermaid diagrams
 - required parent-RFC relations for ADR / Plan docs
 - placeholder UUID leakage outside `docs/templates`
 

@@ -48,6 +48,7 @@ relations:
 | [`0011_config_uri_and_manager_rfc.md`](./0011_config_uri_and_manager_rfc.md) | `Implementing` | `config://` 协议已实现，统一配置视图未实现 |
 | [`0012_topology-driven-deployment-platform_rfc.md`](./0012_topology-driven-deployment-platform_rfc.md) | `Draft` | 部署平台闭环仍是提案，底层拓扑能力已具备部分前置实现 |
 | [`0013_function_routing_constraints_rfc.md`](./0013_function_routing_constraints_rfc.md) | `Accepted` | 函数路由约束已在运行时和注册阶段实现 |
+| [`0014_mcp_business_endpoint_adapter_rfc.md`](./0014_mcp_business_endpoint_adapter_rfc.md) | `Draft` | MCP 业务入口适配器提案，用于把业务模块能力白名单暴露为 MCP tools |
 
 ## 阅读顺序建议
 
