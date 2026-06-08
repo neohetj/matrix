@@ -6,6 +6,7 @@ import json
 import re
 import sys
 from dataclasses import asdict, dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
 
@@ -21,6 +22,11 @@ ADR_FILENAME_RE = re.compile(r"^\d{4}-\d+_[a-z0-9][a-z0-9_-]*_adr\.md$")
 PLAN_FILENAME_RE = re.compile(r"^\d{4}-\d+_[a-z0-9][a-z0-9_-]*_plan\.md$")
 REFERENCE_FILENAME_RE = re.compile(r"^\d{2}_[a-z0-9][a-z0-9_]*\.md$")
 GUIDE_FILENAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*-guide\.md$")
+LOCALIZED_RFC_FILENAME_RE = re.compile(r"^\d{4}-[a-z0-9][a-z0-9-]*-rfc\.zh-CN\.md$")
+LOCALIZED_ADR_FILENAME_RE = re.compile(r"^\d{4}-[a-z0-9][a-z0-9-]*-adr\.zh-CN\.md$")
+LOCALIZED_PLAN_FILENAME_RE = re.compile(r"^\d{4}-[a-z0-9][a-z0-9-]*-plan\.zh-CN\.md$")
+LOCALIZED_REFERENCE_FILENAME_RE = re.compile(r"^\d{2}-[a-z0-9][a-z0-9-]*-reference\.zh-CN\.md$")
+LOCALIZED_GUIDE_FILENAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*-guide\.zh-CN\.md$")
 RFC_ORIGINAL_REQUIREMENTS_RE = re.compile(r"(?m)^##\s+原始需求点总结\s*$")
 RFC_CURRENT_ALIGNMENT_RE = re.compile(r"(?m)^#{2,6}\s+(?:\d+(?:\.\d+)*\.?\s+)?(?:附录：)?当前实现对齐(?:\s*\(.*\))?\s*$")
 TRACEABILITY_MATRIX_RE = re.compile(r"(?:traceability\s+matrix|追踪矩阵)", re.I)
@@ -151,6 +157,43 @@ USAGE_DOC_ROOTS = {"guides", "migration"}
 REFERENCE_DIR = "reference"
 DECISION_TRACEABILITY_FILENAME = "00_decision_traceability.md"
 REPO_MAPPING_FILENAME = "01_repo_mapping.md"
+LOCALIZED_DECISION_TRACEABILITY_FILENAME = "00-decision-traceability-reference.zh-CN.md"
+LOCALIZED_REPO_MAPPING_FILENAME = "01-repo-mapping-reference.zh-CN.md"
+MATRIX_PROFILE = "matrix"
+LOCALIZED_ZH_CN_PROFILE = "localized-zh-cn"
+README_FILENAMES = {
+    MATRIX_PROFILE: ("README.md",),
+    LOCALIZED_ZH_CN_PROFILE: ("README.zh-CN.md", "README.md"),
+}
+DECISION_TRACEABILITY_FILENAMES = {
+    MATRIX_PROFILE: (DECISION_TRACEABILITY_FILENAME,),
+    LOCALIZED_ZH_CN_PROFILE: (LOCALIZED_DECISION_TRACEABILITY_FILENAME, DECISION_TRACEABILITY_FILENAME),
+}
+REPO_MAPPING_FILENAMES = {
+    MATRIX_PROFILE: (REPO_MAPPING_FILENAME,),
+    LOCALIZED_ZH_CN_PROFILE: (LOCALIZED_REPO_MAPPING_FILENAME, REPO_MAPPING_FILENAME),
+}
+FILENAME_PATTERNS = {
+    MATRIX_PROFILE: {
+        "rfc": (RFC_FILENAME_RE, "NNNN_topic_rfc.md"),
+        "adr": (ADR_FILENAME_RE, "NNNN-N_topic_adr.md"),
+        "plan": (PLAN_FILENAME_RE, "NNNN-N_topic_plan.md"),
+        "reference": (REFERENCE_FILENAME_RE, "NN_topic.md"),
+        "guides": (GUIDE_FILENAME_RE, "<slug>-guide.md"),
+    },
+    LOCALIZED_ZH_CN_PROFILE: {
+        "rfc": (LOCALIZED_RFC_FILENAME_RE, "NNNN-topic-rfc.zh-CN.md"),
+        "adr": (LOCALIZED_ADR_FILENAME_RE, "NNNN-topic-adr.zh-CN.md"),
+        "plan": (LOCALIZED_PLAN_FILENAME_RE, "NNNN-topic-plan.zh-CN.md"),
+        "reference": (LOCALIZED_REFERENCE_FILENAME_RE, "NN-topic-reference.zh-CN.md"),
+        "guides": (LOCALIZED_GUIDE_FILENAME_RE, "<slug>-guide.zh-CN.md"),
+    },
+}
+ALL_README_FILENAMES = tuple(dict.fromkeys(name for names in README_FILENAMES.values() for name in names))
+ALL_DECISION_TRACEABILITY_FILENAMES = tuple(
+    dict.fromkeys(name for names in DECISION_TRACEABILITY_FILENAMES.values() for name in names)
+)
+ALL_REPO_MAPPING_FILENAMES = tuple(dict.fromkeys(name for names in REPO_MAPPING_FILENAMES.values() for name in names))
 DESIGN_DOC_POLICIES = {
     "RFC": "rfc",
     "ADR": "adr",
@@ -197,7 +240,7 @@ class Doc:
 
     @property
     def is_readme(self) -> bool:
-        return self.path.name == "README.md"
+        return is_readme_name(self.path.name)
 
     @property
     def is_hidden(self) -> bool:
@@ -398,6 +441,18 @@ def iter_markdown_links(text: str) -> Iterable[str]:
         yield target
 
 
+def is_readme_name(name: str) -> bool:
+    return name in ALL_README_FILENAMES
+
+
+def is_decision_traceability_name(name: str) -> bool:
+    return name in ALL_DECISION_TRACEABILITY_FILENAMES
+
+
+def is_repo_mapping_name(name: str) -> bool:
+    return name in ALL_REPO_MAPPING_FILENAMES
+
+
 def doc_set_relative_root(relpath: Path) -> Path:
     parts = relpath.parts
     for index, part in enumerate(parts):
@@ -527,6 +582,49 @@ def doc_set_root(root: Path, doc: Doc) -> Path:
     return base / relroot
 
 
+@lru_cache(maxsize=None)
+def infer_doc_set_profile(set_root: Path) -> str:
+    if (set_root / "README.zh-CN.md").exists():
+        return LOCALIZED_ZH_CN_PROFILE
+    if (set_root / REFERENCE_DIR / LOCALIZED_DECISION_TRACEABILITY_FILENAME).exists():
+        return LOCALIZED_ZH_CN_PROFILE
+    return MATRIX_PROFILE
+
+
+def profile_names(profile: str, registry: dict[str, tuple[str, ...]]) -> tuple[str, ...]:
+    preferred = registry.get(profile, ())
+    fallback = tuple(name for names in registry.values() for name in names if name not in preferred)
+    return tuple(dict.fromkeys((*preferred, *fallback)))
+
+
+def find_named_file(directory: Path, names: Iterable[str]) -> Path | None:
+    for name in names:
+        candidate = directory / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def find_directory_readme(directory: Path) -> Path | None:
+    return find_named_file(directory, ALL_README_FILENAMES)
+
+
+def find_decision_traceability_file(set_root: Path) -> Path | None:
+    profile = infer_doc_set_profile(set_root)
+    return find_named_file(set_root / REFERENCE_DIR, profile_names(profile, DECISION_TRACEABILITY_FILENAMES))
+
+
+def expected_decision_traceability_path(set_root: Path) -> Path:
+    profile = infer_doc_set_profile(set_root)
+    return set_root / REFERENCE_DIR / DECISION_TRACEABILITY_FILENAMES[profile][0]
+
+
+def filename_pattern(root: Path, doc: Doc, policy: str) -> tuple[re.Pattern[str], str, str]:
+    profile = infer_doc_set_profile(doc_set_root(root, doc))
+    pattern, label = FILENAME_PATTERNS[profile][policy]
+    return pattern, label, profile
+
+
 def doc_set_relative_path(root: Path, path: Path) -> Path | None:
     base = root_doc_set_base(root)
     try:
@@ -572,8 +670,8 @@ def markdown_link_points_to_final_fact(root: Path, doc: Doc) -> bool:
 
 
 def decision_traceability_mentions_final_fact(doc: Doc, root: Path) -> bool:
-    traceability = doc_set_root(root, doc) / REFERENCE_DIR / DECISION_TRACEABILITY_FILENAME
-    if not traceability.exists():
+    traceability = find_decision_traceability_file(doc_set_root(root, doc))
+    if traceability is None:
         return False
     text = traceability.read_text(encoding="utf-8")
     identifiers = [value for value in (doc.uuid, doc.path.name, doc.relpath.as_posix()) if value]
@@ -605,7 +703,7 @@ def has_key_mermaid_diagram(doc: Doc) -> bool:
 def reference_needs_key_diagram(doc: Doc) -> bool:
     if doc.type != "Reference" or doc.is_readme or doc.status != "Stable":
         return False
-    if doc.path.name in {DECISION_TRACEABILITY_FILENAME, REPO_MAPPING_FILENAME}:
+    if is_decision_traceability_name(doc.path.name) or is_repo_mapping_name(doc.path.name):
         return False
     if "flows" in doc.relpath.parts:
         return True
@@ -620,7 +718,7 @@ def index_expected_entries(directory: Path) -> set[str]:
             continue
         if child.is_dir():
             expected.add(child.name)
-        elif child.is_file() and child.suffix == ".md" and child.name != "README.md":
+        elif child.is_file() and child.suffix == ".md" and not is_readme_name(child.name):
             expected.add(child.name)
     return expected
 
@@ -645,16 +743,16 @@ def extract_readme_index_entries(readme_path: Path) -> set[str]:
             continue
         if len(parts) == 1 and resolved.is_dir():
             entries.add(parts[0])
-        elif len(parts) == 1 and resolved.is_file() and resolved.name != "README.md":
+        elif len(parts) == 1 and resolved.is_file() and not is_readme_name(resolved.name):
             entries.add(parts[0])
-        elif len(parts) == 2 and parts[1] == "README.md":
+        elif len(parts) == 2 and is_readme_name(parts[1]):
             entries.add(parts[0])
     return entries
 
 
 def audit_directory_structure(root: Path, scope_path: Path, issues: list[Issue]) -> None:
     for directory in iter_scoped_dirs(root, scope_path):
-        readme = directory / "README.md"
+        readme = find_directory_readme(directory)
         rel_dir = directory.relative_to(root)
         policy = get_directory_policy(rel_dir if rel_dir != Path(".") else Path("."))
         rel_dir_text = rel_dir.as_posix()
@@ -668,8 +766,8 @@ def audit_directory_structure(root: Path, scope_path: Path, issues: list[Issue])
                 f"repo-local design docs must live under {LEGACY_REPO_LOCAL_DESIGN_DIRS[rel_dir_text]}, not {rel_dir_text}",
             )
 
-        if not readme.exists():
-            add_issue(issues, "error", "missing_directory_readme", directory, "目录缺少 README.md")
+        if readme is None:
+            add_issue(issues, "error", "missing_directory_readme", directory, "目录缺少 README.md 或 README.zh-CN.md")
             continue
 
         if policy in SPECIAL_INDEX_FREE_POLICIES:
@@ -854,34 +952,36 @@ def audit_doc_set_policy(root: Path, all_docs: Iterable[Doc], scoped_docs: Itera
             continue
 
         reference_dir = set_root / REFERENCE_DIR
-        decision_traceability = reference_dir / DECISION_TRACEABILITY_FILENAME
-        if not decision_traceability.exists():
+        decision_traceability = find_decision_traceability_file(set_root)
+        if decision_traceability is None:
+            expected_traceability = expected_decision_traceability_path(set_root)
             add_issue(
                 issues,
                 "error",
                 "missing_decision_traceability",
-                decision_traceability,
-                "正式 RFC / ADR / Plan / Reference 文档集必须维护 reference/00_decision_traceability.md。",
+                expected_traceability,
+                f"正式 RFC / ADR / Plan / Reference 文档集必须维护 {expected_traceability.relative_to(set_root).as_posix()}。",
             )
 
         if reference_dir.exists():
-            for candidate in sorted(reference_dir.glob("00_*.md")):
-                if candidate.name != DECISION_TRACEABILITY_FILENAME:
+            for candidate in sorted(reference_dir.glob("00*.md")):
+                if not is_decision_traceability_name(candidate.name):
                     add_issue(
                         issues,
                         "error",
                         "reserved_reference_00_filename",
                         candidate,
-                        "reference/00_* 是固定保留序号，必须命名为 00_decision_traceability.md。",
+                        "reference/00* 是固定保留序号，必须使用当前文档集 profile 的 decision traceability 文件名。",
                     )
-            for candidate in sorted(reference_dir.glob("*repo_mapping*.md")):
-                if candidate.name != REPO_MAPPING_FILENAME:
+            repo_mapping_candidates = set(reference_dir.glob("*repo_mapping*.md")) | set(reference_dir.glob("*repo-mapping*.md"))
+            for candidate in sorted(repo_mapping_candidates):
+                if not is_repo_mapping_name(candidate.name):
                     add_issue(
                         issues,
                         "error",
                         "invalid_repo_mapping_filename",
                         candidate,
-                        "repo mapping 是条件固定序号；需要 repo mapping 时必须命名为 reference/01_repo_mapping.md。",
+                        "repo mapping 是条件固定序号；需要 repo mapping 时必须使用当前文档集 profile 的 repo mapping 文件名。",
                     )
 
 
@@ -904,8 +1004,9 @@ def audit_policy(root: Path, doc: Doc, docs_by_uuid: dict[str, Doc], issues: lis
     if policy == "rfc":
         if doc.type != "RFC":
             add_issue(issues, "error", "invalid_rfc_type", doc.path, f"RFC 目录文档的 type 应为 RFC，当前为 {doc.type!r}")
-        if not RFC_FILENAME_RE.match(doc.path.name):
-            add_issue(issues, "warning", "rfc_filename_convention", doc.path, f"文件名不符合 RFC 命名规范: {doc.path.name}")
+        pattern, label, profile = filename_pattern(root, doc, policy)
+        if not pattern.match(doc.path.name):
+            add_issue(issues, "warning", "rfc_filename_convention", doc.path, f"文件名不符合 {profile} RFC 命名规范，应遵循 {label}: {doc.path.name}")
         if doc.status and doc.status not in RFC_ALLOWED_STATUSES:
             add_issue(issues, "error", "invalid_rfc_status", doc.path, f"RFC status 不在允许集合中: {doc.status}")
         if not has_original_requirements_summary(doc):
@@ -952,8 +1053,9 @@ def audit_policy(root: Path, doc: Doc, docs_by_uuid: dict[str, Doc], issues: lis
     if policy == "adr":
         if doc.type != "ADR":
             add_issue(issues, "error", "invalid_adr_type", doc.path, f"ADR 目录文档的 type 应为 ADR，当前为 {doc.type!r}")
-        if not ADR_FILENAME_RE.match(doc.path.name):
-            add_issue(issues, "warning", "adr_filename_convention", doc.path, f"文件名不符合 ADR 命名规范: {doc.path.name}")
+        pattern, label, profile = filename_pattern(root, doc, policy)
+        if not pattern.match(doc.path.name):
+            add_issue(issues, "warning", "adr_filename_convention", doc.path, f"文件名不符合 {profile} ADR 命名规范，应遵循 {label}: {doc.path.name}")
         if doc.status and doc.status not in ADR_ALLOWED_STATUSES:
             add_issue(issues, "error", "invalid_adr_status", doc.path, f"ADR status 不在允许集合中: {doc.status}")
         if not has_parent_rfc_relation(doc, docs_by_uuid, "realizes"):
@@ -963,8 +1065,9 @@ def audit_policy(root: Path, doc: Doc, docs_by_uuid: dict[str, Doc], issues: lis
     if policy == "plan":
         if doc.type != "Plan":
             add_issue(issues, "error", "invalid_plan_type", doc.path, f"Plan 目录文档的 type 应为 Plan，当前为 {doc.type!r}")
-        if not PLAN_FILENAME_RE.match(doc.path.name):
-            add_issue(issues, "warning", "plan_filename_convention", doc.path, f"文件名不符合 Plan 命名规范: {doc.path.name}")
+        pattern, label, profile = filename_pattern(root, doc, policy)
+        if not pattern.match(doc.path.name):
+            add_issue(issues, "warning", "plan_filename_convention", doc.path, f"文件名不符合 {profile} Plan 命名规范，应遵循 {label}: {doc.path.name}")
         if doc.status and doc.status not in PLAN_ALLOWED_STATUSES:
             add_issue(issues, "error", "invalid_plan_status", doc.path, f"Plan status 不在允许集合中: {doc.status}")
         if not has_parent_rfc_relation(doc, docs_by_uuid, "is_plan_for"):
@@ -976,8 +1079,9 @@ def audit_policy(root: Path, doc: Doc, docs_by_uuid: dict[str, Doc], issues: lis
             add_issue(issues, "error", "invalid_reference_type", doc.path, f"Reference 目录文档的 type 应为 Reference，当前为 {doc.type!r}")
         if doc.status and doc.status not in REFERENCE_ALLOWED_STATUSES:
             add_issue(issues, "error", "invalid_reference_status", doc.path, f"Reference status 不在允许集合中: {doc.status}")
-        if not REFERENCE_FILENAME_RE.match(doc.path.name):
-            add_issue(issues, "warning", "reference_filename_convention", doc.path, f"Reference 文件名应遵循 NN_topic.md: {doc.path.name}")
+        pattern, label, profile = filename_pattern(root, doc, policy)
+        if not pattern.match(doc.path.name):
+            add_issue(issues, "warning", "reference_filename_convention", doc.path, f"Reference 文件名不符合 {profile} 命名规范，应遵循 {label}: {doc.path.name}")
         if reference_needs_key_diagram(doc) and not has_key_mermaid_diagram(doc):
             add_issue(
                 issues,
@@ -993,8 +1097,9 @@ def audit_policy(root: Path, doc: Doc, docs_by_uuid: dict[str, Doc], issues: lis
             add_issue(issues, "error", "invalid_guide_type", doc.path, f"Guide 目录文档的 type 应为 Guide，当前为 {doc.type!r}")
         if doc.status and doc.status not in GUIDE_ALLOWED_STATUSES:
             add_issue(issues, "error", "invalid_guide_status", doc.path, f"Guide status 不在允许集合中: {doc.status}")
-        if not GUIDE_FILENAME_RE.match(doc.path.name):
-            add_issue(issues, "warning", "guide_filename_convention", doc.path, f"Guide 文件名应遵循 <slug>-guide.md: {doc.path.name}")
+        pattern, label, profile = filename_pattern(root, doc, policy)
+        if not pattern.match(doc.path.name):
+            add_issue(issues, "warning", "guide_filename_convention", doc.path, f"Guide 文件名不符合 {profile} 命名规范，应遵循 {label}: {doc.path.name}")
 
 
 def audit_docs(root: Path, scope_path: Path, strict_targets: bool) -> tuple[list[Issue], list[Doc]]:

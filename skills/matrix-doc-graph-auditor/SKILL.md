@@ -14,14 +14,14 @@ It is especially useful for:
 - checking the full `docs/` tree, including `designs`, `guides`, `reference`, `migration`, `templates`, and `latest`
 - finding missing frontmatter, duplicate `uuid`, blank `target_uuid`, and broken relative links
 - enforcing lowercase hyphenated UUID format for both `uuid` and `target_uuid`
-- comparing each directory `README.md` index against the actual files and child directories on disk
+- comparing each directory README index against the actual files and child directories on disk, supporting both `README.md` and `README.zh-CN.md`
 - validating whether an RFC/ADR/Plan status chain is consistent with the document graph it points to
 - detecting repo-local RFC/ADR/Plan documents placed outside a formal document set's `designs/{rfc,adr,plan}` directories
 - enforcing that `Accepted` / `Implementing` RFCs point to at least one current usage document under the same formal document set's `guides/` or `migration/`
 - enforcing that every RFC contains a dedicated `原始需求点总结` section near the front of the document
 - enforcing that `Accepted` / `Implementing` RFCs contain a dedicated `当前实现对齐` section
-- enforcing that every formal RFC / ADR / Plan / Reference document set has `reference/00_decision_traceability.md`
-- enforcing that repo mapping uses `reference/01_repo_mapping.md` when it is needed, while allowing ordinary reference docs to start at `01_` when no repo mapping exists
+- enforcing that every formal RFC / ADR / Plan / Reference document set has a profile-compatible decision traceability file such as `reference/00_decision_traceability.md` or `reference/00-decision-traceability-reference.zh-CN.md`
+- enforcing that repo mapping uses a profile-compatible `01` reference filename when it is needed, while allowing ordinary reference docs to start at `01` when no repo mapping exists
 - rejecting `Traceability Matrix` / `追踪矩阵` naming in favor of `decision traceability` / `决策追踪索引`
 - enforcing that `Accepted` / `Implementing` RFCs are traceable to current Reference or Guide documents, not only Plan / ADR documents
 - enforcing key Mermaid flow / sequence / state diagrams for Stable Reference documents that describe stable flows, contracts, boundaries, adapters, endpoints, capabilities, architectures, or data models
@@ -67,10 +67,10 @@ The bundled script checks:
 - duplicate `uuid`
 - blank or unresolved `target_uuid`
 - broken relative markdown links
-- missing `README.md` in any docs subdirectory
-- `README.md` index drift for files and child directories
-- RFC / ADR / Plan filename convention and status values
-- ADR / Plan / Reference / Guide directory type and status values
+- missing README files in any docs subdirectory, accepting `README.md` and `README.zh-CN.md`
+- README index drift for files and child directories
+- RFC / ADR / Plan filename convention and status values, selected from the document set profile
+- ADR / Plan / Reference / Guide directory type and status values, with Matrix-style and localized `zh-CN` filename profiles
 - Guide filename convention
 - canonical relation vocabulary, with legacy relation names reported as warnings
 - misplaced repo-local design directories such as `docs/rfc`, `docs/adr`, `docs/plan`, or `docs/plans`
@@ -78,8 +78,8 @@ The bundled script checks:
 - `Accepted` / `Implementing` RFCs include at least one current usage-doc relation inside the same formal document set
 - RFCs include a dedicated `## 原始需求点总结` section
 - `Accepted` / `Implementing` RFCs include a dedicated `当前实现对齐` section
-- formal document sets include `reference/00_decision_traceability.md`
-- repo mapping files use `reference/01_repo_mapping.md` when present
+- formal document sets include a profile-compatible decision traceability file
+- repo mapping files use a profile-compatible `01` reference filename when present
 - docs avoid `Traceability Matrix` / `追踪矩阵` naming
 - `Accepted` / `Implementing` RFCs can be traced to current Reference or Guide documents
 - relevant Stable Reference docs include key Mermaid diagrams
