@@ -1,7 +1,7 @@
 ---
 # === Node Properties: 定义文档节点自身 ===
 uuid: "dbf6fb21-5e26-44b6-b1bb-d94d13112ae9"
-type: "Specification"
+type: "Reference"
 title: "参考-11: 函数开发与注册规范"
 status: "Stable"
 owner: "neohetj"
@@ -15,9 +15,6 @@ tags:
 
 # === Node Relations: 定义与其他文档节点的关系 ===
 relations:
-  - type: "is_referenced_by"
-    target_uuid: "60c07c47-df0e-4b76-9ed9-62fabe2e2add"
-    description: "本文档为函数开发模式提供底层实现规范。"
   - type: "references"
     target_uuid: "f745eae6-f75c-4849-b7fb-407d6c439182"
     description: "函数的数据契约扩展了通用节点契约。"

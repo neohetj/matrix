@@ -865,3 +865,33 @@ go test -run '^$' ./internal/builtin/base ./internal/runtime ./pkg/helper ./pkg/
 
 1. `internal/registry` 全包仍会命中 Stage 0 baseline 的 `TestDefaultCoreObjRegistry_Register/should_not_log_warning_for_compliant_SID` 历史失败。
 2. `internal/runtime` 与 `pkg/helper` 的完整测试仍包含 Stage 0 baseline 历史失败；本切片只要求相关包可编译与 `TestNodeFuncManager` 聚焦测试通过。
+
+### 9.12 Stage 0.5 Slice 6：Reference Frontmatter Governance
+
+记录日期：2026-06-08。
+
+本切片完成 Stage 0.5 的第六项低影响优化：修正 `docs/reference` 中的 formal doc graph baseline，使 Reference 事实层先满足审计器的基础结构要求。
+
+新增治理内容：
+
+1. 将 Reference 目录内历史 `ArchitectureOverview`、`Specification`、`Concept`、`ComponentGuide`、`TestingStrategy` 类型统一为 `type: "Reference"`。
+2. 将本仓 reference scope 内的历史 relation type 替换为规范词表：
+   - `contains` -> `indexes`
+   - `explains` -> `supports`
+   - `is_applied_in` -> `supports`
+   - `is_referenced_by` -> 删除已由正向 `references` 覆盖的重复关系，或改为当前文档支撑目标文档的 `supports`
+   - `defines_schema_for` -> `depends_on`
+   - `is_related_to` -> `references`
+3. 为 Stable Reference `09_core_objects.md` 补充 CoreObj / CoreObjDef / Registry / RuleMsg / DataT 的关键数据模型图。
+
+设计约束：
+
+1. 本切片不修改运行时代码、接口行为或测试逻辑。
+2. 本切片不处理仓外历史 UUID 的 unresolved warning；这类目标需要后续单独确认是否保留为 external trace 或迁移为仓内文档。
+3. 本切片不做全量历史 RFC / ADR / Plan 状态回填，只收敛 Reference scope 的结构性 error。
+
+聚焦验证：
+
+```bash
+python3 skills/matrix-doc-graph-auditor/scripts/audit_matrix_docs.py --root docs --scope reference --strict-targets
+```

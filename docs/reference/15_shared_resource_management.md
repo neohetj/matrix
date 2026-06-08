@@ -1,6 +1,6 @@
 ---
 uuid: "a1b3d5e7-c4a0-4b1e-9c3a-1f8e6d2c5b4a"
-type: "Concept"
+type: "Reference"
 title: "学习Matrix共享资源管理"
 status: "Stable"
 owner: "neohetj"

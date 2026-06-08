@@ -1,7 +1,7 @@
 ---
 # === Node Properties: 定义文档节点自身 ===
 uuid: "5a8b3c7e-9f0d-4a1b-8c2d-6e5f4a3b2c1d"
-type: "Specification"
+type: "Reference"
 title: "学习Matrix DSL规范"
 status: "Draft"
 owner: "neohetj"
@@ -15,10 +15,10 @@ tags:
 
 # === Node Relations: 定义与其他文档节点的关系 ===
 relations:
-  - type: "defines_schema_for"
+  - type: "depends_on"
     target_uuid: "b8c1d4e1-7b3e-4c2a-8f5d-9e1b3c4d5a6b" # -> 核心对象与接口定义
     description: "This DSL is the user-facing language for defining RuleChains and Nodes, which are the core objects of the framework."
-  - type: "is_related_to"
+  - type: "references"
     target_uuid: "a1b3d5e7-c4a0-4b1e-9c3a-1f8e6d2c5b4a" # -> 04_shared_resource_management.md
     description: "The 'ref://' syntax in this DSL is the mechanism for consuming shared resources."
 

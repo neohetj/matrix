@@ -1,6 +1,6 @@
 ---
 uuid: "a6b7c8d9-e0f1-4a2b-8c3d-4e5f6a7b8c9d"
-type: "ComponentGuide"
+type: "Reference"
 title: "学习Matrix组件目录"
 status: "Stable"
 owner: "neohetj"
@@ -10,7 +10,7 @@ tags:
   - "catalog"
   - "reference"
 relations:
-  - type: "is_referenced_by"
+  - type: "supports"
     target_uuid: "60c07c47-df0e-4b76-9ed9-62fabe2e2add"
     description: "参考-08 会引导开发者查阅当前内建组件目录。"
 ---

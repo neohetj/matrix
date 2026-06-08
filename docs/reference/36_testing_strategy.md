@@ -1,6 +1,6 @@
 ---
 uuid: "f2a1b0c9-d8e7-4f6a-9b5c-4d3e2f1a0b9c"
-type: "TestingStrategy"
+type: "Reference"
 title: "学习Matrix框架测试策略"
 status: "Draft"
 owner: "neohetj"
@@ -11,7 +11,7 @@ tags:
   - "unit-test"
   - "integration-test"
 relations:
-  - type: "is_referenced_by"
+  - type: "supports"
     target_uuid: "60c07c47-df0e-4b76-9ed9-62fabe2e2add"
     description: "参考-08 会引导开发者查阅当前测试策略。"
 ---

@@ -1,6 +1,6 @@
 ---
 uuid: "e4a9b8c1-3d2a-4b1e-8c5d-7a4b9c2d8e1f"
-type: "ArchitectureOverview"
+type: "Reference"
 title: "学习Matrix框架架构"
 status: "Draft"
 owner: "neohetj"
@@ -10,7 +10,7 @@ tags:
   - "overview"
   - "core"
 relations:
-  - type: "contains"
+  - type: "indexes"
     target_uuid: "60c07c47-df0e-4b76-9ed9-62fabe2e2add"
     description: "节点与函数的开发入口由参考-08统一承接。"
 ---

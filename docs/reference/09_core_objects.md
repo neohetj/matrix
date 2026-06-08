@@ -1,7 +1,7 @@
 ---
 # === Node Properties: 定义文档节点自身 ===
 uuid: "b8c1d4e1-7b3e-4c2a-8f5d-9e1b3c4d5a6b"
-type: "Specification"
+type: "Reference"
 title: "参考: 核心数据契约 (CoreObj)"
 status: "Stable"
 owner: "neohetj"
@@ -60,6 +60,46 @@ SID (Semantic ID) 是 `CoreObj` 的全局唯一标识符，其命名必须遵循
 | :--- | :--- | :--- |
 | **核心对象定义** | `CoreObjDef` | **类型的元数据**。它代表一个`CoreObj`的“类”，包含了SID、描述和OpenAPI Schema。它被注册在全局的`CoreObjRegistry`中。 |
 | **核心对象实例** | `CoreObj` | **类型的实例数据**。它是在规则链中实际流动的数据容器，包含了对`CoreObjDef`的引用和具体的Go结构体实例（`Body`）。 |
+
+核心数据模型关系如下：
+
+```mermaid
+classDiagram
+    class GoPrototype {
+        struct fields
+        json tags
+        schema tags
+    }
+    class CoreObjDef {
+        SID
+        Description
+        Schema
+        PrototypeType
+    }
+    class CoreObjRegistry {
+        Register(CoreObjDef)
+        Get(SID)
+    }
+    class CoreObj {
+        Def
+        Body
+    }
+    class RuleMsg {
+        Data
+        DataT
+        Metadata
+    }
+    class DataT {
+        SetByParam()
+        GetByParam()
+    }
+
+    GoPrototype --> CoreObjDef : NewCoreObjDef()
+    CoreObjDef --> CoreObjRegistry : registered by SID
+    CoreObj --> CoreObjDef : references
+    RuleMsg --> DataT : carries
+    DataT --> CoreObj : stores typed objects
+```
 
 ## 3. `CoreObjDef` 详解：从Go结构体到Schema
 
