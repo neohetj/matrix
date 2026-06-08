@@ -36,6 +36,7 @@ relations:
 
 ## 3. 文档索引
 
+- [00_decision_traceability.md](./00_decision_traceability.md): Matrix repo-local 决策追踪索引。
 - [03_architecture_overview.md](./03_architecture_overview.md): Matrix 整体架构概览。
 - [06_message_design_philosophy.md](./06_message_design_philosophy.md): `RuleMsg` 的设计哲学。
 - [08_node_development_patterns.md](./08_node_development_patterns.md): 平台级扩展开发的官方入口。

@@ -49,6 +49,7 @@ relations:
 | [`0012_topology-driven-deployment-platform_rfc.md`](./0012_topology-driven-deployment-platform_rfc.md) | `Draft` | 部署平台闭环仍是提案，底层拓扑能力已具备部分前置实现 |
 | [`0013_function_routing_constraints_rfc.md`](./0013_function_routing_constraints_rfc.md) | `Accepted` | 函数路由约束已在运行时和注册阶段实现 |
 | [`0014_mcp_business_endpoint_adapter_rfc.md`](./0014_mcp_business_endpoint_adapter_rfc.md) | `Draft` | MCP 业务入口适配器提案，用于把业务模块能力白名单暴露为 MCP tools |
+| [`0015_matrix_core_interface_boundary_refactor_rfc.md`](./0015_matrix_core_interface_boundary_refactor_rfc.md) | `Draft` | Matrix core 运行时、注册表、节点上下文、endpoint 与函数目录接口边界收敛提案 |
 
 ## 阅读顺序建议
 
