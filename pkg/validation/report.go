@@ -22,16 +22,17 @@ const (
 type IssueCode string
 
 const (
-	CodeDanglingConnection IssueCode = "dangling_connection"
-	CodeDuplicateNodeID    IssueCode = "duplicate_node_id"
-	CodeCycleDetected      IssueCode = "cycle_detected"
-	CodeUnknownNodeType    IssueCode = "unknown_node_type"
-	CodeUnknownFunction    IssueCode = "unknown_function"
-	CodeUnknownEndpoint    IssueCode = "unknown_endpoint"
-	CodeMissingSharedRef   IssueCode = "missing_shared_ref"
-	CodeOptionalFallback   IssueCode = "optional_fallback"
-	CodeInvalidContract    IssueCode = "invalid_contract"
-	CodeLoaderFailure      IssueCode = "loader_failure"
+	CodeDanglingConnection    IssueCode = "dangling_connection"
+	CodeDuplicateNodeID       IssueCode = "duplicate_node_id"
+	CodeCycleDetected         IssueCode = "cycle_detected"
+	CodeUnknownNodeType       IssueCode = "unknown_node_type"
+	CodeUnknownFunction       IssueCode = "unknown_function"
+	CodeUnknownEndpoint       IssueCode = "unknown_endpoint"
+	CodeMissingEndpointTarget IssueCode = "missing_endpoint_target"
+	CodeMissingSharedRef      IssueCode = "missing_shared_ref"
+	CodeOptionalFallback      IssueCode = "optional_fallback"
+	CodeInvalidContract       IssueCode = "invalid_contract"
+	CodeLoaderFailure         IssueCode = "loader_failure"
 )
 
 type TargetKind string

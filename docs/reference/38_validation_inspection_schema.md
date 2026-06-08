@@ -31,9 +31,10 @@ relations:
 | 包 | 当前职责 |
 | --- | --- |
 | `pkg/validation` | 定义 `Report`、`Issue`、`Target`、`Scope`、severity、mode 和 issue code。 |
+| `pkg/validation` | 提供 `ValidateLoaderResources(...)`，以 report-only 方式扫描 DSL loader 输入。 |
 | `pkg/inspection` | 定义 `InspectionSnapshot` 与 `RuntimeFactDescriptor`，用于承载 runtime、rulechain、endpoint、function、shared resource 等事实描述。 |
 
-当前实现是 schema foundation，不执行 DSL 图校验，也不替换现有 runtime / loader 路径。
+当前实现是 schema foundation 和 loader report-only scanner，不替换现有 runtime / loader 路径。
 
 ## 2. ValidationReport
 
@@ -59,7 +60,33 @@ relations:
 | `target` | object | 问题对象，例如 node、connection、endpoint、function、shared ref。 |
 | `details` | object | 可选细节，不作为主判断字段。 |
 
-## 3. InspectionSnapshot
+## 3. Loader Report-Only Scanner
+
+`pkg/validation.ValidateLoaderResources(provider, paths)` 当前会扫描指定的 rulechain、endpoint 和 shared DSL 目录，并返回 `Report`。
+
+输入：
+
+| 字段 | 说明 |
+| --- | --- |
+| `LoaderPaths.RuleChains` | rulechain DSL 目录列表。 |
+| `LoaderPaths.Endpoints` | endpoint DSL 目录列表。 |
+| `LoaderPaths.Shared` | shared DSL 目录列表。 |
+
+模块级扫描必须传入该模块实际加载的完整 DSL 根。对于同时存在 `code/dsl` 与 `common/dsl` 的模块，`RuleChains`、`Endpoints`、`Shared` 应同时包含两个根下对应目录；只扫描 `code/dsl` 会把 `common/dsl/shared` 中定义的 shared resource 误报为 `missing_shared_ref`。
+
+当前覆盖：
+
+| issue code | severity | 触发条件 |
+| --- | --- | --- |
+| `loader_failure` | `error` | JSON 文件读取或解析失败。 |
+| `dangling_connection` | `error` | rulechain connection 的 `fromId` 或 `toId` 找不到对应 node。 |
+| `missing_endpoint_target` | `error` | endpoint 的 `configuration.ruleChainId` 不在已加载 rulechain ID 集合中。 |
+| `missing_shared_ref` | `error` | node / endpoint configuration 中的 `ref://...` 找不到 shared node ID。 |
+| `optional_fallback` | `warning` | `ref://...` 找不到 shared node ID，但同一配置对象声明了 `optional: true`、`fallback`、`fallbackUri`、`fallbackURI`、`default` 或 `defaultValue`。 |
+
+该 scanner 不会实例化 node，不会调用 `Node.Init(...)`，也不会注册 runtime trigger。它用于在 Stage 0.5 先建立 report-only 输出，后续再决定是否接入启动流程和 strict mode。
+
+## 4. InspectionSnapshot
 
 `pkg/inspection.InspectionSnapshot` 的 JSON 输出字段：
 
@@ -86,18 +113,17 @@ relations:
 | `refs` | array | 可选依赖引用，例如 target rulechain 或 `ref://...`。 |
 | `metadata` | object | 可选补充元数据。 |
 
-## 4. 当前限制
+## 5. 当前限制
 
-1. 该模型暂不做 graph validation、loader validation 或 endpoint validation。
+1. 当前 loader scanner 只做静态 JSON / DSL 结构扫描，不做 node type registry、function routing、endpoint IO contract 或 DAG cycle validation。
 2. 当前不保证 `details` / `metadata` 内部字段稳定；消费者应优先依赖顶层字段和 issue code。
 3. Morpheus 仍未迁移到 inspection API，本模型只是后续 Stage 6 的输入契约基础。
-4. strict validation 还未打开；Stage 0.5 后续切片需要先以 report-only 方式接入 loader 和 rulechain validator。
+4. strict validation 还未打开；Stage 0.5 后续切片需要继续接入 rulechain validator 和 startup pipeline。
 
-## 5. 验证
+## 6. 验证
 
 当前聚焦测试：
 
 ```bash
 go test ./pkg/validation ./pkg/inspection ./pkg/runtimebridge
 ```
-

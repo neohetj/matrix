@@ -681,3 +681,50 @@ go test ./pkg/validation ./pkg/inspection ./pkg/runtimebridge
 1. 本切片只定义 schema，不执行 DAG、loader、endpoint、shared ref 或 function relation 校验。
 2. loader report-only 接入留到 Stage 0.5 后续切片。
 3. Morpheus 迁移到 inspection API 留到 Stage 6。
+
+### 9.8 Stage 0.5 Slice 2：Loader Report-Only Validation
+
+记录日期：2026-06-08。
+
+本切片完成 Stage 0.5 的第二项低影响优化：新增 loader report-only scanner，但不改变 `matrix.New(...)`、`internal/builder.LoadDefs(...)`、`LoadEndpoints(...)`、`LoadSharedNodes(...)` 的现有行为。
+
+新增实现：
+
+1. `pkg/validation.LoaderPaths`
+2. `pkg/validation.ValidateLoaderResources(...)`
+3. loader 静态 issue 输出：
+   - `loader_failure`
+   - `dangling_connection`
+   - `missing_endpoint_target`
+   - `missing_shared_ref`
+   - `optional_fallback`
+
+当前覆盖：
+
+1. rulechain / endpoint / shared JSON 读取或解析失败。
+2. rulechain connection 的 `fromId` / `toId` 悬空。
+3. endpoint `configuration.ruleChainId` 指向不存在的 rulechain。
+4. node / endpoint configuration 中 `ref://...` 指向不存在的 shared node。
+5. 缺失 `ref://...` 但同一配置对象声明 optional fallback 时降为 warning。
+
+验证：
+
+```bash
+go test ./pkg/validation ./pkg/inspection ./pkg/runtimebridge
+```
+
+现有模块 DSL 复查：
+
+1. 扫描范围：`modules/{identityx,sellitx,notifyx,paymentx,lens,usagex}`。
+2. loader report-only 问题范围：JSON 读取/解析失败、rulechain dangling connection、endpoint target rulechain 缺失、shared ref 缺失、optional fallback warning。
+3. 模块完整 DSL 根：同时包含 `code/dsl` 与存在时的 `common/dsl`。
+4. 结果：未发现需要优先修复的 loader report-only 问题。
+5. 补充发现：只扫描 `lens/code/dsl` 会误报 `ref://lens/obs-trace-sink` 缺失；该 shared node 实际定义在 `lens/common/dsl/shared/observability/common_trace_sink.json`，因此后续模块级扫描必须包含 `common/dsl`。
+6. 现有 Matrix rulechain mapping validator 复查：所有模块 `code/dsl` 均未发现 risky mapping pattern；`identityx`、`sellitx`、`notifyx`、`lens` 的 `common/dsl` 也未发现 risky mapping pattern。
+7. 函数 catalog 可用的 `identityx` 与 `sellitx` 已完成完整函数签名校验，未发现 risky rulechain mapping pattern。
+
+当前限制：
+
+1. 本切片不实例化 node，不调用 `Node.Init(...)`，也不注册 endpoint trigger。
+2. 本切片尚不做 DAG cycle validation、node type registry validation、function relation validation 或 endpoint IO contract validation。
+3. 本切片暂不接入启动流程；后续切片再决定 startup report-only 的调用位置。
