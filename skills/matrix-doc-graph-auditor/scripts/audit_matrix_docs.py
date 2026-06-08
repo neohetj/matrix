@@ -162,6 +162,8 @@ LEGACY_REPO_LOCAL_DESIGN_DIRS = {
     "plan": "designs/plan",
     "plans": "designs/plan",
 }
+DESIGN_DOC_DIRS = {"rfc", "adr", "plan"}
+FORMAL_DOC_SET_DIRS = {"designs", "reference", "guides", "migration", "templates", "latest"}
 
 
 @dataclass
@@ -396,14 +398,33 @@ def iter_markdown_links(text: str) -> Iterable[str]:
         yield target
 
 
-def get_directory_policy(relpath: Path) -> str:
+def doc_set_relative_root(relpath: Path) -> Path:
+    parts = relpath.parts
+    for index, part in enumerate(parts):
+        if part == "designs" and index + 1 < len(parts) and parts[index + 1] in DESIGN_DOC_DIRS:
+            return Path(*parts[:index]) if index else Path(".")
+        if part in FORMAL_DOC_SET_DIRS - {"designs"}:
+            return Path(*parts[:index]) if index else Path(".")
+    return Path(".")
+
+
+def layout_relative_path(relpath: Path) -> Path:
     rel = relpath.as_posix()
     if rel == ".":
-        return "docs_root"
+        return Path(".")
     parts = relpath.parts
-    if len(parts) >= 4 and parts[0] == "cross-repo":
-        nested = "/".join(parts[2:])
-        return get_directory_policy(Path(nested))
+    for index, part in enumerate(parts):
+        if part == "designs" or part in FORMAL_DOC_SET_DIRS - {"designs"}:
+            return Path(*parts[index:])
+    return relpath
+
+
+def get_directory_policy(relpath: Path) -> str:
+    layout_relpath = layout_relative_path(relpath)
+    rel = layout_relpath.as_posix()
+    if rel == ".":
+        return "docs_root"
+    parts = layout_relpath.parts
     if len(parts) >= 2 and parts[0] == "reference":
         return "reference"
     if rel == "designs":
@@ -500,19 +521,25 @@ def root_doc_set_base(root: Path) -> Path:
 
 def doc_set_root(root: Path, doc: Doc) -> Path:
     base = root_doc_set_base(root)
-    parts = doc.relpath.parts
-    if len(parts) >= 2 and parts[0] == "cross-repo":
-        return base / parts[0] / parts[1]
-    if root.name == "cross-repo" and parts:
-        return root / parts[0]
-    return base
+    relroot = doc_set_relative_root(doc.relpath)
+    if relroot == Path("."):
+        return base
+    return base / relroot
 
 
 def doc_set_relative_path(root: Path, path: Path) -> Path | None:
+    base = root_doc_set_base(root)
     try:
-        return path.relative_to(root_doc_set_base(root))
+        relpath = path.relative_to(base)
     except ValueError:
         return None
+    relroot = doc_set_relative_root(relpath)
+    if relroot == Path("."):
+        return relpath
+    try:
+        return relpath.relative_to(relroot)
+    except ValueError:
+        return relpath
 
 
 def final_fact_doc(doc: Doc) -> bool:
@@ -859,7 +886,7 @@ def audit_doc_set_policy(root: Path, all_docs: Iterable[Doc], scoped_docs: Itera
 
 
 def audit_policy(root: Path, doc: Doc, docs_by_uuid: dict[str, Doc], issues: list[Issue]) -> None:
-    if not doc.has_frontmatter or doc.is_readme:
+    if not doc.has_frontmatter or doc.is_readme or doc.is_template:
         return
 
     policy = get_doc_policy(root, doc)
