@@ -895,3 +895,26 @@ go test -run '^$' ./internal/builtin/base ./internal/runtime ./pkg/helper ./pkg/
 ```bash
 python3 skills/matrix-doc-graph-auditor/scripts/audit_matrix_docs.py --root docs --scope reference --strict-targets
 ```
+
+### 9.13 Stage 0.5 Slice 7：Full Docs Error Baseline Cleanup
+
+记录日期：2026-06-08。
+
+本切片完成 Stage 0.5 的第七项低影响优化：清理全量 `docs` 审计中的结构性 error，但暂不处理 warning 级别的历史 relation、文件名和 external UUID 问题。
+
+新增治理内容：
+
+1. 将历史 RFC `0001` 到 `0013` 中已有的 `### 原始需求点总结` 提升为审计规范要求的二级标题 `## 原始需求点总结`。
+2. 将 `docs/guides/00_matrix_guide.md` 的 frontmatter `type` 从历史 `ArchitectureOverview` 修正为 `Guide`。
+
+设计约束：
+
+1. 本切片不改写 RFC 需求内容、状态、结论或现行实现对齐说明。
+2. 本切片不处理 warning 级别的 legacy relation type、guide filename convention 或 unresolved external target UUID。
+3. 本切片不修改运行时代码、接口行为或测试逻辑。
+
+聚焦验证：
+
+```bash
+python3 skills/matrix-doc-graph-auditor/scripts/audit_matrix_docs.py --root docs --scope . --strict-targets
+```

@@ -1,6 +1,6 @@
 ---
 uuid: "a0b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d"
-type: "ArchitectureOverview"
+type: "Guide"
 title: "Matrix 项目总览：README First"
 status: "Stable"
 owner: "neohetj"
