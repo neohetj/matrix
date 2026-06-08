@@ -821,3 +821,47 @@ go run ./cmd/matrix-validate --module-root <module-repo-root>
 1. 本切片仍不接入启动流程。
 2. 本切片仍不做 strict mode gate。
 3. 本切片不做 node type registry validation、function relation validation 或 endpoint IO contract validation。
+
+### 9.11 Stage 0.5 Slice 5：Function Registry Error-Return Contract
+
+记录日期：2026-06-08。
+
+本切片完成 Stage 0.5 的第五项低影响优化：为 function registry 增加 error-return 注册入口，但不迁移跨仓业务模块注册点，不改变旧 `Register(...)` 的 init-time panic 兼容语义。
+
+新增实现：
+
+1. `types.NodeFuncManager.RegisterSafe(funcs ...*types.NodeFuncObject) error`
+2. `internal/registry.DefaultNodeFuncManager.RegisterSafe(...)`
+3. `DefaultNodeFuncManager.Register(...)` 改为兼容 wrapper：
+   - 内部调用 `RegisterSafe(...)`
+   - 有 error 时继续 panic
+
+覆盖的注册校验：
+
+1. `Business` 字段 type 必须是支持的 `cnst.MType`。
+2. `notEditable` 字段必须声明 `defaultValue`。
+3. `routingMode` 必须合法。
+4. `standard` routing mode 不允许声明 custom relations。
+5. `decision` routing mode 必须声明非空、非保留字、无重复的 `declaredRelations`。
+
+设计约束：
+
+1. 新代码优先使用 `RegisterSafe(...)` 并显式处理错误。
+2. 旧代码继续可以调用 `Register(...)`，非法配置仍会 panic，避免无返回值调用静默吞掉注册失败。
+3. 本切片暂不迁移 WhiteRoom、Morpheus 或业务模块中的注册调用点。
+
+TDD 验证：
+
+1. RED：`go test -count=1 ./internal/registry` 先因 `RegisterSafe` 不存在而编译失败。
+2. GREEN：`go test -count=1 ./internal/registry -run TestNodeFuncManager` 通过。
+
+补充验证：
+
+```bash
+go test -run '^$' ./internal/builtin/base ./internal/runtime ./pkg/helper ./pkg/validation ./cmd/matrix-validate
+```
+
+当前限制：
+
+1. `internal/registry` 全包仍会命中 Stage 0 baseline 的 `TestDefaultCoreObjRegistry_Register/should_not_log_warning_for_compliant_SID` 历史失败。
+2. `internal/runtime` 与 `pkg/helper` 的完整测试仍包含 Stage 0 baseline 历史失败；本切片只要求相关包可编译与 `TestNodeFuncManager` 聚焦测试通过。

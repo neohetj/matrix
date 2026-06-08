@@ -25,9 +25,7 @@ func TestNodeFuncManager_Register(t *testing.T) {
 				},
 			},
 		}
-		assert.NotPanics(t, func() {
-			manager.Register(validFunc)
-		})
+		assert.NoError(t, manager.RegisterSafe(validFunc))
 
 		retrieved, ok := manager.Get("valid_func")
 		assert.True(t, ok)
@@ -48,9 +46,9 @@ func TestNodeFuncManager_Register(t *testing.T) {
 				},
 			},
 		}
-		assert.Panics(t, func() {
-			manager.Register(invalidFunc)
-		}, "Registration should panic for invalid type")
+		assert.Error(t, manager.RegisterSafe(invalidFunc), "Registration should return error for invalid type")
+		_, ok := manager.Get("invalid_func")
+		assert.False(t, ok)
 	})
 	t.Run("NotEditable Without Default", func(t *testing.T) {
 		invalidFunc := &types.NodeFuncObject{
@@ -67,9 +65,7 @@ func TestNodeFuncManager_Register(t *testing.T) {
 				},
 			},
 		}
-		assert.Panics(t, func() {
-			manager.Register(invalidFunc)
-		}, "Registration should panic when notEditable field has no default")
+		assert.Error(t, manager.RegisterSafe(invalidFunc), "Registration should return error when notEditable field has no default")
 	})
 
 	t.Run("Decision Routing Requires Declared Relations", func(t *testing.T) {
@@ -81,9 +77,7 @@ func TestNodeFuncManager_Register(t *testing.T) {
 				},
 			},
 		}
-		assert.Panics(t, func() {
-			manager.Register(invalidFunc)
-		}, "Decision routing mode should require declaredRelations")
+		assert.Error(t, manager.RegisterSafe(invalidFunc), "Decision routing mode should require declaredRelations")
 	})
 
 	t.Run("Standard Routing Must Not Declare Custom Relations", func(t *testing.T) {
@@ -95,9 +89,7 @@ func TestNodeFuncManager_Register(t *testing.T) {
 				},
 			},
 		}
-		assert.Panics(t, func() {
-			manager.Register(invalidFunc)
-		}, "Standard routing mode should reject declaredRelations")
+		assert.Error(t, manager.RegisterSafe(invalidFunc), "Standard routing mode should reject declaredRelations")
 	})
 
 	t.Run("Decision Routing Accepts Valid Relations", func(t *testing.T) {
@@ -110,12 +102,31 @@ func TestNodeFuncManager_Register(t *testing.T) {
 				},
 			},
 		}
-		assert.NotPanics(t, func() {
-			manager.Register(validFunc)
-		})
+		assert.NoError(t, manager.RegisterSafe(validFunc))
 
 		retrieved, ok := manager.Get("valid_decision_func")
 		assert.True(t, ok)
 		assert.Equal(t, validFunc, retrieved)
+	})
+}
+
+func TestNodeFuncManager_RegisterPreservesPanicCompatibility(t *testing.T) {
+	manager := NewNodeFuncManager()
+	invalidFunc := &types.NodeFuncObject{
+		FuncObject: types.FuncObject{
+			ID: "invalid_func",
+			Configuration: types.FuncObjConfiguration{
+				Business: []types.DynamicConfigField{
+					{
+						ID:   "field1",
+						Type: "INVALID_TYPE",
+					},
+				},
+			},
+		},
+	}
+
+	assert.Panics(t, func() {
+		manager.Register(invalidFunc)
 	})
 }

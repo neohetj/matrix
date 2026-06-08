@@ -188,8 +188,27 @@ sql, _ := helper.RenderConfigAsset[string](assetCtx, "query")
 3. 实现 `func Xxx(ctx types.NodeCtx, msg types.RuleMsg)`。
 4. 使用 `msg.DataT().GetByParam()` / `NewItemByParam()` 处理结构化输入输出。
 5. 使用 `asset.NewAssetContext(...)` + `helper.GetConfigAsset(...)` 读取 `configuration.business`。
-6. 调用 `registry.Default.NodeFuncManager.Register(...)` 完成注册。
+6. 新代码优先调用 `registry.Default.NodeFuncManager.RegisterSafe(...)` 完成注册，并显式处理返回错误；旧 `Register(...)` 保留 panic 兼容语义。
 7. 在 DSL 中使用 `type: "functions"`，设置 `configuration.functionName`，并补齐节点级 `inputs` / `outputs`。
+
+### 4.1. 注册错误处理
+
+当前 `types.NodeFuncManager` 同时暴露两个注册入口：
+
+```go
+type NodeFuncManager interface {
+    Register(funcs ...*NodeFuncObject)
+    RegisterSafe(funcs ...*NodeFuncObject) error
+    Get(id string) (*NodeFuncObject, bool)
+    List() []*NodeFuncObject
+}
+```
+
+语义：
+
+1. `RegisterSafe(...) error` 是新的显式错误入口。它会校验 `Business` 字段类型、`notEditable` 默认值、`routingMode` 与 `declaredRelations`，失败时返回 error，且不会写入非法函数。
+2. `Register(...)` 是兼容入口，内部调用 `RegisterSafe(...)`；失败时继续 panic，以保持历史 init-time 注册行为。
+3. 后续重构新代码应优先使用 `RegisterSafe(...)`，但迁移旧模块注册点需要单独阶段处理。
 
 ## 5. 完整示例
 
@@ -241,6 +260,12 @@ func EnrichUserProfile(ctx types.NodeCtx, msg types.RuleMsg) {
     }
 
     ctx.TellSuccess(msg)
+}
+
+func init() {
+    if err := registry.Default.NodeFuncManager.RegisterSafe(EnrichUserProfileFuncObj); err != nil {
+        panic(err)
+    }
 }
 ```
 
