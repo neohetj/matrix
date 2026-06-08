@@ -82,6 +82,57 @@ func TestValidateLoaderResourcesReportsOptionalSharedFallback(t *testing.T) {
 	}
 }
 
+func TestValidateLoaderResourcesReportsDuplicateNodeIDs(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "code/dsl/rulechains/duplicate_nodes.json", `{
+		"ruleChain": {"id": "duplicate_nodes"},
+		"metadata": {
+			"nodes": [
+				{"id": "lookup", "type": "functions", "configuration": {}},
+				{"id": "lookup", "type": "functions", "configuration": {}}
+			],
+			"connections": []
+		}
+	}`)
+
+	report := ValidateLoaderResources(loader.NewFileProvider(root, 50), LoaderPaths{
+		RuleChains: []string{"code/dsl/rulechains"},
+	})
+
+	assertIssue(t, report, CodeDuplicateNodeID, SeverityError, TargetNode, "metadata.nodes[1].id")
+	if got, want := report.ErrorCount(), 1; got != want {
+		t.Fatalf("ErrorCount() = %d, want %d; issues = %#v", got, want, report.Issues)
+	}
+}
+
+func TestValidateLoaderResourcesReportsRuleChainCycles(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "code/dsl/rulechains/cycle.json", `{
+		"ruleChain": {"id": "cycle"},
+		"metadata": {
+			"nodes": [
+				{"id": "start", "type": "functions", "configuration": {}},
+				{"id": "middle", "type": "functions", "configuration": {}},
+				{"id": "end", "type": "functions", "configuration": {}}
+			],
+			"connections": [
+				{"fromId": "start", "toId": "middle", "type": "Success"},
+				{"fromId": "middle", "toId": "end", "type": "Success"},
+				{"fromId": "end", "toId": "start", "type": "Success"}
+			]
+		}
+	}`)
+
+	report := ValidateLoaderResources(loader.NewFileProvider(root, 50), LoaderPaths{
+		RuleChains: []string{"code/dsl/rulechains"},
+	})
+
+	assertIssue(t, report, CodeCycleDetected, SeverityError, TargetRuleChain, "metadata.connections")
+	if got, want := report.ErrorCount(), 1; got != want {
+		t.Fatalf("ErrorCount() = %d, want %d; issues = %#v", got, want, report.Issues)
+	}
+}
+
 func writeFile(t *testing.T, root string, relPath string, content string) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(relPath))

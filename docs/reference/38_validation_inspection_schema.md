@@ -102,10 +102,14 @@ go run ./cmd/matrix-validate --module-root <module-repo-root>
 | issue code | severity | 触发条件 |
 | --- | --- | --- |
 | `loader_failure` | `error` | JSON 文件读取或解析失败。 |
+| `duplicate_node_id` | `error` | 同一 rulechain 内存在重复 node ID。 |
 | `dangling_connection` | `error` | rulechain connection 的 `fromId` 或 `toId` 找不到对应 node。 |
+| `cycle_detected` | `error` | 同一 rulechain 内的有效 connection 形成有向环。 |
 | `missing_endpoint_target` | `error` | endpoint 的 `configuration.ruleChainId` 不在已加载 rulechain ID 集合中。 |
 | `missing_shared_ref` | `error` | node / endpoint configuration 中的 `ref://...` 找不到 shared node ID。 |
 | `optional_fallback` | `warning` | `ref://...` 找不到 shared node ID，但同一配置对象声明了 `optional: true`、`fallback`、`fallbackUri`、`fallbackURI`、`default` 或 `defaultValue`。 |
+
+cycle 检测只使用同一 rulechain 内双方 node 都存在的 connection；缺失端点仍由 `dangling_connection` 单独报告，避免对同一个结构错误产生级联噪声。
 
 该 scanner 不会实例化 node，不会调用 `Node.Init(...)`，也不会注册 runtime trigger。它用于在 Stage 0.5 先建立 report-only 输出，后续再决定是否接入启动流程和 strict mode。
 
@@ -138,7 +142,7 @@ go run ./cmd/matrix-validate --module-root <module-repo-root>
 
 ## 6. 当前限制
 
-1. 当前 loader scanner 只做静态 JSON / DSL 结构扫描，不做 node type registry、function routing、endpoint IO contract 或 DAG cycle validation。
+1. 当前 loader scanner 只做静态 JSON / DSL 结构扫描与基础 graph/DAG 校验，不做 node type registry、function routing 或 endpoint IO contract validation。
 2. 当前不保证 `details` / `metadata` 内部字段稳定；消费者应优先依赖顶层字段和 issue code。
 3. Morpheus 仍未迁移到 inspection API，本模型只是后续 Stage 6 的输入契约基础。
 4. strict validation 还未打开；Stage 0.5 后续切片需要继续接入 rulechain validator 和 startup pipeline。

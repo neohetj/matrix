@@ -782,3 +782,42 @@ go test -count=1 ./pkg/validation ./cmd/matrix-validate
 1. 本切片仍不接入启动流程。
 2. 本切片仍不做 strict mode gate。
 3. 本切片只提供 loader report-only JSON 输出，不替代现有 rulechain mapping validator。
+
+### 9.10 Stage 0.5 Slice 4：Graph / DAG Report-Only Validation
+
+记录日期：2026-06-08。
+
+本切片完成 Stage 0.5 的第四项低影响优化：在 loader report-only scanner 中加入基础 graph / DAG 静态校验，但仍不改变 `matrix.New(...)`、loader startup、runtime registration 或现有模块启动行为。
+
+新增覆盖：
+
+1. `duplicate_node_id`
+   - 同一 rulechain 内重复 node ID。
+   - target 指向重复项位置，例如 `metadata.nodes[1].id`。
+2. `cycle_detected`
+   - 同一 rulechain 内有效 connection 形成有向环。
+   - target 指向 `metadata.connections`。
+
+设计约束：
+
+1. cycle 检测只使用同一 rulechain 内双方 node 都存在的 connection。
+2. connection 端点缺失仍由 `dangling_connection` 报告，cycle 检测不对缺失端点制造级联错误。
+3. 本切片仍不实例化 node、不调用 `Node.Init(...)`、不注册 endpoint trigger。
+
+聚焦验证：
+
+```bash
+go test -count=1 ./pkg/validation
+```
+
+后续验证需要继续使用：
+
+```bash
+go run ./cmd/matrix-validate --module-root <module-repo-root>
+```
+
+当前限制：
+
+1. 本切片仍不接入启动流程。
+2. 本切片仍不做 strict mode gate。
+3. 本切片不做 node type registry validation、function relation validation 或 endpoint IO contract validation。

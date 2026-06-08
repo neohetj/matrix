@@ -43,7 +43,9 @@ func ValidateLoaderResources(provider types.ResourceProvider, paths LoaderPaths)
 	scanRuleChainPaths(provider, paths.RuleChains, report, ruleChainIDs, &defs)
 	scanSharedPaths(provider, paths.Shared, report, sharedIDs)
 	scanEndpointPaths(provider, paths.Endpoints, report, &endpointDefs)
+	validateDuplicateNodeIDs(report, defs)
 	validateRuleChainConnections(report, defs)
+	validateRuleChainCycles(report, defs)
 	validateEndpointTargets(report, endpointDefs, ruleChainIDs)
 	validateSharedRefs(report, defs, endpointDefs, sharedIDs)
 
@@ -145,6 +147,42 @@ func walkJSON(provider types.ResourceProvider, basePath string, report *Report, 
 	}
 }
 
+func validateDuplicateNodeIDs(report *Report, defs []*types.RuleChainDef) {
+	for _, def := range defs {
+		if def == nil {
+			continue
+		}
+		firstIndexByID := map[string]int{}
+		for i, node := range def.Metadata.Nodes {
+			nodeID := strings.TrimSpace(node.ID)
+			if nodeID == "" {
+				continue
+			}
+			if firstIndex, exists := firstIndexByID[nodeID]; exists {
+				report.AddIssue(Issue{
+					Code:     CodeDuplicateNodeID,
+					Severity: SeverityError,
+					Message:  "rulechain contains duplicate node id",
+					Target: Target{
+						Kind:       TargetNode,
+						ID:         nodeID,
+						Path:       fmt.Sprintf("metadata.nodes[%d].id", i),
+						SourcePath: node.SourcePath,
+					},
+					Details: map[string]any{
+						"ruleChainId":    def.RuleChain.ID,
+						"nodeId":         nodeID,
+						"firstIndex":     firstIndex,
+						"duplicateIndex": i,
+					},
+				})
+				continue
+			}
+			firstIndexByID[nodeID] = i
+		}
+	}
+}
+
 func validateRuleChainConnections(report *Report, defs []*types.RuleChainDef) {
 	for _, def := range defs {
 		if def == nil {
@@ -165,6 +203,96 @@ func validateRuleChainConnections(report *Report, defs []*types.RuleChainDef) {
 			}
 		}
 	}
+}
+
+func validateRuleChainCycles(report *Report, defs []*types.RuleChainDef) {
+	for _, def := range defs {
+		if def == nil {
+			continue
+		}
+		nodeOrder := make([]string, 0, len(def.Metadata.Nodes))
+		nodeIDs := map[string]struct{}{}
+		for _, node := range def.Metadata.Nodes {
+			nodeID := strings.TrimSpace(node.ID)
+			if nodeID == "" {
+				continue
+			}
+			if _, exists := nodeIDs[nodeID]; !exists {
+				nodeOrder = append(nodeOrder, nodeID)
+			}
+			nodeIDs[nodeID] = struct{}{}
+		}
+
+		adjacency := map[string][]string{}
+		for _, conn := range def.Metadata.Connections {
+			if _, ok := nodeIDs[conn.FromID]; !ok {
+				continue
+			}
+			if _, ok := nodeIDs[conn.ToID]; !ok {
+				continue
+			}
+			adjacency[conn.FromID] = append(adjacency[conn.FromID], conn.ToID)
+		}
+
+		if cycle := findCycle(nodeOrder, adjacency); len(cycle) > 0 {
+			report.AddIssue(Issue{
+				Code:     CodeCycleDetected,
+				Severity: SeverityError,
+				Message:  "rulechain graph contains a cycle",
+				Target: Target{
+					Kind:       TargetRuleChain,
+					ID:         def.RuleChain.ID,
+					Path:       "metadata.connections",
+					SourcePath: sourcePathFromDef(def),
+				},
+				Details: map[string]any{
+					"ruleChainId": def.RuleChain.ID,
+					"cycle":       cycle,
+				},
+			})
+		}
+	}
+}
+
+func findCycle(nodeOrder []string, adjacency map[string][]string) []string {
+	color := map[string]int{}
+	stack := []string{}
+	stackIndex := map[string]int{}
+
+	var visit func(string) []string
+	visit = func(nodeID string) []string {
+		color[nodeID] = 1
+		stackIndex[nodeID] = len(stack)
+		stack = append(stack, nodeID)
+
+		for _, nextID := range adjacency[nodeID] {
+			switch color[nextID] {
+			case 1:
+				cycle := append([]string{}, stack[stackIndex[nextID]:]...)
+				cycle = append(cycle, nextID)
+				return cycle
+			case 0:
+				if cycle := visit(nextID); len(cycle) > 0 {
+					return cycle
+				}
+			}
+		}
+
+		stack = stack[:len(stack)-1]
+		delete(stackIndex, nodeID)
+		color[nodeID] = 2
+		return nil
+	}
+
+	for _, nodeID := range nodeOrder {
+		if color[nodeID] != 0 {
+			continue
+		}
+		if cycle := visit(nodeID); len(cycle) > 0 {
+			return cycle
+		}
+	}
+	return nil
 }
 
 func danglingConnectionIssue(conn types.Connection, index int, sourcePath string, field string) Issue {
@@ -330,6 +458,18 @@ func isOptionalFallback(parent map[string]any) bool {
 		}
 	}
 	return false
+}
+
+func sourcePathFromDef(def *types.RuleChainDef) string {
+	if def == nil {
+		return ""
+	}
+	for _, node := range def.Metadata.Nodes {
+		if node.SourcePath != "" {
+			return node.SourcePath
+		}
+	}
+	return ""
 }
 
 func setSourcePath(nodes []types.NodeDef, sourcePath string) {
