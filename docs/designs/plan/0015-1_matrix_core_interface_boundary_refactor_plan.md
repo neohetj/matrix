@@ -728,3 +728,57 @@ go test ./pkg/validation ./pkg/inspection ./pkg/runtimebridge
 1. 本切片不实例化 node，不调用 `Node.Init(...)`，也不注册 endpoint trigger。
 2. 本切片尚不做 DAG cycle validation、node type registry validation、function relation validation 或 endpoint IO contract validation。
 3. 本切片暂不接入启动流程；后续切片再决定 startup report-only 的调用位置。
+
+### 9.9 Stage 0.5 Slice 3：Report-Only CLI / Inspection Entry
+
+记录日期：2026-06-08。
+
+本切片完成 Stage 0.5 的第三项低影响优化：新增可执行的 report-only 验证入口，但不改变 `matrix.New(...)`、loader startup、runtime registration 或现有模块启动行为。
+
+新增实现：
+
+1. `pkg/validation.DiscoverLoaderPaths(...)`
+2. `pkg/validation.DefaultModuleDSLRoots`
+3. `cmd/matrix-validate`
+
+默认扫描根：
+
+1. `code/dsl`
+2. `common/dsl`
+
+命令入口：
+
+```bash
+go run ./cmd/matrix-validate --module-root <module-repo-root>
+```
+
+输出：
+
+1. stdout 输出 `ValidationReport` JSON。
+2. 默认 `mode` 仍为 `report-only`。
+3. 验证错误不会改变模块 startup 行为。
+
+现有模块验证：
+
+```bash
+go run ./cmd/matrix-validate --module-root <workspace-root>/modules/identityx
+go run ./cmd/matrix-validate --module-root <workspace-root>/modules/sellitx
+go run ./cmd/matrix-validate --module-root <workspace-root>/modules/notifyx
+go run ./cmd/matrix-validate --module-root <workspace-root>/modules/paymentx
+go run ./cmd/matrix-validate --module-root <workspace-root>/modules/lens
+go run ./cmd/matrix-validate --module-root <workspace-root>/modules/usagex
+```
+
+结果：六个模块均输出 `hasErrors=false`、`errorCount=0`、`warningCount=0`。
+
+聚焦验证：
+
+```bash
+go test -count=1 ./pkg/validation ./cmd/matrix-validate
+```
+
+当前限制：
+
+1. 本切片仍不接入启动流程。
+2. 本切片仍不做 strict mode gate。
+3. 本切片只提供 loader report-only JSON 输出，不替代现有 rulechain mapping validator。

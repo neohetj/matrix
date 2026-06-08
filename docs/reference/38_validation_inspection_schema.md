@@ -74,6 +74,29 @@ relations:
 
 模块级扫描必须传入该模块实际加载的完整 DSL 根。对于同时存在 `code/dsl` 与 `common/dsl` 的模块，`RuleChains`、`Endpoints`、`Shared` 应同时包含两个根下对应目录；只扫描 `code/dsl` 会把 `common/dsl/shared` 中定义的 shared resource 误报为 `missing_shared_ref`。
 
+`pkg/validation.DiscoverLoaderPaths(provider, dslRoots)` 用于从 DSL root 列表推导 `LoaderPaths`。当 `dslRoots` 为空时，默认扫描：
+
+1. `code/dsl`
+2. `common/dsl`
+
+它只返回实际存在的 `rulechains`、`endpoints`、`shared` 子目录，并按输入 root 顺序去重。
+
+## 4. Report-Only CLI
+
+`cmd/matrix-validate` 是当前 report-only 验证入口：
+
+```bash
+go run ./cmd/matrix-validate --module-root <module-repo-root>
+```
+
+默认行为：
+
+1. `--module-root` 默认为当前目录。
+2. 默认 DSL root 为 `code/dsl` 与 `common/dsl`。
+3. 可重复传入 `--dsl-root <path>` 覆盖默认 DSL root。
+4. 输出 `ValidationReport` JSON 到 stdout。
+5. 不实例化 node，不调用 `Node.Init(...)`，不注册 endpoint trigger，不影响 startup。
+
 当前覆盖：
 
 | issue code | severity | 触发条件 |
@@ -86,7 +109,7 @@ relations:
 
 该 scanner 不会实例化 node，不会调用 `Node.Init(...)`，也不会注册 runtime trigger。它用于在 Stage 0.5 先建立 report-only 输出，后续再决定是否接入启动流程和 strict mode。
 
-## 4. InspectionSnapshot
+## 5. InspectionSnapshot
 
 `pkg/inspection.InspectionSnapshot` 的 JSON 输出字段：
 
@@ -113,17 +136,17 @@ relations:
 | `refs` | array | 可选依赖引用，例如 target rulechain 或 `ref://...`。 |
 | `metadata` | object | 可选补充元数据。 |
 
-## 5. 当前限制
+## 6. 当前限制
 
 1. 当前 loader scanner 只做静态 JSON / DSL 结构扫描，不做 node type registry、function routing、endpoint IO contract 或 DAG cycle validation。
 2. 当前不保证 `details` / `metadata` 内部字段稳定；消费者应优先依赖顶层字段和 issue code。
 3. Morpheus 仍未迁移到 inspection API，本模型只是后续 Stage 6 的输入契约基础。
 4. strict validation 还未打开；Stage 0.5 后续切片需要继续接入 rulechain validator 和 startup pipeline。
 
-## 6. 验证
+## 7. 验证
 
 当前聚焦测试：
 
 ```bash
-go test ./pkg/validation ./pkg/inspection ./pkg/runtimebridge
+go test ./pkg/validation ./pkg/inspection ./pkg/runtimebridge ./cmd/matrix-validate
 ```
