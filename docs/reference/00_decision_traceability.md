@@ -28,7 +28,7 @@ relations:
 
 | RFC | 状态 | 设计承接 | 当前事实 / 操作承接 |
 | --- | --- | --- | --- |
-| [0015 Matrix Core Interface Boundary Refactor](../designs/rfc/0015_matrix_core_interface_boundary_refactor_rfc.md) | `Draft` | [Plan 0015-1](../designs/plan/0015-1_matrix_core_interface_boundary_refactor_plan.md) | 当前事实参考 [03_architecture_overview.md](03_architecture_overview.md)、[11_function_registration_spec.md](11_function_registration_spec.md)、[12_node_specification.md](12_node_specification.md)、[15_shared_resource_management.md](15_shared_resource_management.md)、[37_mcp_endpoint_adapter.md](37_mcp_endpoint_adapter.md) |
+| [0015 Matrix Core Interface Boundary Refactor](../designs/rfc/0015_matrix_core_interface_boundary_refactor_rfc.md) | `Draft` | [Plan 0015-1](../designs/plan/0015-1_matrix_core_interface_boundary_refactor_plan.md) | 当前事实参考 [03_architecture_overview.md](03_architecture_overview.md)、[11_function_registration_spec.md](11_function_registration_spec.md)、[12_node_specification.md](12_node_specification.md)、[15_shared_resource_management.md](15_shared_resource_management.md)、[37_mcp_endpoint_adapter.md](37_mcp_endpoint_adapter.md)、[38_validation_inspection_schema.md](38_validation_inspection_schema.md) |
 
 ## 2. Plan 执行追踪
 
@@ -45,6 +45,7 @@ relations:
 | [12_node_specification.md](12_node_specification.md) | `Draft` | 通用节点生命周期、数据契约和节点接口事实。 |
 | [15_shared_resource_management.md](15_shared_resource_management.md) | `Stable` | 共享节点池、`ref://` 引用和共享资源管理语义。 |
 | [37_mcp_endpoint_adapter.md](37_mcp_endpoint_adapter.md) | `Draft` | `endpoint/mcp` 与 Matrix MCP adapter core 的当前实现事实。 |
+| [38_validation_inspection_schema.md](38_validation_inspection_schema.md) | `Draft` | Validation report 与 inspection snapshot 的当前输出模型。 |
 
 ## 4. 维护规则
 

@@ -647,3 +647,37 @@ Stage 0 的结论是：当前可以继续推进，但不能以全仓 `go test ./
 1. 本次重构引入的新失败必须关闭。
 2. Stage 0 已记录的 baseline 失败可以作为历史风险保留，但最终合并主线前需要修复或形成明确例外。
 3. `modules/paymentx` ahead 1 与 `modules/sellitx` dirty state 必须在 Stage 5 前重新确认，避免重构覆盖人工或其他任务改动。
+
+### 9.7 Stage 0.5 Slice 1：Validation / Inspection Schema
+
+记录日期：2026-06-08。
+
+本切片完成 Stage 0.5 的第一项低影响优化：先新增稳定输出模型，不改变 runtime、loader、endpoint 或跨仓生产路径。
+
+新增实现：
+
+1. `pkg/validation`
+   - `Report`
+   - `Issue`
+   - `Target`
+   - `Scope`
+   - `ModeReportOnly` / `ModeStrict`
+   - severity 与 issue code 常量
+2. `pkg/inspection`
+   - `InspectionSnapshot`
+   - `RuntimeFactDescriptor`
+   - runtime / rulechain / endpoint / function / shared resource fact kind 常量
+3. `docs/reference/38_validation_inspection_schema.md`
+   - 记录 JSON 输出字段、当前用途和限制。
+
+验证：
+
+```bash
+go test ./pkg/validation ./pkg/inspection ./pkg/runtimebridge
+```
+
+当前限制：
+
+1. 本切片只定义 schema，不执行 DAG、loader、endpoint、shared ref 或 function relation 校验。
+2. loader report-only 接入留到 Stage 0.5 后续切片。
+3. Morpheus 迁移到 inspection API 留到 Stage 6。

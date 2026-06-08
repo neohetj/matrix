@@ -50,3 +50,4 @@ relations:
 - [33_component_design_principles.md](./33_component_design_principles.md): 组件设计原则。
 - [36_testing_strategy.md](./36_testing_strategy.md): 测试策略与验证建议。
 - [37_mcp_endpoint_adapter.md](./37_mcp_endpoint_adapter.md): `endpoint/mcp` 与 Matrix MCP adapter core 的当前实现事实。
+- [38_validation_inspection_schema.md](./38_validation_inspection_schema.md): Matrix validation report 与 inspection snapshot 输出模型。
