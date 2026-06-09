@@ -30,9 +30,10 @@ relations:
 
 | 包 | 当前职责 |
 | --- | --- |
-| `pkg/validation` | 定义 `Report`、`Issue`、`Target`、`Scope`、severity、mode 和 issue code。 |
-| `pkg/validation` | 提供 `ValidateLoaderResources(...)`，以 report-only 方式扫描 DSL loader 输入。 |
+| `pkg/validation` | 定义 `Report`、`EndpointCatalog`、`Issue`、`Target`、`Scope`、severity、mode 和 issue code。 |
+| `pkg/validation` | 提供 `ValidateLoaderResources(...)` 与 `ValidateLoaderResourcesWithOptions(...)`，以 report-only 方式扫描 DSL loader 输入。 |
 | `pkg/inspection` | 定义 `InspectionSnapshot` 与 `RuntimeFactDescriptor`，用于承载 runtime、rulechain、endpoint、function、shared resource 等事实描述。 |
+| `pkg/types` | 定义 `RuntimeLifecycleRequest`，作为 reload / stop / destroy 调用的 owner contract 草案。 |
 
 当前实现是 schema foundation 和 loader report-only scanner，不替换现有 runtime / loader 路径。
 
@@ -46,6 +47,7 @@ relations:
 | `mode` | string | `report-only` 或 `strict`。 |
 | `scope` | object | 本次校验范围，例如 rulechain、engine、loader。 |
 | `issues` | array | 结构化 issue 列表。 |
+| `endpointCatalog` | object | 可选 endpoint descriptor catalog，schema 版本为 `matrix.endpoint.catalog/v1`。 |
 | `hasErrors` | bool | 根据 `issues[].severity == "error"` 派生。 |
 | `errorCount` | number | error issue 数量，序列化时派生。 |
 | `warningCount` | number | warning issue 数量，序列化时派生。 |
@@ -60,6 +62,8 @@ relations:
 | `target` | object | 问题对象，例如 node、connection、endpoint、function、shared ref。 |
 | `details` | object | 可选细节，不作为主判断字段。 |
 
+`Report.ShouldBlock()` 是 strict gate helper。只有 `mode == "strict"` 且存在 error issue 时返回 `true`；report-only 输出即使有 error 也不应直接阻断 startup，除非宿主显式把它接成 strict gate。
+
 ## 3. Loader Report-Only Scanner
 
 `pkg/validation.ValidateLoaderResources(provider, paths)` 当前会扫描指定的 rulechain、endpoint 和 shared DSL 目录，并返回 `Report`。
@@ -73,6 +77,14 @@ relations:
 | `LoaderPaths.Shared` | shared DSL 目录列表。 |
 
 模块级扫描必须传入该模块实际加载的完整 DSL 根。对于同时存在 `code/dsl` 与 `common/dsl` 的模块，`RuleChains`、`Endpoints`、`Shared` 应同时包含两个根下对应目录；只扫描 `code/dsl` 会把 `common/dsl/shared` 中定义的 shared resource 误报为 `missing_shared_ref`。
+
+`pkg/validation.ValidateLoaderResourcesWithOptions(provider, paths, options)` 可显式传入：
+
+| 字段 | 说明 |
+| --- | --- |
+| `ValidationOptions.Mode` | 输出模式；为空时仍为 `report-only`。 |
+| `ValidationOptions.KnownNodeTypes` | 可选 node type catalog。为空时不做 `unknown_node_type` 校验。 |
+| `ValidationOptions.Functions` | 可选 function catalog。为空时不做 `unknown_function` / function relation 校验。 |
 
 `pkg/validation.DiscoverLoaderPaths(provider, dslRoots)` 用于从 DSL root 列表推导 `LoaderPaths`。当 `dslRoots` 为空时，默认扫描：
 
@@ -105,15 +117,62 @@ go run ./cmd/matrix-validate --module-root <module-repo-root>
 | `duplicate_node_id` | `error` | 同一 rulechain 内存在重复 node ID。 |
 | `dangling_connection` | `error` | rulechain connection 的 `fromId` 或 `toId` 找不到对应 node。 |
 | `cycle_detected` | `error` | 同一 rulechain 内的有效 connection 形成有向环。 |
+| `unknown_node_type` | `error` | 显式传入 node type catalog 后，rulechain node type 不在 catalog 内。 |
+| `unknown_function` | `error` | 显式传入 function catalog 后，`functions` node 引用的 `functionName` 不在 catalog 内。 |
+| `invalid_function_relation` | `error` | `functions` node 的输出 relation 不符合 function routing contract。 |
 | `missing_endpoint_target` | `error` | endpoint 的 `configuration.ruleChainId` 不在已加载 rulechain ID 集合中。 |
+| `invalid_endpoint_io` | `error` | HTTP endpoint IO `bindPath` 不是合法 `rulemsg://...` URI，或字段 `type` 不是 Matrix 支持的 `MType`。 |
 | `missing_shared_ref` | `error` | node / endpoint configuration 中的 `ref://...` 找不到 shared node ID。 |
 | `optional_fallback` | `warning` | `ref://...` 找不到 shared node ID，但同一配置对象声明了 `optional: true`、`fallback`、`fallbackUri`、`fallbackURI`、`default` 或 `defaultValue`。 |
 
 cycle 检测只使用同一 rulechain 内双方 node 都存在的 connection；缺失端点仍由 `dangling_connection` 单独报告，避免对同一个结构错误产生级联噪声。
 
-该 scanner 不会实例化 node，不会调用 `Node.Init(...)`，也不会注册 runtime trigger。它用于在 Stage 0.5 先建立 report-only 输出，后续再决定是否接入启动流程和 strict mode。
+该 scanner 不会实例化 node，不会调用 `Node.Init(...)`，也不会注册 runtime trigger。它用于在 Stage 0.5 先建立 report-only 输出；strict gate 已有 helper，但尚未接入启动流程。
 
-## 5. InspectionSnapshot
+## 5. EndpointCatalog
+
+`ValidationReport.endpointCatalog` 当前由 loader report-only scanner 从 endpoint DSL 文件生成。它是 endpoint discovery / host registration 后续重构的显式目录模型，不从 shared node pool 派生，也不会注册 HTTP、MCP 或 pipeline endpoint。
+
+`EndpointCatalog` 字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `schemaVersion` | string | 输出 schema 版本；默认值是 `matrix.endpoint.catalog/v1`。 |
+| `endpoints` | array | endpoint descriptor 列表，按 `sourcePath` 和 `id` 稳定排序。 |
+
+`EndpointDescriptor` 字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | endpoint DSL node ID。 |
+| `name` | string | 可选 endpoint 展示名。 |
+| `type` | string | endpoint node type，例如 `endpoint/http`、`endpoint/mcp`、`endpoint/pipeline`。 |
+| `protocol` | string | `http`、`mcp`、`pipeline` 或 `unknown`。 |
+| `sourcePath` | string | endpoint DSL 来源路径。 |
+| `targets` | array | 显式目标描述，例如 target rulechain、MCP tool target 或 pipeline stage processor。 |
+| `refs` | array | configuration 中出现的 `ref://...` 引用。 |
+| `http` | object | HTTP endpoint 专用 descriptor。 |
+| `mcp` | object | MCP endpoint 专用 descriptor。 |
+| `pipeline` | object | Pipeline endpoint 专用 descriptor。 |
+| `inputMapping` | object | HTTP request mapping 汇总，使用 `EndpointIOPacket` 结构。 |
+| `outputMapping` | object | HTTP response mapping 汇总，使用 `EndpointIOPacket` 结构。 |
+
+当前 endpoint catalog 只描述静态配置事实。host 侧 `RegisterDynamicEndpoints`、MCP server dispatcher、pipeline active lifecycle 仍未迁移到 catalog 消费路径。
+
+## 6. Runtime Lifecycle Contract
+
+`pkg/types.RuntimeLifecycleRequest` 是 reload / stop / destroy owner 边界草案：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `runtimeId` | string | 被操作的 runtime ID，不能为空。 |
+| `owner` | string | 调用 owner；当前允许 `engine`、`runtime_pool`、`host`、`test`。 |
+| `operation` | string | 生命周期操作；当前允许 `reload`、`stop`、`destroy`。 |
+| `reason` | string | 可选原因，便于 audit log 或 trace。 |
+
+`RuntimeLifecycleRequest.Validate()` 只校验 owner / operation / runtime ID，不改变现有 runtime lifecycle 实现。后续阶段需要把 runtime reload、endpoint lifecycle、shared resource lifecycle 的实际调用收敛到该 owner contract。
+
+## 7. InspectionSnapshot
 
 `pkg/inspection.InspectionSnapshot` 的 JSON 输出字段：
 
@@ -140,17 +199,19 @@ cycle 检测只使用同一 rulechain 内双方 node 都存在的 connection；�
 | `refs` | array | 可选依赖引用，例如 target rulechain 或 `ref://...`。 |
 | `metadata` | object | 可选补充元数据。 |
 
-## 6. 当前限制
+## 8. 当前限制
 
-1. 当前 loader scanner 只做静态 JSON / DSL 结构扫描与基础 graph/DAG 校验，不做 node type registry、function routing 或 endpoint IO contract validation。
+1. 当前 loader scanner 只做静态 JSON / DSL 结构扫描、基础 graph/DAG、可选 node/function catalog、HTTP endpoint IO contract 校验。
 2. 当前不保证 `details` / `metadata` 内部字段稳定；消费者应优先依赖顶层字段和 issue code。
 3. Morpheus 仍未迁移到 inspection API，本模型只是后续 Stage 6 的输入契约基础。
-4. strict validation 还未打开；Stage 0.5 后续切片需要继续接入 rulechain validator 和 startup pipeline。
+4. strict gate 已有 `Report.ShouldBlock()`，但尚未接入 `matrix.New(...)`、loader startup、Morpheus 或业务模块启动流程。
+5. Endpoint catalog 已能从 endpoint DSL 生成 descriptor，但 host 注册路径仍未消费该 catalog。
+6. `RuntimeLifecycleRequest` 只定义 owner contract，尚未替换宽 runtime 接口上的 reload / stop / destroy 调用。
 
-## 7. 验证
+## 9. 验证
 
 当前聚焦测试：
 
 ```bash
-go test ./pkg/validation ./pkg/inspection ./pkg/runtimebridge ./cmd/matrix-validate
+go test -count=1 ./pkg/validation ./pkg/types ./pkg/inspection ./cmd/matrix-validate
 ```

@@ -34,7 +34,7 @@ relations:
 
 | Plan | 状态 | 当前阶段 | 验证 / 证据 |
 | --- | --- | --- | --- |
-| [0015-1 Matrix Core Interface Boundary Refactor](../designs/plan/0015-1_matrix_core_interface_boundary_refactor_plan.md) | `Implementing` | Stage 0 baseline 已记录 | 见 Plan `## 9. Stage 0 Baseline Snapshot`。Stage 0 记录了仓库状态、测试 baseline、文档审计结果、事实层分类和低影响优先队列。 |
+| [0015-1 Matrix Core Interface Boundary Refactor](../designs/plan/0015-1_matrix_core_interface_boundary_refactor_plan.md) | `Implementing` | Stage 0.5 low-impact boundary slices 已记录 | 见 Plan `## 9. Stage 0 Baseline Snapshot`。Stage 0 记录了仓库状态、测试 baseline、文档审计结果、事实层分类和低影响优先队列；Stage 0.5 已记录 validation / inspection schema、loader report-only、CLI、DAG、function registry error-return contract、文档治理、endpoint catalog、runtime lifecycle owner contract 和 generic infrastructure identity audit。 |
 
 ## 3. 当前事实文档
 

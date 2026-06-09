@@ -918,3 +918,159 @@ python3 skills/matrix-doc-graph-auditor/scripts/audit_matrix_docs.py --root docs
 ```bash
 python3 skills/matrix-doc-graph-auditor/scripts/audit_matrix_docs.py --root docs --scope . --strict-targets
 ```
+
+### 9.14 Stage 0.5 Slice 8：Endpoint Catalog / Extended Report-Only Validation
+
+记录日期：2026-06-08。
+
+本切片完成 Stage 0.5 的第四项低影响优先队列剩余事项：建立 endpoint descriptor catalog model，并把部分不需要 runtime 实例化的 contract check 接入 loader report-only scanner。
+
+新增实现：
+
+1. `pkg/validation.EndpointCatalog`
+   - `schemaVersion`
+   - `endpoints`
+2. `pkg/validation.EndpointDescriptor`
+   - endpoint ID、name、type、protocol、sourcePath
+   - target descriptors
+   - `ref://...` refs
+   - HTTP / MCP / pipeline 专用 descriptor
+   - HTTP request / response mapping 汇总
+3. `pkg/validation.BuildEndpointCatalog(...)`
+   - 从 loader 扫描到的 endpoint DSL node defs 生成稳定排序的 endpoint catalog。
+4. `pkg/validation.ValidateLoaderResourcesWithOptions(...)`
+   - 允许显式传入 `ValidationOptions.Mode`、`KnownNodeTypes`、`Functions`。
+   - 为空时保持原 `ValidateLoaderResources(...)` 的 report-only 默认行为。
+5. 新增 issue code：
+   - `unknown_node_type`
+   - `unknown_function`
+   - `invalid_function_relation`
+   - `invalid_endpoint_io`
+
+新增覆盖：
+
+1. `endpoint/http`
+   - 描述 method、path、domain、summary、tags、async、startNodeId。
+   - 描述 target rulechain。
+   - 汇总 request path/query/header/body 与 response header/body mapping。
+2. `endpoint/mcp`
+   - 描述 serverName、toolNames、toolCount、targetKinds。
+   - 描述 tool target。
+3. `endpoint/pipeline`
+   - 描述 channelManager、exposedChannels、stages。
+   - 描述 stage processor target。
+4. endpoint IO contract
+   - `bindPath` 必须是合法 `rulemsg://...` URI。
+   - field `type` 必须是 Matrix 支持的 `MType`。
+5. function catalog contract
+   - supplied function catalog 中不存在的 function 形成 `unknown_function`。
+   - standard routing mode 只允许 `Success` / `Failure` relation。
+   - decision routing mode 允许 supplied `declaredRelations`。
+
+设计约束：
+
+1. 本切片不替换 `LoadEndpoints(...)`、HTTP dynamic registration、MCP adapter 或 pipeline active lifecycle。
+2. Endpoint catalog 是显式目录模型，不从 shared node pool 推导 endpoint 注册事实。
+3. Node type 与 function catalog 校验只有在调用方显式传入 catalog 时才启用，避免 report-only scanner 误把未知运行时环境当作错误。
+4. 新增 strict mode 字段只影响 report 输出和 `ShouldBlock()` helper，不接入 startup gate。
+
+TDD 验证：
+
+1. RED：`go test -count=1 ./pkg/validation -run TestValidateLoaderResourcesBuildsEndpointCatalog` 先因 `Report.EndpointCatalog` 和 `EndpointDescriptor` 不存在而编译失败。
+2. GREEN：`go test -count=1 ./pkg/validation -run 'TestValidateLoaderResources(BuildsEndpointCatalog|WithOptionsReportsCatalogAndContractIssues)'` 通过。
+
+现有模块 DSL 复查：
+
+| 模块 | `hasErrors` | `errorCount` | `warningCount` | endpoint descriptors |
+| --- | --- | --- | --- | --- |
+| `modules/identityx` | `false` | `0` | `0` | `45` |
+| `modules/sellitx` | `false` | `0` | `0` | `54` |
+| `modules/notifyx` | `false` | `0` | `0` | `10` |
+| `modules/paymentx` | `false` | `0` | `0` | `0` |
+| `modules/lens` | `false` | `0` | `0` | `37` |
+| `modules/usagex` | `false` | `0` | `0` | `21` |
+
+结论：按 Stage 0.5 当前 report-only 覆盖范围，现有模块 DSL 未暴露需要本阶段优先修复的 endpoint target、shared ref、DAG、HTTP endpoint IO contract 问题；`paymentx` 当前没有 endpoint descriptor，是模块现状而非校验失败。
+
+当前限制：
+
+1. Endpoint catalog 尚未被 host registration、MCP server 或 Morpheus registry 消费。
+2. `endpoint/pipeline` descriptor 当前只抽取静态 stage / processor / channel 信息，不接管 channel manager lifecycle。
+3. `ValidationOptions.Functions` 是 scanner 输入模型，不等同于最终 engine-scoped function catalog。
+
+### 9.15 Stage 0.5 Slice 9：Runtime Lifecycle Contract / Strict Gate / Identity Boundary Audit
+
+记录日期：2026-06-08。
+
+本切片完成 Stage 0.5 的第五项和第六项低影响优先队列剩余事项：定义 runtime lifecycle owner contract、补 strict gate helper，并形成 generic infrastructure identity hard-code 检查清单。该切片只新增契约和审计证据，不迁移实际 runtime owner，不改变跨仓生产行为。
+
+新增实现：
+
+1. `pkg/types.RuntimeLifecycleRequest`
+   - `runtimeId`
+   - `owner`
+   - `operation`
+   - `reason`
+2. `pkg/types.RuntimeLifecycleOwner`
+   - `engine`
+   - `runtime_pool`
+   - `host`
+   - `test`
+3. `pkg/types.RuntimeLifecycleOperation`
+   - `reload`
+   - `stop`
+   - `destroy`
+4. `RuntimeLifecycleRequest.Validate()`
+   - runtime ID 不能为空。
+   - owner 必须在允许集合内。
+   - operation 必须在允许集合内。
+5. `pkg/validation.Report.ShouldBlock()`
+   - 仅当 `mode == strict` 且存在 error issue 时返回 `true`。
+   - report-only mode 永不直接阻断 startup。
+
+Generic infrastructure identity hard-code 审计命令：
+
+```bash
+rg -n "identityx|sellitx|notifyx|paymentx|usagex|lens|x_identityx_|SELLITX_|IDENTITYX_|USAGEX_|5173|5180|7880|18080|modules/|admin-shells/" platform/Matrix platform/WhiteRoom platform/Morpheus --glob '!**/*_test.go' --glob '!**/docs/**' --glob '!**/skills/**' --glob '!**/README.md' --glob '!**/go.sum' --glob '!**/node_modules/**' --glob '!**/.local/**' --glob '!**/dist/**' --glob '!**/tmp/**' --glob '!**/package-lock.json' --glob '!**/web/demos/**' --glob '!**/*.spec.ts' --glob '!**/*.spec.tsx' --glob '!**/*.test.ts' --glob '!**/*.test.tsx'
+```
+
+审计结果：
+
+1. `platform/Matrix/pkg/mcp/endpoint.go`
+   - 当前 Matrix core MCP adapter 仍内置 `identityx_current_team_ids`、`identityx_permissions`、`identityx_roles` 与 `x_identityx_` 安全上下文字段过滤。
+   - 这是权限 / 安全边界语义，不能在 Stage 0.5 未审批的低影响切片里直接删除或泛化。
+   - 后续应改为 generic security context key policy 或由 host / endpoint descriptor 明确声明 forbidden context prefixes。
+2. `platform/WhiteRoom/common/executors/data/funcs/storage/**`
+   - common storage functions 当前仍使用 `sellitx/storage_*` function ID、`SELLITX_STORAGE_*` env key 和 `ref://sellitx/jsondb_service` 默认 ref。
+   - 这是 common 能力中的业务模块身份硬编码，后续全量修复时应迁移为 generic storage capability ID、module-supplied config key 或 manifest-declared shared resource ref。
+3. `platform/Morpheus/go.mod`
+   - 当前以 local replace 方式引用 `identityx`、`usagex`、`lens`。
+   - 该项属于当前 workspace 本地开发耦合，Stage 6 需要确认是否改为生成 registry / external contract，而不是 Morpheus source package 直接依赖业务模块。
+4. `platform/Morpheus/scripts/dev-runner.mjs` 与 `platform/Morpheus/web/vite.config.ts`
+   - 当前存在 `5173`、`7880` 默认值。
+   - 这些值需要继续由显式 env、workspace profile 或 generated runtime config 驱动；是否保留开发默认值需在 Morpheus Stage 6 单独确认。
+5. `platform/WhiteRoom/internal/mcpservercmd/command.go` 与 module scaffold template
+   - 当前存在 `18080` 默认监听地址和 `modules/identityx/...` CLI 示例。
+   - 监听默认值可以作为 local dev 默认保留，但正式 generic infrastructure 不应依赖具体 module path；CLI 示例后续应改成 placeholder 或 manifest-driven 示例。
+6. `platform/Matrix/pkg/config/config.go`
+   - `ComponentRoots` 注释里仍使用 `sellitx` 作为示例。
+   - 这是文档性示例，不是 runtime hard-code；后续可随 config reference 清理为 `example-module`。
+
+设计约束：
+
+1. 本切片不修改 MCP security context 过滤、WhiteRoom common storage ID/env/ref、Morpheus go.mod 或 dev-runner 默认值。
+2. 权限、安全、跨仓 runtime config 和 backward compatibility 相关修改必须单独走后续 Stage，并在实施前确认影响面。
+3. hard-code 审计清单作为 Stage 4 / Stage 6 / cross-repo full fix 的输入，不作为已修复项。
+
+TDD 验证：
+
+1. RED：`go test -count=1 ./pkg/types -run TestRuntimeLifecycleRequestValidate` 先因 `RuntimeLifecycleRequest` 不存在而编译失败。
+2. GREEN：`go test -count=1 ./pkg/types -run TestRuntimeLifecycleRequestValidate` 通过。
+3. RED：`go test -count=1 ./pkg/validation -run TestReportShouldBlockOnlyInStrictModeWithErrors` 先因 `ShouldBlock` 不存在而编译失败。
+4. GREEN：`go test -count=1 ./pkg/validation -run TestReportShouldBlockOnlyInStrictModeWithErrors` 通过。
+
+当前限制：
+
+1. `RuntimeLifecycleRequest` 尚未接入 `internal/runtime`、runtime pool、endpoint lifecycle 或 shared resource lifecycle。
+2. strict gate 尚未接入 `matrix.New(...)`、loader startup、Morpheus 或业务模块启动。
+3. generic infrastructure identity hard-code 仅完成检查和记录，实际迁移留给后续阶段。

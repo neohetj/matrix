@@ -91,3 +91,30 @@ func TestReportJSONSchemaAndErrorState(t *testing.T) {
 		t.Fatalf("target sourcePath = %v", target["sourcePath"])
 	}
 }
+
+func TestReportShouldBlockOnlyInStrictModeWithErrors(t *testing.T) {
+	reportOnly := NewReport("", ModeReportOnly, Scope{})
+	reportOnly.AddIssue(Issue{
+		Code:     CodeLoaderFailure,
+		Severity: SeverityError,
+		Message:  "loader failed",
+	})
+	if reportOnly.ShouldBlock() {
+		t.Fatalf("report-only validation must not block startup")
+	}
+
+	strictWithoutErrors := NewReport("", ModeStrict, Scope{})
+	if strictWithoutErrors.ShouldBlock() {
+		t.Fatalf("strict validation without errors must not block")
+	}
+
+	strictWithErrors := NewReport("", ModeStrict, Scope{})
+	strictWithErrors.AddIssue(Issue{
+		Code:     CodeLoaderFailure,
+		Severity: SeverityError,
+		Message:  "loader failed",
+	})
+	if !strictWithErrors.ShouldBlock() {
+		t.Fatalf("strict validation with errors should block when explicitly used as a gate")
+	}
+}
