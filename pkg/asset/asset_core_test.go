@@ -216,6 +216,39 @@ func TestAssetResolve_Config(t *testing.T) {
 	assert.Equal(t, "defVal", v3)
 }
 
+func TestAssetResolve_ConfigEngineScopeWithoutNodeCtx(t *testing.T) {
+	asset.InitRegistry()
+
+	ctx := asset.NewAssetContext(
+		asset.WithEngineConfig(types.ConfigMap{
+			"service": map[string]any{
+				"timeoutMs": "4500",
+			},
+		}),
+	)
+
+	v, err := (asset.Asset[string]{URI: "config:///service.timeoutMs?scope=engine"}).Resolve(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, "4500", v)
+}
+
+func TestAssetResolve_ConfigEnvScopeUsesInjectedEnvLookup(t *testing.T) {
+	asset.InitRegistry()
+
+	ctx := asset.NewAssetContext(
+		asset.WithEnvLookup(func(key string) (string, bool) {
+			if key == "IDENTITYX_JWT_SECRET" {
+				return "from-env", true
+			}
+			return "", false
+		}),
+	)
+
+	v, err := (asset.Asset[string]{URI: "config:///IDENTITYX_JWT_SECRET?scope=env"}).Resolve(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, "from-env", v)
+}
+
 func TestAssetResolve_Rel(t *testing.T) {
 	asset.InitRegistry()
 

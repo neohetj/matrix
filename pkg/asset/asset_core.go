@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
 	"reflect"
 	"sync"
 
@@ -26,6 +27,12 @@ var (
 // Option 定义了修改 AssetContext 的函数签名
 type Option func(*AssetContext)
 
+// ConfigLookup resolves a config path from an injected provider.
+type ConfigLookup func(path string) (any, bool)
+
+// EnvLookup resolves an environment variable by key.
+type EnvLookup func(key string) (string, bool)
+
 // AssetContext 聚合了解析 URI 所需的运行时上下文。
 // 它是线程安全的，支持通过 Option 模式进行扩展。
 type AssetContext struct {
@@ -33,6 +40,9 @@ type AssetContext struct {
 	ruleMsg types.RuleMsg
 	nodeCtx types.NodeCtx
 	config  types.ConfigMap
+
+	engineConfigLookup ConfigLookup
+	envLookup          EnvLookup
 
 	// 扩展存储，用于存储额外的信息 (如 TraceInfo, UserSession 等)
 	extras map[any]any
@@ -66,6 +76,31 @@ func WithNodeCtx(ctx types.NodeCtx) Option {
 func WithConfig(cfg types.ConfigMap) Option {
 	return func(rc *AssetContext) {
 		rc.config = cfg
+	}
+}
+
+func WithEngineConfig(cfg types.ConfigMap) Option {
+	return WithEngineConfigLookup(func(path string) (any, bool) {
+		if cfg == nil {
+			return nil, false
+		}
+		val, exists, err := utils.ExtractByPath(cfg, path)
+		if err != nil || !exists {
+			return nil, false
+		}
+		return val, true
+	})
+}
+
+func WithEngineConfigLookup(lookup ConfigLookup) Option {
+	return func(rc *AssetContext) {
+		rc.engineConfigLookup = lookup
+	}
+}
+
+func WithEnvLookup(lookup EnvLookup) Option {
+	return func(rc *AssetContext) {
+		rc.envLookup = lookup
 	}
 }
 
@@ -104,6 +139,20 @@ func (rc *AssetContext) NodeCtx() types.NodeCtx {
 
 func (rc *AssetContext) Config() types.ConfigMap {
 	return rc.config
+}
+
+func (rc *AssetContext) EngineConfig(path string) (any, bool) {
+	if rc == nil || rc.engineConfigLookup == nil {
+		return nil, false
+	}
+	return rc.engineConfigLookup(path)
+}
+
+func (rc *AssetContext) LookupEnv(key string) (string, bool) {
+	if rc != nil && rc.envLookup != nil {
+		return rc.envLookup(key)
+	}
+	return os.LookupEnv(key)
 }
 
 // Value 获取扩展上下文中的值
