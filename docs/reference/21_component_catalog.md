@@ -28,6 +28,7 @@ relations:
 | `action/flow` | 同步执行子规则链 |
 | `action/aggregator` | 聚合分支输出 |
 | `action/channel_push` | 向 pipeline channel 推送消息 |
+| `action/redis_stream_publish` | 向 Redis Stream 发布消息 |
 | `functions` | 通用函数执行器 |
 
 ## 2. Loop
@@ -44,6 +45,7 @@ relations:
 | `endpoint/http` | HTTP 入口 |
 | `endpoint/mcp` | MCP tool 入口，transport host 由 WhiteRoom 等宿主承载 |
 | `endpoint/pipeline` | Pipeline 入口 |
+| `endpoint/redis_stream` | Redis Stream consumer group 消费入口 |
 
 ## 4. Pipeline / Shared Resources
 
