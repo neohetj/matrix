@@ -14,10 +14,8 @@ import (
 type Resolution string
 
 const (
-	ResolutionPlaceholder          Resolution = "placeholder"
-	ResolutionNodeExplicit         Resolution = "node_explicit"
-	ResolutionSecret               Resolution = "secret"
-	ResolutionMigrationConfigFirst Resolution = "migration_config_first"
+	ResolutionPlaceholder  Resolution = "placeholder"
+	ResolutionNodeExplicit Resolution = "node_explicit"
 )
 
 type ValueSource string
@@ -38,15 +36,14 @@ var (
 )
 
 type ConfigSpec struct {
-	Key          string
-	Type         cnst.MType
-	Resolution   Resolution
-	Required     bool
-	Secret       bool
-	Default      any
-	Explicit     any
-	Aliases      []string
-	YAMLFallback *bool
+	Key        string
+	Type       cnst.MType
+	Resolution Resolution
+	Required   bool
+	Secret     bool
+	Default    any
+	Explicit   any
+	Aliases    []string
 }
 
 type ResolveMeta struct {
@@ -112,29 +109,11 @@ func Resolve[T any](r *ConfigResolver, spec ConfigSpec) (T, ResolveMeta, error) 
 	switch resolution {
 	case ResolutionNodeExplicit:
 		return resolveTyped[T](spec.Explicit, spec, ResolveMeta{Key: spec.Key, Source: SourceNodeExplicit, Secret: spec.Secret})
-	case ResolutionSecret:
-		return resolveSecret[T](r, spec)
-	case ResolutionMigrationConfigFirst:
-		return resolveConfigFirst[T](r, spec)
-	default:
+	case ResolutionPlaceholder:
 		return resolvePlaceholder[T](r, spec)
+	default:
+		return zero, ResolveMeta{Key: spec.Key, Secret: spec.Secret}, fmt.Errorf("%w: unsupported resolution %q", ErrRequiredConfig, resolution)
 	}
-}
-
-func resolveSecret[T any](r *ConfigResolver, spec ConfigSpec) (T, ResolveMeta, error) {
-	var zero T
-	spec.Secret = true
-	for _, key := range candidateKeys(spec) {
-		if raw, ok, err := r.resolveAssetRaw(key, "env"); err != nil {
-			return zero, ResolveMeta{Key: spec.Key, Alias: aliasFor(spec.Key, key), Secret: true}, err
-		} else if ok {
-			return resolveTyped[T](raw, spec, ResolveMeta{Key: spec.Key, Alias: aliasFor(spec.Key, key), Source: SourceEnv, Secret: true})
-		}
-	}
-	if spec.Required || spec.Secret {
-		return zero, ResolveMeta{Key: spec.Key, Secret: true}, fmt.Errorf("%w: %s", ErrRequiredSecret, spec.Key)
-	}
-	return zero, ResolveMeta{Key: spec.Key, Secret: true}, nil
 }
 
 func resolvePlaceholder[T any](r *ConfigResolver, spec ConfigSpec) (T, ResolveMeta, error) {
@@ -145,7 +124,7 @@ func resolvePlaceholder[T any](r *ConfigResolver, spec ConfigSpec) (T, ResolveMe
 		return resolveTyped[T](val, spec, meta)
 	}
 
-	if yamlFallbackEnabled(spec) {
+	if !spec.Secret {
 		if val, meta, ok, err := r.resolveFromCandidates(spec, "engine", SourceYAML); err != nil {
 			var zero T
 			return zero, meta, err
@@ -154,37 +133,17 @@ func resolvePlaceholder[T any](r *ConfigResolver, spec ConfigSpec) (T, ResolveMe
 		}
 	}
 
-	if spec.Default != nil {
+	if !spec.Secret && spec.Default != nil {
 		return resolveTyped[T](spec.Default, spec, ResolveMeta{Key: spec.Key, Source: SourceDefault, Secret: spec.Secret})
 	}
 
 	var zero T
-	if spec.Required {
-		return zero, ResolveMeta{Key: spec.Key, Secret: spec.Secret}, fmt.Errorf("%w: %s", ErrRequiredConfig, spec.Key)
+	if spec.Secret {
+		if !spec.Required {
+			return zero, ResolveMeta{Key: spec.Key, Secret: true}, nil
+		}
+		return zero, ResolveMeta{Key: spec.Key, Secret: true}, fmt.Errorf("%w: %s", ErrRequiredSecret, spec.Key)
 	}
-	return zero, ResolveMeta{Key: spec.Key, Secret: spec.Secret}, nil
-}
-
-func resolveConfigFirst[T any](r *ConfigResolver, spec ConfigSpec) (T, ResolveMeta, error) {
-	if val, meta, ok, err := r.resolveFromCandidates(spec, "engine", SourceYAML); err != nil {
-		var zero T
-		return zero, meta, err
-	} else if ok {
-		return resolveTyped[T](val, spec, meta)
-	}
-
-	if val, meta, ok, err := r.resolveFromCandidates(spec, "env", SourceEnv); err != nil {
-		var zero T
-		return zero, meta, err
-	} else if ok {
-		return resolveTyped[T](val, spec, meta)
-	}
-
-	if spec.Default != nil {
-		return resolveTyped[T](spec.Default, spec, ResolveMeta{Key: spec.Key, Source: SourceDefault, Secret: spec.Secret})
-	}
-
-	var zero T
 	if spec.Required {
 		return zero, ResolveMeta{Key: spec.Key, Secret: spec.Secret}, fmt.Errorf("%w: %s", ErrRequiredConfig, spec.Key)
 	}
@@ -276,16 +235,6 @@ func aliasFor(primary string, candidate string) string {
 		return ""
 	}
 	return candidate
-}
-
-func yamlFallbackEnabled(spec ConfigSpec) bool {
-	if spec.Secret {
-		return false
-	}
-	if spec.YAMLFallback == nil {
-		return true
-	}
-	return *spec.YAMLFallback
 }
 
 func isEmptyConfigValue(raw any) bool {

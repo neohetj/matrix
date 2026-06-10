@@ -114,7 +114,7 @@ func TestConfigResolverSecretDoesNotFallbackToYAML(t *testing.T) {
 
 	_, meta, err := Resolve[string](resolver, ConfigSpec{
 		Key:        "IDENTITYX_JWT_SECRET",
-		Resolution: ResolutionSecret,
+		Resolution: ResolutionPlaceholder,
 		Secret:     true,
 		Required:   true,
 	})
@@ -135,7 +135,7 @@ func TestConfigResolverSecretMetaRedactsValue(t *testing.T) {
 
 	value, meta, err := Resolve[string](resolver, ConfigSpec{
 		Key:        "IDENTITYX_JWT_SECRET",
-		Resolution: ResolutionSecret,
+		Resolution: ResolutionPlaceholder,
 		Secret:     true,
 		Required:   true,
 	})
@@ -143,6 +143,29 @@ func TestConfigResolverSecretMetaRedactsValue(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "super-secret", value)
 	assert.Equal(t, SourceEnv, meta.Source)
+	assert.Equal(t, RedactedValue, meta.SafeValue(value))
+}
+
+func TestConfigResolverOptionalSecretMissingDoesNotFallback(t *testing.T) {
+	resolver := NewConfigResolver(
+		WithBusinessConfig(types.ConfigMap{
+			"IDENTITYX_OPTIONAL_SECRET": "from-yaml",
+		}),
+		WithEnvLookup(func(string) (string, bool) {
+			return "", false
+		}),
+	)
+
+	value, meta, err := Resolve[string](resolver, ConfigSpec{
+		Key:        "IDENTITYX_OPTIONAL_SECRET",
+		Resolution: ResolutionPlaceholder,
+		Secret:     true,
+		Required:   false,
+	})
+
+	assert.NoError(t, err)
+	assert.Equal(t, "", value)
+	assert.Equal(t, SourceNone, meta.Source)
 	assert.Equal(t, RedactedValue, meta.SafeValue(value))
 }
 
