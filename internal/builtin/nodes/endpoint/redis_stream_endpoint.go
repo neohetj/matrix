@@ -122,8 +122,13 @@ func (n *RedisStreamEndpointNode) SetRuntimePool(pool any) error {
 
 func (n *RedisStreamEndpointNode) Start(ctx context.Context) error {
 	n.startOnce.Do(func() {
+		startedAt := time.Now()
+		fmt.Printf("redis stream endpoint starting: node_id=%s stream=%s group=%s consumer=%s ruleChainId=%s concurrency=%d blockMs=%d autoCreateGroup=%t\n",
+			n.ID(), n.config.Stream, n.config.Group, n.config.Consumer, n.config.RuleChainID, n.config.Concurrency, n.config.BlockMs, n.config.AutoCreateGroup)
 		client, err := n.resolveClient()
 		if err != nil {
+			fmt.Printf("redis stream endpoint resolve client failed: node_id=%s stream=%s group=%s redisClient=%s duration_ms=%d error=%v\n",
+				n.ID(), n.config.Stream, n.config.Group, n.config.RedisClient, endpointElapsedMilliseconds(startedAt), err)
 			n.startErr = err
 			return
 		}
@@ -131,24 +136,32 @@ func (n *RedisStreamEndpointNode) Start(ctx context.Context) error {
 		n.ctx, n.cancel = context.WithCancel(ctx)
 		if n.config.AutoCreateGroup {
 			if err := n.ensureGroup(n.ctx); err != nil {
+				fmt.Printf("redis stream endpoint ensure group failed: node_id=%s stream=%s group=%s groupStartId=%s duration_ms=%d error=%v\n",
+					n.ID(), n.config.Stream, n.config.Group, n.config.GroupStartID, endpointElapsedMilliseconds(startedAt), err)
 				n.startErr = err
 				return
 			}
+			fmt.Printf("redis stream endpoint group ready: node_id=%s stream=%s group=%s groupStartId=%s duration_ms=%d\n",
+				n.ID(), n.config.Stream, n.config.Group, n.config.GroupStartID, endpointElapsedMilliseconds(startedAt))
 		}
 		for i := 0; i < n.config.Concurrency; i++ {
 			n.wg.Add(1)
 			go n.runWorker(i)
 		}
+		fmt.Printf("redis stream endpoint started: node_id=%s stream=%s group=%s concurrency=%d duration_ms=%d\n",
+			n.ID(), n.config.Stream, n.config.Group, n.config.Concurrency, endpointElapsedMilliseconds(startedAt))
 	})
 	return n.startErr
 }
 
 func (n *RedisStreamEndpointNode) Stop() error {
 	n.stopOnce.Do(func() {
+		fmt.Printf("redis stream endpoint stopping: node_id=%s stream=%s group=%s\n", n.ID(), n.config.Stream, n.config.Group)
 		if n.cancel != nil {
 			n.cancel()
 		}
 		n.wg.Wait()
+		fmt.Printf("redis stream endpoint stopped: node_id=%s stream=%s group=%s\n", n.ID(), n.config.Stream, n.config.Group)
 	})
 	return nil
 }
@@ -174,8 +187,14 @@ func (n *RedisStreamEndpointNode) GetTargetChainID() string {
 }
 
 func (n *RedisStreamEndpointNode) runWorker(workerID int) {
-	defer n.wg.Done()
 	consumer := n.consumerName(workerID)
+	fmt.Printf("redis stream endpoint worker started: node_id=%s stream=%s group=%s consumer=%s worker_id=%d\n",
+		n.ID(), n.config.Stream, n.config.Group, consumer, workerID)
+	defer func() {
+		fmt.Printf("redis stream endpoint worker stopped: node_id=%s stream=%s group=%s consumer=%s worker_id=%d\n",
+			n.ID(), n.config.Stream, n.config.Group, consumer, workerID)
+		n.wg.Done()
+	}()
 	for {
 		select {
 		case <-n.ctx.Done():
@@ -198,6 +217,14 @@ func (n *RedisStreamEndpointNode) runWorker(workerID int) {
 			time.Sleep(time.Second)
 			continue
 		}
+		messageCount := 0
+		for _, stream := range streams {
+			messageCount += len(stream.Messages)
+		}
+		if messageCount > 0 {
+			fmt.Printf("redis stream endpoint read messages: node_id=%s stream=%s group=%s consumer=%s message_count=%d\n",
+				n.ID(), n.config.Stream, n.config.Group, consumer, messageCount)
+		}
 		for _, stream := range streams {
 			for _, redisMessage := range stream.Messages {
 				n.handleMessage(n.ctx, stream.Stream, redisMessage)
@@ -207,16 +234,29 @@ func (n *RedisStreamEndpointNode) runWorker(workerID int) {
 }
 
 func (n *RedisStreamEndpointNode) handleMessage(ctx context.Context, stream string, redisMessage redis.XMessage) {
+	startedAt := time.Now()
+	fmt.Printf("redis stream endpoint message received: node_id=%s stream=%s group=%s message_id=%s event_id=%s event_type=%s tenant_id=%s idempotency_key=%s\n",
+		n.ID(), stream, n.config.Group, redisMessage.ID,
+		redisEndpointMessageValue(redisMessage, "event_id"),
+		redisEndpointMessageValue(redisMessage, "event_type"),
+		redisEndpointMessageValue(redisMessage, "tenant_id"),
+		redisEndpointMessageValue(redisMessage, "idempotency_key"),
+	)
 	rt, ok := n.resolveRuntime()
 	if !ok {
-		fmt.Printf("redis stream endpoint runtime not found: ruleChainId=%s\n", n.config.RuleChainID)
+		fmt.Printf("redis stream endpoint runtime not found: node_id=%s stream=%s group=%s message_id=%s ruleChainId=%s duration_ms=%d\n",
+			n.ID(), stream, n.config.Group, redisMessage.ID, n.config.RuleChainID, endpointElapsedMilliseconds(startedAt))
 		return
 	}
 	msg, err := n.buildRuleMsg(stream, redisMessage)
 	if err != nil {
-		fmt.Printf("redis stream endpoint build message failed: stream=%s message_id=%s error=%v\n", stream, redisMessage.ID, err)
+		fmt.Printf("redis stream endpoint build message failed: node_id=%s stream=%s group=%s message_id=%s duration_ms=%d error=%v\n",
+			n.ID(), stream, n.config.Group, redisMessage.ID, endpointElapsedMilliseconds(startedAt), err)
 		if n.config.AckOnFailure {
-			_, _ = n.client.XAck(ctx, stream, n.config.Group, redisMessage.ID).Result()
+			if _, ackErr := n.client.XAck(ctx, stream, n.config.Group, redisMessage.ID).Result(); ackErr != nil {
+				fmt.Printf("redis stream endpoint ack failed after build failure: node_id=%s stream=%s group=%s message_id=%s error=%v\n",
+					n.ID(), stream, n.config.Group, redisMessage.ID, ackErr)
+			}
 		}
 		return
 	}
@@ -227,13 +267,37 @@ func (n *RedisStreamEndpointNode) handleMessage(ctx context.Context, stream stri
 		}
 	}
 	if err != nil {
-		fmt.Printf("redis stream endpoint processing failed: stream=%s message_id=%s ruleChainId=%s error=%v\n", stream, redisMessage.ID, n.config.RuleChainID, err)
+		fmt.Printf("redis stream endpoint processing failed: node_id=%s stream=%s group=%s message_id=%s event_id=%s event_type=%s tenant_id=%s idempotency_key=%s ruleChainId=%s duration_ms=%d error=%v\n",
+			n.ID(), stream, n.config.Group, redisMessage.ID,
+			redisEndpointMessageValue(redisMessage, "event_id"),
+			redisEndpointMessageValue(redisMessage, "event_type"),
+			redisEndpointMessageValue(redisMessage, "tenant_id"),
+			redisEndpointMessageValue(redisMessage, "idempotency_key"),
+			n.config.RuleChainID,
+			endpointElapsedMilliseconds(startedAt),
+			err)
 		if n.config.AckOnFailure {
-			_, _ = n.client.XAck(ctx, stream, n.config.Group, redisMessage.ID).Result()
+			if _, ackErr := n.client.XAck(ctx, stream, n.config.Group, redisMessage.ID).Result(); ackErr != nil {
+				fmt.Printf("redis stream endpoint ack failed after processing failure: node_id=%s stream=%s group=%s message_id=%s error=%v\n",
+					n.ID(), stream, n.config.Group, redisMessage.ID, ackErr)
+			}
 		}
 		return
 	}
-	_, _ = n.client.XAck(ctx, stream, n.config.Group, redisMessage.ID).Result()
+	if _, err := n.client.XAck(ctx, stream, n.config.Group, redisMessage.ID).Result(); err != nil {
+		fmt.Printf("redis stream endpoint ack failed: node_id=%s stream=%s group=%s message_id=%s duration_ms=%d error=%v\n",
+			n.ID(), stream, n.config.Group, redisMessage.ID, endpointElapsedMilliseconds(startedAt), err)
+		return
+	}
+	fmt.Printf("redis stream endpoint message processed: node_id=%s stream=%s group=%s message_id=%s event_id=%s event_type=%s tenant_id=%s idempotency_key=%s ruleChainId=%s duration_ms=%d\n",
+		n.ID(), stream, n.config.Group, redisMessage.ID,
+		redisEndpointMessageValue(redisMessage, "event_id"),
+		redisEndpointMessageValue(redisMessage, "event_type"),
+		redisEndpointMessageValue(redisMessage, "tenant_id"),
+		redisEndpointMessageValue(redisMessage, "idempotency_key"),
+		n.config.RuleChainID,
+		endpointElapsedMilliseconds(startedAt),
+	)
 }
 
 func (n *RedisStreamEndpointNode) buildRuleMsg(stream string, redisMessage redis.XMessage) (types.RuleMsg, error) {
@@ -295,4 +359,23 @@ func (n *RedisStreamEndpointNode) consumerName(workerID int) string {
 		return base
 	}
 	return fmt.Sprintf("%s-%d", base, workerID)
+}
+
+func endpointElapsedMilliseconds(startedAt time.Time) int64 {
+	return time.Since(startedAt).Milliseconds()
+}
+
+func redisEndpointMessageValue(message redis.XMessage, key string) string {
+	value, ok := message.Values[key]
+	if !ok || value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case []byte:
+		return string(typed)
+	default:
+		return fmt.Sprintf("%v", typed)
+	}
 }

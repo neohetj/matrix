@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/neohetj/matrix/internal/registry"
 	"github.com/neohetj/matrix/pkg/asset"
@@ -90,11 +91,23 @@ func (n *RedisStreamPublishNode) DataContract() types.DataContract {
 }
 
 func (n *RedisStreamPublishNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
+	startedAt := time.Now()
+	resolveStartedAt := time.Now()
+	ctx.Info("redis stream publish resolving client", "redis_client", n.nodeConfig.RedisClient)
 	client, err := resolveRedisClient(ctx, n.nodeConfig.RedisClient)
 	if err != nil {
+		ctx.Error("redis stream publish resolve client failed",
+			"redis_client", n.nodeConfig.RedisClient,
+			"duration_ms", elapsedMilliseconds(resolveStartedAt),
+			"error", err,
+		)
 		ctx.HandleError(msg, FaultRedisStreamPublishFailed.Wrap(err))
 		return
 	}
+	ctx.Info("redis stream publish client resolved",
+		"redis_client", n.nodeConfig.RedisClient,
+		"duration_ms", elapsedMilliseconds(resolveStartedAt),
+	)
 
 	stream, err := renderRedisStreamTemplate(ctx, msg, n.nodeConfig.Stream)
 	if err != nil {
@@ -113,6 +126,17 @@ func (n *RedisStreamPublishNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 		return
 	}
 
+	xaddStartedAt := time.Now()
+	ctx.Info("redis stream publish xadd started",
+		"stream", stream,
+		"value_count", len(values),
+		"event_id", redisStreamValueForLog(values, "event_id"),
+		"event_type", redisStreamValueForLog(values, "event_type"),
+		"tenant_id", redisStreamValueForLog(values, "tenant_id"),
+		"idempotency_key", redisStreamValueForLog(values, "idempotency_key"),
+		"max_len", n.nodeConfig.MaxLen,
+		"approx", n.nodeConfig.Approx,
+	)
 	id, err := client.XAdd(ctx.GetContext(), &redis.XAddArgs{
 		Stream: stream,
 		MaxLen: n.nodeConfig.MaxLen,
@@ -120,6 +144,16 @@ func (n *RedisStreamPublishNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 		Values: values,
 	}).Result()
 	if err != nil {
+		ctx.Error("redis stream publish xadd failed",
+			"stream", stream,
+			"event_id", redisStreamValueForLog(values, "event_id"),
+			"event_type", redisStreamValueForLog(values, "event_type"),
+			"tenant_id", redisStreamValueForLog(values, "tenant_id"),
+			"idempotency_key", redisStreamValueForLog(values, "idempotency_key"),
+			"xadd_duration_ms", elapsedMilliseconds(xaddStartedAt),
+			"total_duration_ms", elapsedMilliseconds(startedAt),
+			"error", err,
+		)
 		ctx.HandleError(msg, FaultRedisStreamPublishFailed.Wrap(err))
 		return
 	}
@@ -131,8 +165,36 @@ func (n *RedisStreamPublishNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 		}
 	}
 
-	ctx.Info("redis stream message published", "stream", stream, "message_id", id)
+	ctx.Info("redis stream message published",
+		"stream", stream,
+		"message_id", id,
+		"event_id", redisStreamValueForLog(values, "event_id"),
+		"event_type", redisStreamValueForLog(values, "event_type"),
+		"tenant_id", redisStreamValueForLog(values, "tenant_id"),
+		"idempotency_key", redisStreamValueForLog(values, "idempotency_key"),
+		"xadd_duration_ms", elapsedMilliseconds(xaddStartedAt),
+		"total_duration_ms", elapsedMilliseconds(startedAt),
+	)
 	ctx.TellSuccess(msg)
+}
+
+func elapsedMilliseconds(startedAt time.Time) int64 {
+	return time.Since(startedAt).Milliseconds()
+}
+
+func redisStreamValueForLog(values map[string]any, key string) string {
+	value, ok := values[key]
+	if !ok || value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case []byte:
+		return string(typed)
+	default:
+		return fmt.Sprintf("%v", typed)
+	}
 }
 
 func (n *RedisStreamPublishNode) buildValues(ctx types.NodeCtx, msg types.RuleMsg) (map[string]any, error) {
