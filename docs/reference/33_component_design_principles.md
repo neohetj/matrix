@@ -1,7 +1,7 @@
 ---
 # === Node Properties: 定义文档节点自身 ===
 uuid: "423a1d0c-0f81-45bd-bcc1-7ae64d519f65"
-type: "Concept"
+type: "Reference"
 title: "规则链设计原则"
 status: "Draft"
 owner: "neohetj"

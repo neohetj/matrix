@@ -15,7 +15,7 @@ tags:
 
 # === Node Relations: 定义与其他文档节点的关系 ===
 relations:
-  - type: "explains"
+  - type: "supports"
     target_uuid: "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
     description: "本文档深入解析 HttpEndpoint 组件指南背后的实现原理。"
   - type: "references"

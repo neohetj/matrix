@@ -20,7 +20,7 @@ relations: []
 
 这份 RFC 继续保留为**未实现提案**。截至当前代码状态，Matrix 还没有 `endpoint/websocket` 这一节点类型。
 
-### 原始需求点总结
+## 原始需求点总结
 
 1. 提供 WebSocket 被动入口：原始需求希望 Matrix 拥有和 `endpoint/http` 类似的长期连接型 endpoint，能够接住 WebSocket 会话。
 2. 支持消息到 RuleMsg 的映射：来自 WebSocket 的事件、文本或结构化消息需要被转换成规则链可执行的 `RuleMsg`。

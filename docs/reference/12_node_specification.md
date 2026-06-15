@@ -1,7 +1,7 @@
 ---
 # === Node Properties: 定义文档节点自身 ===
 uuid: "f745eae6-f75c-4849-b7fb-407d6c439182"
-type: "Specification"
+type: "Reference"
 title: "参考-12: 通用节点规范"
 status: "Draft"
 owner: "neohetj"
@@ -15,9 +15,6 @@ tags:
 
 # === Node Relations: 定义与其他文档节点的关系 ===
 relations:
-  - type: "is_referenced_by"
-    target_uuid: "60c07c47-df0e-4b76-9ed9-62fabe2e2add"
-    description: "本文档为节点开发模式提供底层实现规范。"
   - type: "supersedes"
     target_uuid: "d8a3bfe2-0a7e-4b3a-9c1d-8e7f6a5b4c3d"
     description: "[external] 本文档吸收并取代了一份仓外历史数据合约规范。"

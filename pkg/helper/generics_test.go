@@ -152,7 +152,7 @@ func TestGetConfigAssetComplexType(t *testing.T) {
 
 	mockey.PatchConvey("TestGetConfigAsset with complex map type", t, func() {
 		// Mock ResolveConfigFieldMeta to provide the type info needed by BuildConfigAssetURI
-		mockey.Mock(helper.ResolveConfigFieldMeta).Return("", "map").Build()
+		mockey.Mock(helper.ResolveConfigFieldMeta).Return("", "map", false).Build()
 
 		// 1. Setup: Create a mock node context with the complex map in its config
 		nodeCtx := utils.NewMockNodeCtx(

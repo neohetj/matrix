@@ -28,7 +28,7 @@ relations:
 
 这份 RFC 的主要目标已经落地：Matrix 现在拥有更完整的统一入口、组件发现、DSL 装载、shared / endpoint 加载和 runtime 初始化流程，不再需要依赖早期文档中描述的“宿主先组装好一切再交给 Matrix”模式。
 
-### 原始需求点总结
+## 原始需求点总结
 
 1. 回收框架装载职责：原始需求希望把 loader、runtime、shared、endpoint、rulechain 等核心装载过程收回 Matrix 核心，而不是让宿主项目自己拼装。
 2. 建立统一入口：Matrix 应提供一个稳定、清晰的统一初始化入口，让宿主不必知道过多内部创建细节。

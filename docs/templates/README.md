@@ -18,7 +18,7 @@ relations:
 
 # Matrix 文档模板库
 
-本目录存放 `RFC / ADR / Plan / ComponentGuide` 等文档模板。模板目录是 `docs/` 树中的特殊目录，允许出现占位值，但这些占位值只允许留在模板中。
+本目录存放 Matrix repo-local 的 `RFC / ADR / Plan / ComponentGuide` 等文档模板。Matrix 模板扩展 Evolution 基础模板库 `docs/templates/`：当 Matrix 本地模板没有覆盖某类文档时，应使用 Evolution 基础模板；Matrix 本地模板只能增加 Matrix 组件、节点和校验相关约束，不能放宽 Evolution 的 frontmatter、命名、relation、生命周期和决策追踪规则。
 
 ## 1. 模板占位规则
 

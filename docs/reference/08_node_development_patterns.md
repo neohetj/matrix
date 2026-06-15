@@ -1,7 +1,7 @@
 ---
 # === Node Properties: 定义文档节点自身 ===
 uuid: "60c07c47-df0e-4b76-9ed9-62fabe2e2add"
-type: "ArchitectureOverview"
+type: "Reference"
 title: "参考-08: Matrix节点开发模式"
 status: "Draft"
 owner: "neohetj"

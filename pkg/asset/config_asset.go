@@ -3,7 +3,6 @@ package asset
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 
@@ -178,13 +177,19 @@ func (a ConfigAsset) Handle(uri *url.URL, ctx *AssetContext) (any, error) {
 					}
 				}
 			}
+			if !found {
+				if val, ok := ctx.EngineConfig(configPath); ok {
+					rawVal = val
+					found = true
+				}
+			}
 		case "env":
-			if val := os.Getenv(configPath); val != "" {
+			if val, ok := ctx.LookupEnv(configPath); ok && val != "" {
 				rawVal = val
 				found = true
 			} else {
 				envKey := strings.ToUpper(strings.ReplaceAll(configPath, ".", "_"))
-				if val := os.Getenv(envKey); val != "" {
+				if val, ok := ctx.LookupEnv(envKey); ok && val != "" {
 					rawVal = val
 					found = true
 				}

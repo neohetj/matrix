@@ -38,8 +38,15 @@ relations:
 
 | 配置键 (ID) | 名称 | 描述 | 类型 | 是否必须 | 默认值 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `dsn` | DSN | Redis 连接字符串 (Data Source Name)，遵循标准URI格式。 | `string` | 是 | N/A |
+| `uri` | URI | Redis 连接字符串，遵循标准 URI 格式。 | `string` | 是 | N/A |
 | `poolSize` | 连接池大小 | Redis 连接池的大小。 | `int` | 否 | `0` (使用驱动默认值) |
+| `tls_insecure` | 跳过 TLS 校验 | 使用 TLS Redis 时跳过证书校验，仅用于本地或受控联调环境。 | `bool` | 否 | `false` |
+| `dialTimeout` | 建连超时 | Redis 建连超时时间，例如 `15s`。 | `string` | 否 | 驱动默认值 |
+| `readTimeout` | 读超时 | Redis 读超时时间，例如 `15s`。 | `string` | 否 | 驱动默认值 |
+| `writeTimeout` | 写超时 | Redis 写超时时间，例如 `15s`。 | `string` | 否 | 驱动默认值 |
+| `maxRetries` | 最大重试次数 | Redis 命令最大重试次数。 | `int` | 否 | 驱动默认值 |
+| `minRetryBackoff` | 最小重试间隔 | Redis 命令重试最小间隔，例如 `200ms`。 | `string` | 否 | 驱动默认值 |
+| `maxRetryBackoff` | 最大重试间隔 | Redis 命令重试最大间隔，例如 `2s`。 | `string` | 否 | 驱动默认值 |
 
 ## 2.1. 配置示例 (Example)
 
@@ -49,8 +56,14 @@ relations:
   "type": "external/redisClient",
   "name": "共享Redis缓存连接",
   "configuration": {
-    "dsn": "redis://:password@hostname:port/db_number",
-    "poolSize": 10
+    "uri": "redis://:password@hostname:port/db_number",
+    "poolSize": 10,
+    "dialTimeout": "15s",
+    "readTimeout": "15s",
+    "writeTimeout": "15s",
+    "maxRetries": 3,
+    "minRetryBackoff": "200ms",
+    "maxRetryBackoff": "2s"
   }
 }
 ```

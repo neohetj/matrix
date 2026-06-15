@@ -1,7 +1,7 @@
 ---
 # === Node Properties: 定义文档节点自身 ===
 uuid: "dbf6fb21-5e26-44b6-b1bb-d94d13112ae9"
-type: "Specification"
+type: "Reference"
 title: "参考-11: 函数开发与注册规范"
 status: "Stable"
 owner: "neohetj"
@@ -15,9 +15,6 @@ tags:
 
 # === Node Relations: 定义与其他文档节点的关系 ===
 relations:
-  - type: "is_referenced_by"
-    target_uuid: "60c07c47-df0e-4b76-9ed9-62fabe2e2add"
-    description: "本文档为函数开发模式提供底层实现规范。"
   - type: "references"
     target_uuid: "f745eae6-f75c-4849-b7fb-407d6c439182"
     description: "函数的数据契约扩展了通用节点契约。"
@@ -188,8 +185,27 @@ sql, _ := helper.RenderConfigAsset[string](assetCtx, "query")
 3. 实现 `func Xxx(ctx types.NodeCtx, msg types.RuleMsg)`。
 4. 使用 `msg.DataT().GetByParam()` / `NewItemByParam()` 处理结构化输入输出。
 5. 使用 `asset.NewAssetContext(...)` + `helper.GetConfigAsset(...)` 读取 `configuration.business`。
-6. 调用 `registry.Default.NodeFuncManager.Register(...)` 完成注册。
+6. 新代码优先调用 `registry.Default.NodeFuncManager.RegisterSafe(...)` 完成注册，并显式处理返回错误；旧 `Register(...)` 保留 panic 兼容语义。
 7. 在 DSL 中使用 `type: "functions"`，设置 `configuration.functionName`，并补齐节点级 `inputs` / `outputs`。
+
+### 4.1. 注册错误处理
+
+当前 `types.NodeFuncManager` 同时暴露两个注册入口：
+
+```go
+type NodeFuncManager interface {
+    Register(funcs ...*NodeFuncObject)
+    RegisterSafe(funcs ...*NodeFuncObject) error
+    Get(id string) (*NodeFuncObject, bool)
+    List() []*NodeFuncObject
+}
+```
+
+语义：
+
+1. `RegisterSafe(...) error` 是新的显式错误入口。它会校验 `Business` 字段类型、`notEditable` 默认值、`routingMode` 与 `declaredRelations`，失败时返回 error，且不会写入非法函数。
+2. `Register(...)` 是兼容入口，内部调用 `RegisterSafe(...)`；失败时继续 panic，以保持历史 init-time 注册行为。
+3. 后续重构新代码应优先使用 `RegisterSafe(...)`，但迁移旧模块注册点需要单独阶段处理。
 
 ## 5. 完整示例
 
@@ -241,6 +257,12 @@ func EnrichUserProfile(ctx types.NodeCtx, msg types.RuleMsg) {
     }
 
     ctx.TellSuccess(msg)
+}
+
+func init() {
+    if err := registry.Default.NodeFuncManager.RegisterSafe(EnrichUserProfileFuncObj); err != nil {
+        panic(err)
+    }
 }
 ```
 

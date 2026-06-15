@@ -35,53 +35,68 @@ func NewNodeFuncManager() *DefaultNodeFuncManager {
 
 // Register adds a new function node definition to the manager.
 func (m *DefaultNodeFuncManager) Register(funcs ...*types.NodeFuncObject) {
-	for _, f := range funcs {
-		if f != nil {
-			// Validate business config definitions
-			for _, field := range f.FuncObject.Configuration.Business {
-				if !field.Type.IsSupported() {
-					panic(fmt.Sprintf("Function %s registration failed: invalid business config type '%s' for field '%s'", f.FuncObject.ID, field.Type, field.Name))
-				}
-				if field.NotEditable && field.Default == nil {
-					panic(fmt.Sprintf("Function %s registration failed: field '%s' is notEditable but missing defaultValue", f.FuncObject.ID, field.ID))
-				}
-			}
-			validateFunctionRouting(f)
-			m.functions.Store(f.FuncObject.ID, f)
-		}
+	if err := m.RegisterSafe(funcs...); err != nil {
+		panic(err)
 	}
 }
 
-func validateFunctionRouting(f *types.NodeFuncObject) {
+// RegisterSafe adds function node definitions and returns validation errors instead of panicking.
+func (m *DefaultNodeFuncManager) RegisterSafe(funcs ...*types.NodeFuncObject) error {
+	for _, f := range funcs {
+		if f == nil {
+			continue
+		}
+		if err := validateFunctionRegistration(f); err != nil {
+			return err
+		}
+		m.functions.Store(f.FuncObject.ID, f)
+	}
+	return nil
+}
+
+func validateFunctionRegistration(f *types.NodeFuncObject) error {
+	for _, field := range f.FuncObject.Configuration.Business {
+		if !field.Type.IsSupported() {
+			return fmt.Errorf("function %s registration failed: invalid business config type '%s' for field '%s'", f.FuncObject.ID, field.Type, field.Name)
+		}
+		if field.NotEditable && field.Default == nil {
+			return fmt.Errorf("function %s registration failed: field '%s' is notEditable but missing defaultValue", f.FuncObject.ID, field.ID)
+		}
+	}
+	return validateFunctionRouting(f)
+}
+
+func validateFunctionRouting(f *types.NodeFuncObject) error {
 	cfg := f.FuncObject.Configuration
 	mode := cfg.EffectiveRoutingMode()
 	if !mode.IsValid() {
-		panic(fmt.Sprintf("Function %s registration failed: invalid routingMode '%s'", f.FuncObject.ID, cfg.RoutingMode))
+		return fmt.Errorf("function %s registration failed: invalid routingMode '%s'", f.FuncObject.ID, cfg.RoutingMode)
 	}
 
 	switch mode {
 	case types.FunctionRoutingModeStandard:
 		if len(cfg.DeclaredRelations) > 0 {
-			panic(fmt.Sprintf("Function %s registration failed: standard routingMode must not declare custom relations", f.FuncObject.ID))
+			return fmt.Errorf("function %s registration failed: standard routingMode must not declare custom relations", f.FuncObject.ID)
 		}
 	case types.FunctionRoutingModeDecision:
 		if len(cfg.DeclaredRelations) == 0 {
-			panic(fmt.Sprintf("Function %s registration failed: decision routingMode requires declaredRelations", f.FuncObject.ID))
+			return fmt.Errorf("function %s registration failed: decision routingMode requires declaredRelations", f.FuncObject.ID)
 		}
 		seen := make(map[string]struct{}, len(cfg.DeclaredRelations))
 		for _, relation := range cfg.DeclaredRelations {
 			if relation == "" {
-				panic(fmt.Sprintf("Function %s registration failed: declaredRelations must not contain empty values", f.FuncObject.ID))
+				return fmt.Errorf("function %s registration failed: declaredRelations must not contain empty values", f.FuncObject.ID)
 			}
 			if relation == "Success" || relation == "Failure" {
-				panic(fmt.Sprintf("Function %s registration failed: declaredRelations must not include reserved relation '%s'", f.FuncObject.ID, relation))
+				return fmt.Errorf("function %s registration failed: declaredRelations must not include reserved relation '%s'", f.FuncObject.ID, relation)
 			}
 			if _, ok := seen[relation]; ok {
-				panic(fmt.Sprintf("Function %s registration failed: declaredRelations contains duplicate relation '%s'", f.FuncObject.ID, relation))
+				return fmt.Errorf("function %s registration failed: declaredRelations contains duplicate relation '%s'", f.FuncObject.ID, relation)
 			}
 			seen[relation] = struct{}{}
 		}
 	}
+	return nil
 }
 
 // Get retrieves a function node definition by its ID.

@@ -15,10 +15,10 @@ tags:
 
 # === Node Relations: 定义与其他文档节点的关系 ===
 relations:
-  - type: "is_referenced_by"
+  - type: "supports"
     target_uuid: "a0b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d"
     description: "本设计哲学是理解Matrix架构核心概念的基础。"
-  - type: "is_applied_in"
+  - type: "supports"
     target_uuid: "f5614284-7536-45c4-8342-b098f005394e"
     description: "HttpEndpoint 节点的实现是本设计哲学的一个高级应用案例。"
 ---

@@ -1,9 +1,9 @@
 package external
 
 import (
-	"context"
 	"crypto/tls"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -42,9 +42,15 @@ func init() {
 
 // RedisClientNodeConfiguration holds the configuration for the RedisClientNode.
 type RedisClientNodeConfiguration struct {
-	URI         string `json:"uri"`
-	PoolSize    int    `json:"poolSize"`
-	TLSInsecure bool   `json:"tls_insecure"`
+	URI             string `json:"uri"`
+	PoolSize        int    `json:"poolSize"`
+	TLSInsecure     bool   `json:"tls_insecure"`
+	DialTimeout     string `json:"dialTimeout"`
+	ReadTimeout     string `json:"readTimeout"`
+	WriteTimeout    string `json:"writeTimeout"`
+	MaxRetries      int    `json:"maxRetries"`
+	MinRetryBackoff string `json:"minRetryBackoff"`
+	MaxRetryBackoff string `json:"maxRetryBackoff"`
 }
 
 // RedisClientNode is a component that provides a shared redis connection client (*redis.Client).
@@ -76,6 +82,10 @@ func (n *RedisClientNode) Init(cfg types.ConfigMap) error {
 	}
 	n.nodeConfig.URI = uri
 
+	if err := validateRedisDurationOptions(n.nodeConfig); err != nil {
+		return err
+	}
+
 	initFunc := func() (*redis.Client, error) {
 		if n.client != nil {
 			return n.client, nil
@@ -90,7 +100,36 @@ func (n *RedisClientNode) Init(cfg types.ConfigMap) error {
 			opt.PoolSize = n.nodeConfig.PoolSize
 		}
 
-		if n.nodeConfig.TLSInsecure {
+		if err := applyRedisDurationOption("dialTimeout", n.nodeConfig.DialTimeout, func(v time.Duration) {
+			opt.DialTimeout = v
+		}); err != nil {
+			return nil, RedisParseDSNFailed.Wrap(err)
+		}
+		if err := applyRedisDurationOption("readTimeout", n.nodeConfig.ReadTimeout, func(v time.Duration) {
+			opt.ReadTimeout = v
+		}); err != nil {
+			return nil, RedisParseDSNFailed.Wrap(err)
+		}
+		if err := applyRedisDurationOption("writeTimeout", n.nodeConfig.WriteTimeout, func(v time.Duration) {
+			opt.WriteTimeout = v
+		}); err != nil {
+			return nil, RedisParseDSNFailed.Wrap(err)
+		}
+		if err := applyRedisDurationOption("minRetryBackoff", n.nodeConfig.MinRetryBackoff, func(v time.Duration) {
+			opt.MinRetryBackoff = v
+		}); err != nil {
+			return nil, RedisParseDSNFailed.Wrap(err)
+		}
+		if err := applyRedisDurationOption("maxRetryBackoff", n.nodeConfig.MaxRetryBackoff, func(v time.Duration) {
+			opt.MaxRetryBackoff = v
+		}); err != nil {
+			return nil, RedisParseDSNFailed.Wrap(err)
+		}
+		if n.nodeConfig.MaxRetries != 0 {
+			opt.MaxRetries = n.nodeConfig.MaxRetries
+		}
+
+		if n.nodeConfig.TLSInsecure && redisClientUsesTLS(n.nodeConfig.URI, opt) {
 			if opt.TLSConfig == nil {
 				opt.TLSConfig = &tls.Config{}
 			}
@@ -98,19 +137,49 @@ func (n *RedisClientNode) Init(cfg types.ConfigMap) error {
 		}
 
 		client := redis.NewClient(opt)
-
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		if err := client.Ping(ctx).Err(); err != nil {
-			return nil, RedisConnectFailed.Wrap(err)
-		}
-
 		n.client = client
 		return n.client, nil
 	}
 
 	return n.Shareable.Init(nil, n.nodeConfig.URI, initFunc)
+}
+
+func redisClientUsesTLS(uri string, opt *redis.Options) bool {
+	if opt != nil && opt.TLSConfig != nil {
+		return true
+	}
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(uri)), "rediss://")
+}
+
+func validateRedisDurationOptions(cfg RedisClientNodeConfiguration) error {
+	checks := map[string]string{
+		"dialTimeout":     cfg.DialTimeout,
+		"readTimeout":     cfg.ReadTimeout,
+		"writeTimeout":    cfg.WriteTimeout,
+		"minRetryBackoff": cfg.MinRetryBackoff,
+		"maxRetryBackoff": cfg.MaxRetryBackoff,
+	}
+	for name, raw := range checks {
+		if raw == "" {
+			continue
+		}
+		if _, err := time.ParseDuration(raw); err != nil {
+			return fmt.Errorf("invalid redis %s %q: %w", name, raw, err)
+		}
+	}
+	return nil
+}
+
+func applyRedisDurationOption(name string, raw string, set func(time.Duration)) error {
+	if raw == "" {
+		return nil
+	}
+	duration, err := time.ParseDuration(raw)
+	if err != nil {
+		return fmt.Errorf("invalid redis %s %q: %w", name, raw, err)
+	}
+	set(duration)
+	return nil
 }
 
 // OnMsg for a resource node is typically a no-op.

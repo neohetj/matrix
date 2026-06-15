@@ -152,4 +152,10 @@ const (
 	CodePipelineChannelNotFound ErrCode = "202505001"
 	CodePipelinePushTimeout     ErrCode = "202505002"
 	CodePipelineChannelFull     ErrCode = "202505003"
+
+	// Component: Redis Stream (202506xxxx)
+	CodeRedisStreamPublishConfig   ErrCode = "202506001"
+	CodeRedisStreamPublishFailed   ErrCode = "202506002"
+	CodeRedisStreamEndpointConfig  ErrCode = "202506003"
+	CodeRedisStreamEndpointRuntime ErrCode = "202506004"
 )

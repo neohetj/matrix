@@ -10,7 +10,7 @@ tags:
   - "guide"
   - "[功能分类标签, e.g., database, action]"
 relations:
-  - type: "is_governed_by"
+  - type: "uses_reference"
     target_uuid: "a2b1c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
   - type: "relates_to"
     target_uuid: "[UUID of a related concept doc]"

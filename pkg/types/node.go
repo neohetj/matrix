@@ -455,6 +455,8 @@ type NodeFuncObject struct {
 type NodeFuncManager interface {
 	// Register adds a new function node definition.
 	Register(funcs ...*NodeFuncObject)
+	// RegisterSafe adds function node definitions and returns validation errors instead of panicking.
+	RegisterSafe(funcs ...*NodeFuncObject) error
 	// Get retrieves a function node definition by its ID.
 	Get(id string) (*NodeFuncObject, bool)
 	// List returns all registered function node objects.

@@ -36,6 +36,7 @@ relations:
 
 ## 3. 文档索引
 
+- [00_decision_traceability.md](./00_decision_traceability.md): Matrix repo-local 决策追踪索引。
 - [03_architecture_overview.md](./03_architecture_overview.md): Matrix 整体架构概览。
 - [06_message_design_philosophy.md](./06_message_design_philosophy.md): `RuleMsg` 的设计哲学。
 - [08_node_development_patterns.md](./08_node_development_patterns.md): 平台级扩展开发的官方入口。
@@ -49,3 +50,4 @@ relations:
 - [33_component_design_principles.md](./33_component_design_principles.md): 组件设计原则。
 - [36_testing_strategy.md](./36_testing_strategy.md): 测试策略与验证建议。
 - [37_mcp_endpoint_adapter.md](./37_mcp_endpoint_adapter.md): `endpoint/mcp` 与 Matrix MCP adapter core 的当前实现事实。
+- [38_validation_inspection_schema.md](./38_validation_inspection_schema.md): Matrix validation report 与 inspection snapshot 输出模型。

@@ -19,7 +19,9 @@
 package matrix
 
 import (
+	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"embed"
@@ -80,6 +82,8 @@ type MatrixEngine struct {
 	loader       types.ResourceProvider
 	logger       types.Logger
 	embedFSs     []embed.FS
+	activeCancel context.CancelFunc
+	activeWG     sync.WaitGroup
 }
 
 // --- Getters for core components ---
@@ -222,8 +226,53 @@ func newEngine(e *MatrixEngine) (*MatrixEngine, error) {
 	if err := e.initRuntimes(sch, defs, runtimeOpts); err != nil {
 		return nil, err
 	}
+	if err := e.StartActiveEndpoints(context.Background()); err != nil {
+		return nil, err
+	}
 
 	return e, nil
+}
+
+// StartActiveEndpoints starts all loaded endpoints that actively listen for external events.
+func (e *MatrixEngine) StartActiveEndpoints(ctx context.Context) error {
+	if e.registry == nil || e.activeCancel != nil {
+		return nil
+	}
+	endpointCtx, cancel := context.WithCancel(ctx)
+	e.activeCancel = cancel
+	for _, endpoint := range e.registry.GetSharedNodePool().GetEndpoints() {
+		active, ok := endpoint.(types.ActiveEndpoint)
+		if !ok {
+			continue
+		}
+		if err := active.Start(endpointCtx); err != nil {
+			cancel()
+			return fmt.Errorf("failed to start active endpoint %s: %w", endpoint.ID(), err)
+		}
+	}
+	return nil
+}
+
+// StopActiveEndpoints stops all active endpoints started by the engine.
+func (e *MatrixEngine) StopActiveEndpoints() error {
+	if e.activeCancel != nil {
+		e.activeCancel()
+		e.activeCancel = nil
+	}
+	if e.registry == nil {
+		return nil
+	}
+	var stopErr error
+	for _, endpoint := range e.registry.GetSharedNodePool().GetEndpoints() {
+		active, ok := endpoint.(types.ActiveEndpoint)
+		if !ok {
+			continue
+		}
+		if err := active.Stop(); err != nil && stopErr == nil {
+			stopErr = err
+		}
+	}
+	return stopErr
 }
 
 func (e *MatrixEngine) discoverComponents() (rulechainPaths, endpointPaths, sharedNodePaths []string) {
