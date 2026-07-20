@@ -25,12 +25,6 @@ var (
 	DefDataTItemCreationFailed = &types.Fault{Code: cnst.CodeDataTItemCreationFailed, Message: "failed to create new DataT item"}
 )
 
-// ErrorConverter defines a contract for converting Matrix's internal errors
-// into application-specific error formats.
-type ErrorConverter interface {
-	Convert(ep types.HttpEndpoint, chainErr types.FailureInfo, originalErr error) error
-}
-
 // httpEndpointNodePrototype is the shared prototype instance used for registration.
 var httpEndpointNodePrototype = &HttpEndpointNode{
 	BaseNode: *types.NewBaseNode(HttpEndpointNodeType, types.NodeMetadata{

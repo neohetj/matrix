@@ -178,6 +178,7 @@ Matrix 只负责通用协议级兜底，不硬编码 SellItX 等产品名称、�
 3. 如果某个 endpoint 需要对不同 fault code 返回不同 HTTP 状态，请把策略集中写在 `errorMappings`。
 4. 原始 `Cause`、`FailureInfo.Error`、节点路径和请求值不得透传给用户端；宿主应按需结合 execution ID 写入受控日志或 Trace。
 5. `ServiceErrorAspect` 必须基于结构化错误码映射，禁止用正则解析内部错误文案。
+6. `types.ServiceErrorAspect` 是 HTTP `ServiceError` 映射的唯一公开扩展契约；不在 endpoint 内或宿主层并行定义 `ErrorConverter` 之类同义接口。
 
 ## 6. 当前边界 (CurrentScope)
 
