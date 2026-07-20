@@ -4,7 +4,7 @@ type: "Guide"
 title: "指南：通用节点实现规范与最佳实践（中文）"
 status: "Stable"
 owner: "neohetj"
-version: "1.0.0"
+version: "1.1.0"
 tags:
   - "matrix"
   - "guide"
@@ -14,6 +14,9 @@ relations:
   - type: "is_part_of"
     target_uuid: "a422d409-4b02-431a-b14e-2dec8f75b506"
     description: "本独立指南由 docs 根目录统一索引。"
+  - type: "uses_reference"
+    target_uuid: "a18a0c1b-d599-4f8d-a949-51a60182873d"
+    description: "Matrix core 内部错误码必须遵循 aabbbcccc 编码规范。"
 ---
 
 # 通用节点实现规范与最佳实践
@@ -86,7 +89,7 @@ func (n *MyNode) Init(config types.ConfigMap) error {
 
 ## 4. 错误处理
 
-*   **错误码定义**：在 `pkg/cnst/constant.go` 中定义唯一的错误码（遵循模块化命名规范）。
+*   **错误码定义**：新增或修改 Matrix core 内部错误时，必须在 `pkg/cnst/constant.go` 中定义唯一的 9 位 `aabbbcccc` 数字字符串错误码，并遵循 [Matrix 内部错误码编码规范](./reference/39_internal_error_code_specification.md)。
 *   **错误注册**：在节点的 `init()` 函数中，将可能的 Fault 注册到全局 `FaultRegistry`。
 
 ```go

@@ -4,7 +4,7 @@ type: "Guide"
 title: "Guide: Generic Node Implementation Guidelines"
 status: "Stable"
 owner: "neohetj"
-version: "1.0.0"
+version: "1.1.0"
 tags:
   - "matrix"
   - "guide"
@@ -14,6 +14,9 @@ relations:
   - type: "is_part_of"
     target_uuid: "a422d409-4b02-431a-b14e-2dec8f75b506"
     description: "This standalone guide is indexed from the docs root."
+  - type: "uses_reference"
+    target_uuid: "a18a0c1b-d599-4f8d-a949-51a60182873d"
+    description: "Matrix core internal error codes follow the aabbbcccc allocation specification."
 ---
 
 # Guidelines and Best Practices for Generic Node Implementation
@@ -91,7 +94,7 @@ If certain configuration items support dynamic expressions (e.g., `${metadata.ke
 
 ## 4. Error Handling
 
-*   **Error Code Definition**: Define unique error codes in `pkg/cnst/constant.go` (following modular naming conventions).
+*   **Error Code Definition**: For new or modified Matrix core internal errors, define a unique 9-digit `aabbbcccc` string code in `pkg/cnst/constant.go` and follow the [Matrix internal error-code specification](./reference/39_internal_error_code_specification.md).
 *   **Fault Registration**: Register possible Faults in the node's `init()` function to the global `FaultRegistry`.
 
 ```go

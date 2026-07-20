@@ -4,7 +4,7 @@ type: "README"
 title: "README: Matrix 参考文档库"
 status: "Stable"
 owner: "neohetj"
-version: "1.1.0"
+version: "1.2.0"
 tags:
   - "matrix"
   - "reference"
@@ -14,6 +14,9 @@ relations:
   - type: "is_part_of"
     target_uuid: "a422d409-4b02-431a-b14e-2dec8f75b506"
     description: "本参考库是 Matrix 项目文档体系的一部分。"
+  - type: "indexes"
+    target_uuid: "a18a0c1b-d599-4f8d-a949-51a60182873d"
+    description: "本参考库索引 Matrix 内部错误码编码规范。"
 ---
 
 # Matrix 参考文档库
@@ -51,3 +54,4 @@ relations:
 - [36_testing_strategy.md](./36_testing_strategy.md): 测试策略与验证建议。
 - [37_mcp_endpoint_adapter.md](./37_mcp_endpoint_adapter.md): `endpoint/mcp` 与 Matrix MCP adapter core 的当前实现事实。
 - [38_validation_inspection_schema.md](./38_validation_inspection_schema.md): Matrix validation report 与 inspection snapshot 输出模型。
+- [39_internal_error_code_specification.md](./39_internal_error_code_specification.md): Matrix core `aabbbcccc` 内部错误码编码、分配、传播与兼容规范。
