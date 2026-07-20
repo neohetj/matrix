@@ -109,6 +109,7 @@ func (n *HttpEndpointNode) Init(config types.ConfigMap) error {
 func (n *HttpEndpointNode) createServiceErrorFromMsg(msg types.RuleMsg, errStr string) *types.ServiceError {
 	failureInfo := &types.FailureInfo{
 		Error: errStr,
+		Code:  string(cnst.CodeInternalError),
 	}
 
 	if val, ok := msg.Metadata()[types.MetaErrorNodeID]; ok {
@@ -135,17 +136,16 @@ func (n *HttpEndpointNode) createServiceErrorFromMsg(msg types.RuleMsg, errStr s
 
 	return &types.ServiceError{
 		ResponseCode: responseCode,
-		UserMessage:  failureInfo.Error,
+		UserMessage:  defaultPublicErrorMessage(int(responseCode)),
 		FailureInfo:  failureInfo,
 	}
 }
 
 func (n *HttpEndpointNode) createServiceErrorFromExecErr(execErr error) *types.ServiceError {
 	responseCode := n.defaultErrorCode
-	userMessage := "internal server error"
-	cause := execErr
 	failureInfo := &types.FailureInfo{
 		Error: execErr.Error(),
+		Code:  string(cnst.CodeInternalError),
 	}
 
 	var fault *types.Fault
@@ -156,15 +156,32 @@ func (n *HttpEndpointNode) createServiceErrorFromExecErr(execErr error) *types.S
 				responseCode = code
 			}
 		}
-		// Keep message aligned with rule-chain fault content for mapped faults.
-		userMessage = execErr.Error()
-		cause = nil
 	}
 
 	return &types.ServiceError{
 		ResponseCode: responseCode,
-		UserMessage:  userMessage,
-		Cause:        cause,
+		UserMessage:  defaultPublicErrorMessage(int(responseCode)),
+		Cause:        execErr,
+		FailureInfo:  failureInfo,
+	}
+}
+
+// createServiceErrorFromRequestErr 保留请求映射失败的结构化错误码，同时只提供安全的公开文案。
+func (n *HttpEndpointNode) createServiceErrorFromRequestErr(requestErr error) *types.ServiceError {
+	failureInfo := &types.FailureInfo{
+		Error: requestErr.Error(),
+		Code:  string(cnst.CodeInvalidParams),
+	}
+
+	var fault *types.Fault
+	if errors.As(requestErr, &fault) {
+		failureInfo.Code = normalizeErrorCode(string(fault.Code))
+	}
+
+	return &types.ServiceError{
+		ResponseCode: http.StatusBadRequest,
+		UserMessage:  defaultPublicErrorMessage(http.StatusBadRequest),
+		Cause:        requestErr,
 		FailureInfo:  failureInfo,
 	}
 }
@@ -258,8 +275,7 @@ type ErrorResponse struct {
 	Details string `json:"details,omitempty"`
 }
 
-// writeResponse writes the HTTP response, handling both success and error cases.
-// If err is provided, it writes an error response. Otherwise, it writes the success response.
+// writeResponse 统一写入成功或失败响应；失败响应不会序列化内部错误原文。
 func (n *HttpEndpointNode) writeResponse(w http.ResponseWriter, statusCode int, headers map[string]string, body any, err error) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
@@ -269,12 +285,9 @@ func (n *HttpEndpointNode) writeResponse(w http.ResponseWriter, statusCode int, 
 			statusCode = http.StatusInternalServerError
 		}
 
-		response := ErrorResponse{
-			Code:    statusCode,
-			Message: err.Error(),
-		}
+		response := newPublicErrorResponse(statusCode, err)
 
-		// If body contains details, we could include them
+		// details 只能由调用方显式提供公开内容，不能从内部错误自动推导。
 		if details, ok := body.(string); ok && details != "" {
 			response.Details = details
 		}
@@ -295,17 +308,18 @@ func (n *HttpEndpointNode) writeResponse(w http.ResponseWriter, statusCode int, 
 func (n *HttpEndpointNode) handleError(w http.ResponseWriter, serviceErr *types.ServiceError, options *types.HandleOptions) {
 	var finalErr error = serviceErr
 	if options != nil && options.ErrorAspect != nil {
-		finalErr = options.ErrorAspect.Handle(serviceErr)
+		if mappedErr := options.ErrorAspect.Handle(serviceErr); mappedErr != nil {
+			finalErr = mappedErr
+		}
 	}
 
-	// Default to the original response code from the service error.
-	// This ensures that if the aspect returns a generic error (without a code),
-	// we still use the appropriate code (e.g., 400 vs 500) determined by the node.
+	// 默认沿用原始 ServiceError 的响应码，避免普通 error 丢失 endpoint 已确定的状态码。
 	code := int(serviceErr.ResponseCode)
 
-	// If the aspect returned a ServiceError, use its response code potentially overriding the original.
-	if se, ok := finalErr.(*types.ServiceError); ok {
-		code = int(se.ResponseCode)
+	// Aspect 返回或包装 ServiceError 时，允许产品映射覆盖原始响应码。
+	var mappedServiceErr *types.ServiceError
+	if errors.As(finalErr, &mappedServiceErr) && mappedServiceErr.ResponseCode != 0 {
+		code = int(mappedServiceErr.ResponseCode)
 	}
 	n.writeResponse(w, code, nil, nil, finalErr)
 }
@@ -329,11 +343,7 @@ func (n *HttpEndpointNode) HandleHttpRequest(w http.ResponseWriter, r *http.Requ
 	nodeCtx := registry.NewMinimalNodeCtx(n.ID())
 	// Process all parameter types
 	if err := helper.MapHttpRequestToRuleMsg(nodeCtx, msg, n.nodeConfig.EndpointDefinition.Request, r, n.nodeConfig.HttpPath); err != nil {
-		serviceErr := &types.ServiceError{
-			ResponseCode: http.StatusBadRequest,
-			UserMessage:  err.Error(),
-			Cause:        err,
-		}
+		serviceErr := n.createServiceErrorFromRequestErr(err)
 		n.handleError(w, serviceErr, options)
 		return nil
 	}
@@ -347,10 +357,7 @@ func (n *HttpEndpointNode) HandleHttpRequest(w http.ResponseWriter, r *http.Requ
 	}
 
 	if !ok {
-		serviceErr := &types.ServiceError{
-			ResponseCode: n.defaultErrorCode,
-			UserMessage:  fmt.Sprintf("runtime not found for rule chain: %s", n.nodeConfig.RuleChainID),
-		}
+		serviceErr := n.createServiceErrorFromExecErr(fmt.Errorf("runtime not found for rule chain: %s", n.nodeConfig.RuleChainID))
 		n.handleError(w, serviceErr, options)
 		return nil
 	}
@@ -370,11 +377,7 @@ func (n *HttpEndpointNode) HandleHttpRequest(w http.ResponseWriter, r *http.Requ
 func (n *HttpEndpointNode) handleAsyncRequest(w http.ResponseWriter, r *http.Request, rt types.Runtime, msg types.RuleMsg, onEnd func(types.RuleMsg, error), options *types.HandleOptions) error {
 	ctx := context.WithoutCancel(r.Context())
 	if err := rt.Execute(ctx, n.nodeConfig.StartNodeID, msg, onEnd); err != nil {
-		serviceErr := &types.ServiceError{
-			ResponseCode: n.defaultErrorCode,
-			UserMessage:  "failed to start execution",
-			Cause:        err,
-		}
+		serviceErr := n.createServiceErrorFromExecErr(err)
 		n.handleError(w, serviceErr, options)
 		return nil
 	}
@@ -403,18 +406,16 @@ func (n *HttpEndpointNode) handleSyncRequest(w http.ResponseWriter, r *http.Requ
 	if finalMsg != nil {
 		if errStr, ok := finalMsg.Metadata()[types.MetaError]; ok {
 			serviceErr := n.createServiceErrorFromMsg(finalMsg, errStr)
-			n.writeResponse(w, int(serviceErr.ResponseCode), nil, nil, serviceErr)
-			return serviceErr
+			n.handleError(w, serviceErr, options)
+			return nil
 		}
 	}
 
 	responseBody, responseHeaders, statusCode, err := helper.MapRuleMsgToHttpResponse(nodeCtx, finalMsg, n.nodeConfig.EndpointDefinition.Response)
 	if err != nil {
-		return &types.ServiceError{
-			ResponseCode: n.defaultErrorCode,
-			UserMessage:  "failed to convert response",
-			Cause:        err,
-		}
+		serviceErr := n.createServiceErrorFromExecErr(err)
+		n.handleError(w, serviceErr, options)
+		return nil
 	}
 
 	n.writeResponse(w, statusCode, responseHeaders, responseBody, nil)

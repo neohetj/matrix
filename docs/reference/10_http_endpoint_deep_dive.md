@@ -5,7 +5,7 @@ type: "Reference"
 title: "参考-10: HttpEndpoint 节点深度解析"
 status: "Draft"
 owner: "neohetj"
-version: "1.1.0"
+version: "1.2.0"
 tags:
   - "matrix"
   - "reference"
@@ -21,6 +21,12 @@ relations:
   - type: "references"
     target_uuid: "d1e2f3a4-b5c6-d7e8-f9a0-b1c2d3e4f5a6"
     description: "HttpEndpoint 是消息设计哲学的高级实践。"
+  - type: "references"
+    target_uuid: "8f7e6a5d-1b2c-4e3f-9a0b-1c2d3e4f5a6b"
+    description: "HTTP endpoint 的错误分层承接统一错误处理 RFC。"
+  - type: "references"
+    target_uuid: "ab800e51-847f-4523-b330-9f14e71caf29"
+    description: "统一公开错误映射的操作规则见现行 Guide。"
 ---
 
 # HttpEndpoint 节点深度解析
@@ -45,10 +51,13 @@ flowchart TD
     getRt --> exec["Execute runtime"]
     exec --> mapResp["Map RuleMsg to HTTP response"]
     mapResp --> resp["http.Response"]
-    mapReq -- error --> err["Return 4xx/5xx"]
-    getRt -- error --> err
-    exec -- error --> err
-    mapResp -- error --> err
+    mapReq -- error --> serviceErr["Build ServiceError"]
+    getRt -- error --> serviceErr
+    exec -- error --> serviceErr
+    mapResp -- error --> serviceErr
+    serviceErr --> status["Fault code to HTTP status"]
+    status --> aspect["Optional ServiceErrorAspect"]
+    aspect --> publicResp["Safe public error response"]
 ```
 
 ## 3. 请求侧映射
@@ -122,7 +131,19 @@ err = message.SetInMsg(msg, field.BindPath, convertedVal)
 - 如果 `MapAll` 提取到的是标量或数组，且同时定义了 `Fields`，会报错
 - `Fields` 中 `bindPath == ""` 时，会优先使用 `defaultValue`
 
-## 5. 为什么现在统一用 `EndpointIOPacket`
+## 5. 错误响应边界
+
+请求映射、runtime 查找、异步启动、同步执行、最终 metadata 失败和响应映射失败，当前都统一经过 `handleError(...)`。该入口执行三件事：
+
+1. 保留 `ServiceError.Cause` 和 `FailureInfo`，供 `ServiceErrorAspect` 以及宿主日志 / Trace 消费。
+2. 可选调用宿主注入的 `ServiceErrorAspect`，按 `FailureInfo.Code` 映射安全文案和 status。
+3. 调用公开错误呈现层写出 `{code, message, details?}`。
+
+公开 writer 不调用 `ServiceError.Error()`，也不序列化普通 `error.Error()`。未知错误按 HTTP status fail closed，例如 `400` 返回 `invalid request`，`500` 返回 `internal server error`。只有 `ServiceError.UserMessage` 属于显式安全字段；`details` 也只能由调用方显式提供公开内容。
+
+这条边界保留了内部诊断能力，同时避免将 DataT bind path、SID、原始 URL、存储信息或多层 `cause` 暴露给浏览器。产品级业务 code / 本地化文案仍由模块或 server adapter 负责，Matrix 不硬编码产品身份。
+
+## 6. 为什么现在统一用 `EndpointIOPacket`
 
 统一结构的好处是：
 
@@ -130,7 +151,7 @@ err = message.SetInMsg(msg, field.BindPath, convertedVal)
 2. `MapAll + Fields` 模式能覆盖更多协议转换场景
 3. 校验器和 OpenAPI 生成器都能复用同一套 schema 模型
 
-## 6. 调试建议
+## 7. 调试建议
 
 遇到 HTTP 映射异常时，优先检查：
 
@@ -139,6 +160,7 @@ err = message.SetInMsg(msg, field.BindPath, convertedVal)
 3. `MapAll` 是否和 `Fields` 冲突
 4. `type` 是否和实际值兼容
 5. 静态契约、DSL 映射和运行时 helper 是否仍使用同一套结构
+6. 在 `ServiceErrorAspect` 中检查内部 `FailureInfo`，并按需关联 execution ID 写入受控日志 / Trace；不要依赖浏览器公开 `message` 还原根因
 
 <!-- 链接定义区域 -->
 [Ref-MessageDesign]: ./06_message_design_philosophy.md
