@@ -26,8 +26,7 @@ type HttpEndpoint interface {
 	GetTargetChainID() string
 }
 
-// ServiceErrorAspect defines an interface for intercepting and transforming ServiceErrors
-// before they are written to the HTTP response.
+// ServiceErrorAspect 在 HTTP 响应写出前，按 FailureInfo.Code 等结构化信息映射安全文案和状态码。
 type ServiceErrorAspect interface {
 	Handle(err *ServiceError) error
 }

@@ -4,7 +4,7 @@ type: "RFC"
 title: "需求：Unified Error Handling"
 status: "Accepted"
 owner: "neohetj"
-version: "2.0.0"
+version: "2.1.0"
 tags:
   - "rfc"
   - "design"
@@ -19,6 +19,9 @@ relations:
   - type: "references"
     target_uuid: "f5614284-7536-45c4-8342-b098f005394e"
     description: "HTTP endpoint 错误处理的当前实现细节以 Reference-10 为准。"
+  - type: "is_specified_by"
+    target_uuid: "a18a0c1b-d599-4f8d-a949-51a60182873d"
+    description: "Matrix core 内部 Fault.Code 的 aabbbcccc 编码和分配规则以当前 Reference 为准。"
 ---
 
 # RFC: Unified Error Handling

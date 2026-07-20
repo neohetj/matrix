@@ -22,13 +22,6 @@ import (
 	"github.com/neohetj/matrix/test/utils"
 )
 
-func assertErrorCode(t *testing.T, err error, expectedCode cnst.ErrCode) {
-	var fault *types.Fault
-	if assert.ErrorAs(t, err, &fault) {
-		assert.Equal(t, expectedCode, fault.Code)
-	}
-}
-
 // Helper struct for setup
 type TestEnv struct {
 	Engine     *matrix.MatrixEngine
@@ -197,9 +190,20 @@ func TestHttpEndpointTriggerError(t *testing.T) {
 	// 5. Handle Request
 	err := epNode.HandleHttpRequest(w, req)
 
-	// 6. Verify Error
-	// HandleHttpRequest returns error for parameter validation failure
-	assertErrorCode(t, err, cnst.CodeRequiredFieldMissing)
+	// 6. Verify the endpoint handled the internal error and returned a safe public response.
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var errorResponse struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	decodeErr := json.NewDecoder(w.Body).Decode(&errorResponse)
+	assert.NoError(t, decodeErr)
+	assert.Equal(t, http.StatusBadRequest, errorResponse.Code)
+	assert.Equal(t, "invalid request", errorResponse.Message)
+	assert.NotContains(t, w.Body.String(), "severity")
+	assert.NotContains(t, w.Body.String(), "required field")
 }
 
 func TestE2EAlertWebhook(t *testing.T) {

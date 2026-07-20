@@ -56,19 +56,17 @@ var (
 	AssetNotFound = &Fault{Code: cnst.CodeAssetNotFound, Message: "asset not found"}
 )
 
-// ServiceError represents a standardized error object returned by a service endpoint.
-// It is the outermost error layer, intended for consumption by external clients.
+// ServiceError 表示协议边界上的标准错误对象。
+// 只有 UserMessage 被声明为可公开展示；Cause 与 FailureInfo 保留给映射、日志和 Trace 使用。
 type ServiceError struct {
 	// ResponseCode is the protocol-specific error code (e.g., HTTP status code 4xx/5xx, gRPC code)
 	// that should be returned to the client.
 	ResponseCode int32
-	// UserMessage is a human-readable, safe-to-display message for the end user.
+	// UserMessage 是经过映射、可以安全展示给最终用户的文案。
 	UserMessage string
-	// Cause represents a system-level or execution error that occurred outside of the rule chain logic.
-	// It is typically a Go error (e.g., network failure, JSON marshalling error).
+	// Cause 表示系统级或执行级根因，不得直接序列化到公开响应。
 	Cause error
-	// FailureInfo represents a business logic error or a specific node failure within the rule chain.
-	// It contains structured information about which node failed and why, derived from a Fault.
+	// FailureInfo 表示结构化运行时失败信息，不得把其中的 Error 原文直接序列化到公开响应。
 	FailureInfo *FailureInfo
 }
 

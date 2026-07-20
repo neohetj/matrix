@@ -1,11 +1,121 @@
 package endpoint
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/types"
 )
+
+type recordingServiceErrorAspect struct {
+	received *types.ServiceError
+}
+
+func (a *recordingServiceErrorAspect) Handle(err *types.ServiceError) error {
+	a.received = err
+	return fmt.Errorf("mapped product error: %w", &types.ServiceError{
+		ResponseCode: http.StatusUnprocessableEntity,
+		UserMessage:  "product data is invalid",
+	})
+}
+
+func TestWriteResponse_HidesServiceErrorCause(t *testing.T) {
+	node := &HttpEndpointNode{}
+	recorder := httptest.NewRecorder()
+	serviceErr := &types.ServiceError{
+		ResponseCode: http.StatusBadRequest,
+		UserMessage:  "invalid request",
+		Cause:        errors.New("invalid URL format: asfsdf"),
+	}
+
+	node.writeResponse(recorder, http.StatusBadRequest, nil, nil, serviceErr)
+
+	var response ErrorResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Message != "invalid request" {
+		t.Fatalf("expected safe message, got %q", response.Message)
+	}
+	if strings.Contains(recorder.Body.String(), "asfsdf") {
+		t.Fatalf("response exposed internal cause: %s", recorder.Body.String())
+	}
+}
+
+func TestWriteResponse_HidesPlainInternalError(t *testing.T) {
+	node := &HttpEndpointNode{}
+	recorder := httptest.NewRecorder()
+
+	node.writeResponse(recorder, http.StatusInternalServerError, nil, nil, errors.New("database password leaked"))
+
+	var response ErrorResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Message != "internal server error" {
+		t.Fatalf("expected generic message, got %q", response.Message)
+	}
+	if strings.Contains(recorder.Body.String(), "password") {
+		t.Fatalf("response exposed internal error: %s", recorder.Body.String())
+	}
+}
+
+func TestHandleHttpRequest_RequestMappingUsesStructuredSafeError(t *testing.T) {
+	node := &HttpEndpointNode{
+		nodeConfig: types.HttpEndpointNodeConfiguration{
+			RuleChainID: "unused",
+			HttpMethod:  http.MethodPost,
+			HttpPath:    "/products",
+			EndpointDefinition: types.HttpEndpointDef{
+				Request: types.HttpRequestDef{
+					Body: types.EndpointIOPacket{
+						Fields: []types.EndpointIOField{
+							{
+								Name:     "product",
+								Type:     "string",
+								BindPath: "rulemsg://metadata/product",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/products", strings.NewReader(`{"product":`))
+	request.Header.Set("Content-Type", "application/json")
+	aspect := &recordingServiceErrorAspect{}
+
+	if err := node.HandleHttpRequest(recorder, request, types.WithErrorAspect(aspect)); err != nil {
+		t.Fatalf("handle request: %v", err)
+	}
+	if aspect.received == nil || aspect.received.FailureInfo == nil {
+		t.Fatal("expected the aspect to receive structured failure info")
+	}
+	if aspect.received.FailureInfo.Code != string(cnst.CodeRequestDecodingFailed) {
+		t.Fatalf("expected request decoding code, got %q", aspect.received.FailureInfo.Code)
+	}
+	if aspect.received.UserMessage != "invalid request" {
+		t.Fatalf("expected safe request message, got %q", aspect.received.UserMessage)
+	}
+	if recorder.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected aspect response code %d, got %d", http.StatusUnprocessableEntity, recorder.Code)
+	}
+
+	var response ErrorResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Message != "product data is invalid" {
+		t.Fatalf("expected mapped public message, got %q", response.Message)
+	}
+}
 
 func TestCreateServiceErrorFromExecErr_MapsFaultCode(t *testing.T) {
 	node := &HttpEndpointNode{
@@ -27,6 +137,9 @@ func TestCreateServiceErrorFromExecErr_MapsFaultCode(t *testing.T) {
 	}
 	if serviceErr.FailureInfo.Code != "40005000" {
 		t.Fatalf("expected failure code 40005000, got %q", serviceErr.FailureInfo.Code)
+	}
+	if serviceErr.UserMessage != "invalid request" {
+		t.Fatalf("expected safe public message, got %q", serviceErr.UserMessage)
 	}
 }
 
@@ -54,5 +167,8 @@ func TestCreateServiceErrorFromMsg_MapsQuotedFaultCode(t *testing.T) {
 	}
 	if serviceErr.FailureInfo.Code != "40005000" {
 		t.Fatalf("expected normalized code 40005000, got %q", serviceErr.FailureInfo.Code)
+	}
+	if serviceErr.UserMessage != "invalid request" {
+		t.Fatalf("expected safe public message, got %q", serviceErr.UserMessage)
 	}
 }

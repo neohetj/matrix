@@ -96,9 +96,10 @@ func (m MFormat) IsValid() bool {
 }
 
 // Predefined error codes for the Matrix engine.
+// Allocation authority: docs/reference/39_internal_error_code_specification.md.
 // The code format is aabbbcccc, where:
-// aa: 20 (Software Product Department)
-// bbb: Module (000: Global, 001: Runtime, 002: Parser, etc.)
+// aa: 20 (Matrix software product engineering namespace)
+// bbb: Matrix core module allocation defined by the specification
 // cccc: Specific error identifier.
 const (
 	// Global Errors (20000xxxx)
