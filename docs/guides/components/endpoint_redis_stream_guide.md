@@ -1,127 +1,142 @@
 ---
-# === Node Properties: 定义文档节点自身 ===
 uuid: "e8d7c6b5-a4f9-4993-8262-3c1d0a9b8e7f"
 type: "ComponentGuide"
-title: "组件指南：Redis Stream端点 (endpoint/redisStream)"
-status: "Draft"
+title: "组件指南：Redis Stream Endpoint"
+status: "Stable"
 owner: "neohetj"
-version: "1.0.0"
+version: "2.0.0"
 tags:
   - "matrix"
   - "component"
   - "endpoint"
-  - "redis"
-  - "stream"
-
-# === Node Relations: 定义与其他文档节点的关系 ===
+  - "redis-stream"
 relations:
   - type: "is_part_of"
-    target_uuid: "a0b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d"
-    description: "本节点是Matrix规则链的主动型入口点之一。"
-  - type: "references"
     target_uuid: "a2b1c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
-    description: "本文档遵循 guides/components 目录的组件指南规范。"
+    description: "本文档属于 Matrix 组件指南。"
+  - type: "uses_reference"
+    target_uuid: "7eb3bd9a-0bdd-42d1-aa8c-3c45c14284ac"
+    description: "可靠消费、ACK、pending recovery 与 DLQ 语义以该 Reference 为准。"
 ---
 
-# 1. 功能概述 (FunctionalOverview)
+# 如何使用 `endpoint/redis_stream`
 
-`endpoint/redisStream` 是一个**主动型 (Active)** 的端点节点。它作为一个**消费者组 (Consumer Group)** 的成员，主动连接到 Redis 并持续地从一个 **Redis Stream** 中消费消息。
+## 1. 功能概述
 
-每当消费到一条新消息，它会自动将消息内容封装成一个 `RuleMsg`，并触发一个指定的规则链。这使得 `Matrix` 可以无缝地集成到基于 Redis Stream 构建的事件驱动架构中，作为流式数据的处理器。
+`endpoint/redis_stream` 使用 Redis consumer group 持续接收事件，并为每条投递同步执行指定规则链。它既可只消费新消息，也可显式启用 pending recovery，让其他实例接管崩溃消费者遗留的消息。
 
-# 2. 如何配置 (Configuration)
-
-| 配置键 (ID) | 名称 | 描述 | 类型 | 是否必须 | 默认值 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `ruleChainId` | 规则链ID | 当消费到消息时，要触发的规则链的ID。 | `string` | 是 | N/A |
-| `startNodeId` | 起始节点ID | (可选) 指定规则链从哪个节点开始执行。**强烈建议总是明确指定一个起始节点**。 | `string` | 否 | `""` |
-| `redisDsn` | Redis连接 | 指向共享Redis连接的引用。**必须**使用 `ref://<shared_redis_id>` 格式。 | `string` | 是 | N/A |
-| `streamKey` | Stream键名 | 要消费的 Redis Stream 的键名。 | `string` | 是 | N/A |
-| `consumerGroup`| 消费者组 | 消费者组的名称。如果不存在，节点会自动在Stream上创建它。 | `string` | 是 | N/A |
-| `consumerName` | 消费者名称 | 当前消费者实例在组内的唯一名称。 | `string` | 是 | N/A |
-| `batchSize` | 批处理大小 | (可选) 一次拉取操作最多获取的消息数量。 | `int64` | 否 | `1` |
-| `blockTimeout`| 阻塞超时 | (可选) 拉取消息时的最长阻塞等待时间。 | `duration` | 否 | `"5s"` |
-| `description` | 描述 | 对该端点功能的简短描述。 | `string` | 否 | `""` |
-
-# 3. 配置示例 (Example)
-
-假设我们需要从一个名为 `iot:telemetry` 的 Stream 中消费设备遥测数据，并由 `rc-telemetry-processing` 规则链进行处理。
+## 2. 推荐配置
 
 ```json
 {
-  "id": "ep-redis-stream-consumer",
-  "type": "endpoint/redisStream",
-  "name": "消费遥测数据流",
+  "id": "event-consumer",
+  "type": "endpoint/redis_stream",
+  "name": "消费领域事件",
   "configuration": {
-    "ruleChainId": "rc-telemetry-processing",
-    "startNodeId": "node-process-telemetry",
-    "redisDsn": "ref://shared_redis_instance",
-    "streamKey": "iot:telemetry",
-    "consumerGroup": "matrix-processors",
-    "consumerName": "processor-instance-01",
-    "batchSize": 10,
-    "blockTimeout": "10s"
+    "redisClient": "ref://shared_redis",
+    "stream": "domain.events",
+    "group": "domain-projector",
+    "ruleChainId": "project-domain-event",
+    "startNodeId": "validate-event",
+    "count": 10,
+    "blockMs": 5000,
+    "concurrency": 2,
+    "autoCreateGroup": true,
+    "groupStartId": "0",
+    "processingTimeoutMs": 30000,
+    "pendingRecovery": {
+      "enabled": true,
+      "minIdleMs": 60000,
+      "intervalMs": 10000,
+      "count": 10,
+      "maxDeliveries": 5,
+      "deadLetterStream": "domain.events.dlq"
+    }
   }
 }
 ```
-**流程解析**:
-1.  `Matrix` 启动时，该节点会使用ID为 `shared_redis_instance` 的共享Redis连接。
-2.  它确保在 `iot:telemetry` 这个Stream上存在一个名为 `matrix-processors` 的消费者组。
-3.  节点开始以 `processor-instance-01` 的身份，循环地从 Stream 中拉取最多10条消息，最长阻塞10秒。
-4.  每当收到一条消息，它会创建一个 `RuleMsg`，并送往 `rc-telemetry-processing` 规则链的 `node-process-telemetry` 节点开始执行。
 
-# 4. 数据契约 (DataContract)
+多实例部署时推荐省略 `consumer`。Matrix 会按节点、主机、进程和 worker 自动生成唯一名称。只有部署系统能为每个实例注入唯一值时，才显式设置 `consumer`。
 
-当一条 Redis Stream 消息被消费时，节点会创建一个新的 `RuleMsg`，其结构如下：
+完整字段和默认值见 [Redis Stream Endpoint 可靠消费](../../reference/40_redis_stream_endpoint_reliability.md)。
 
-*   **`Data`**:
-    *   **类型**: `string`
-    *   **内容**: 一个JSON字符串，包含了 Redis Stream 消息中所有的键值对。例如，如果Stream中的消息是 `{"temp": 25.5, "hum": 60}`，那么 `Data` 的内容就是 `'{"temp": 25.5, "hum": 60}'`。
-*   **`DataFormat`**:
-    *   **值**: `JSON`
-*   **`Metadata`**:
-    *   `stream`: Stream的键名 (e.g., `"iot:telemetry"`)。
-    *   `group`: 消费者组名 (e.g., `"matrix-processors"`)。
-    *   `consumer`: 消费者名 (e.g., `"processor-instance-01"`)。
-    *   `messageId`: Redis Stream 消息的唯一ID (e.g., `"1678886400000-0"`)。
-    *   **上下文传播**: 如果原始消息中包含一个名为 `__matrix_metadata` 的字段，其值是一个JSON字符串化的map，那么这个map中的所有键值对都会被自动提取并添加到 `RuleMsg` 的 `Metadata` 中。这对于跨服务传递链路追踪ID等上下文信息至关重要。
+## 3. 输入数据契约
 
-# 5. 典型用法 (TypicalUsage)
+每条 Redis 消息会转换成一个 JSON `RuleMsg`：
 
-`redisStream` 端点的核心职责是作为数据入口，将消息从 Redis 中消费出来。它输出的 `RuleMsg` 的 `Data` 字段是一个原始的 JSON 字符串。
+- `Data` 包含原消息所有字段，并增加 `redis_stream` 和 `redis_message_id`。
+- `Metadata` 包含 `redis_stream`、`redis_message_id` 和 `redis_group`。
+- `DataFormat` 为 `JSON`。
+- 配置 `input` 映射时，Matrix 会通过通用 inbound mapping 把 Redis 字段映射进 `DataT`。
 
-在实际应用中，通常需要将这个 JSON 字符串解析并校验为结构化的 `DataT` 对象，以便后续节点可以方便地访问。因此，**强烈推荐**将 `redisStream` 端点的输出连接到一个 **[functions/parse_validate][Guide-FuncParseValidate]** 节点。
+业务规则链应在入口处完成事件 schema 校验，并用事件 ID、idempotency key 或领域唯一键保证重复投递安全。revision 顺序和业务事务也属于规则链调用的业务 Handler，不属于 Endpoint。
 
-```mermaid
-flowchart TD
-    redisStreamEndpoint["1、endpoint/redisStream<br/>（消费原始消息）"]
-    parseValidateNode["2、functions/parse_validate<br/>（解析与校验）"]
-    subsequentNodes["3、...<br/>（后续业务处理节点）"]
+## 4. 启用可靠恢复
 
-    redisStreamEndpoint --> parseValidateNode;
-    parseValidateNode --> subsequentNodes;
+1. 将 `ackOnFailure` 保持为 `false`。
+2. 设置业务处理的 `processingTimeoutMs`。
+3. 启用 `pendingRecovery.enabled`，并确保 `minIdleMs > processingTimeoutMs`。
+4. 根据允许的最长故障恢复时间设置 `intervalMs`。
+5. 需要隔离毒消息时设置正数 `maxDeliveries` 和 `deadLetterStream`。
+6. 确认 Redis 版本至少为 6.2。
+
+不要把 `minIdleMs` 设得接近正常 P99 处理耗时。它是故障接管阈值，不是业务超时；过小会让另一个实例重领仍在执行的消息。
+
+## 5. 验证方式
+
+### 5.1 正常消费
+
+向源 Stream 写入一条合法事件，验证：
+
+- 规则链只产生一次预期业务结果；
+- consumer group 的 lag 回落；
+- 成功消息不再出现在 PEL。
+
+### 5.2 崩溃恢复
+
+1. 让实例 A 读到消息但不要 ACK。
+2. 停止实例 A。
+3. 等待超过 `minIdleMs`。
+4. 启动或保留实例 B。
+5. 验证实例 B 通过 `XAUTOCLAIM` 接管消息，并通过同一个 Handler 完成处理和 ACK。
+
+### 5.3 重试与 DLQ
+
+持续让 Handler 返回错误，验证：
+
+- 未达到 `maxDeliveries` 时消息仍在 PEL；
+- 达到上限时 DLQ 先出现包含 `matrix_original_message_id` 的记录；
+- DLQ 写入成功后原消息才从 PEL 移除；
+- DLQ 不可写时原消息仍保留，未被错误 ACK。
+
+常用 Redis 检查命令：
+
+```bash
+redis-cli XINFO GROUPS domain.events
+redis-cli XPENDING domain.events domain-projector
+redis-cli XRANGE domain.events.dlq - + COUNT 20
 ```
 
-*   **`redisStream` 节点**: 负责从 Redis 拉取消息，将消息体（一个map）序列化为 JSON 字符串，并放入 `RuleMsg.Data`。
-*   **`parse_validate` 节点**: 负责接收 `RuleMsg`，读取其 `Data` 字段，根据预定义的 schema (SID) 对 JSON 字符串进行解析和校验，并将结果存入一个结构化的 `DataT` 对象中。
+## 6. 排障
 
-通过这种方式，可以将“数据接入”和“数据解析”这两个关注点完全分离，使规则链更加清晰和模块化。
+| 现象 | 检查项 | 处理 |
+| --- | --- | --- |
+| lag 为 `0` 但业务状态没有更新 | `XPENDING` 是否有消息 | 检查 Handler 错误；启用 pending recovery 接管遗留消息。 |
+| 同一消息被两个实例同时处理 | consumer 是否固定复用；`minIdleMs` 是否过小 | 使用唯一 consumer，并让 `minIdleMs` 大于处理超时和正常处理窗口。 |
+| 消息反复失败 | `RetryCount` 与 DLQ 配置 | 修复业务错误，或设置有限投递和 DLQ。 |
+| 关闭服务一直等待 | 业务节点是否响应 context | 为外部调用设置超时并传播 Matrix context。 |
+| 启动时报配置错误 | `ackOnFailure`、超时与 DLQ 组合 | recovery 下关闭 `ackOnFailure`；保证 `minIdleMs` 更大；配置有限次数时提供 DLQ。 |
 
-# 6. 错误处理 (ErrorHandling)
+## 7. 交接清单
 
-作为一个主动型、长时间运行的端点，`redisStream` 节点主要通过**日志**来报告其在运行过程中遇到的问题，例如：
-*   无法获取共享的Redis连接。
-*   创建消费者组失败。
-*   从 Stream 中拉取消息时发生网络错误。
-*   无法启动规则链执行。
+- [ ] stream、group 和 group 起始位置已确认。
+- [ ] 多实例没有共享固定 consumer 名称。
+- [ ] Handler 已实现业务幂等和 revision 防倒退。
+- [ ] `processingTimeoutMs`、`minIdleMs` 和重试上限已按生产耗时设定。
+- [ ] DLQ 已有监控、查询和人工/自动重放流程。
+- [ ] 已完成正常消费、进程崩溃、毒消息和 Redis 短暂不可用测试。
 
-# 7. 问答环节 (FrequentlyAskedQuestions)
 <!-- qa_section_start -->
-> **问：`redisStream` 端点和 `redis_command` 节点有什么区别？**
-> **答：** 它们扮演着不同的角色。`redisStream` 端点是一个**消息消费者**，它作为规则链的**起点**，被动地接收来自 Redis Stream 的数据。而 `redis_command` 节点是一个**命令执行器**，它在规则链的**中间环节**，主动地向 Redis 执行各种命令（如 `GET`, `SET`, `HSET`, `XADD` 等）。
+> **问：Matrix 的 pending recovery 能替代业务幂等吗？**
+> **答：** 不能。Redis Stream 与 DLQ 都是 at-least-once 路径，超时、进程崩溃以及 DLQ 写入后 ACK 失败都可能造成重复投递。业务 Handler 必须用稳定事件键自行幂等。
 <!-- qa_section_end -->
-
-<!-- 链接定义区域 -->
-[Guide-MatrixOverview-2b3c4d]: ../00_matrix_guide.md
-[Ref-SemanticDoc-d45bce]: ./README.md
-[Guide-FuncParseValidate]: ./functions_parse_validate_guide.md

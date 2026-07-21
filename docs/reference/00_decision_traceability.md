@@ -4,7 +4,7 @@ type: "Reference"
 title: "参考：Matrix 决策追踪索引"
 status: "Draft"
 owner: "neohetj"
-version: "1.1.0"
+version: "1.2.0"
 tags:
   - "matrix"
   - "decision-traceability"
@@ -19,6 +19,9 @@ relations:
   - type: "indexes"
     target_uuid: "a18a0c1b-d599-4f8d-a949-51a60182873d"
     description: "本文档登记 Matrix 内部错误码编码规范对 Unified Error Handling RFC 的事实承接。"
+  - type: "indexes"
+    target_uuid: "7eb3bd9a-0bdd-42d1-aa8c-3c45c14284ac"
+    description: "本文档登记 Redis Stream Endpoint 可靠消费的当前事实与操作指南。"
 ---
 
 # Matrix 决策追踪索引
@@ -51,6 +54,7 @@ relations:
 | [37_mcp_endpoint_adapter.md](37_mcp_endpoint_adapter.md) | `Draft` | `endpoint/mcp` 与 Matrix MCP adapter core 的当前实现事实。 |
 | [38_validation_inspection_schema.md](38_validation_inspection_schema.md) | `Draft` | Validation report 与 inspection snapshot 的当前输出模型。 |
 | [39_internal_error_code_specification.md](39_internal_error_code_specification.md) | `Stable` | Matrix core `aabbbcccc` 内部错误码的格式、命名空间分配、传播与兼容边界。 |
+| [40_redis_stream_endpoint_reliability.md](40_redis_stream_endpoint_reliability.md) | `Stable` | Redis Stream Endpoint 的超时、pending 重领、有限投递、DLQ、ACK 和多实例契约；操作见 [endpoint_redis_stream_guide.md](../guides/components/endpoint_redis_stream_guide.md)。 |
 
 ## 4. 维护规则
 

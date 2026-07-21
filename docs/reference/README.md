@@ -4,7 +4,7 @@ type: "README"
 title: "README: Matrix 参考文档库"
 status: "Stable"
 owner: "neohetj"
-version: "1.2.0"
+version: "1.3.0"
 tags:
   - "matrix"
   - "reference"
@@ -17,6 +17,9 @@ relations:
   - type: "indexes"
     target_uuid: "a18a0c1b-d599-4f8d-a949-51a60182873d"
     description: "本参考库索引 Matrix 内部错误码编码规范。"
+  - type: "indexes"
+    target_uuid: "7eb3bd9a-0bdd-42d1-aa8c-3c45c14284ac"
+    description: "本参考库索引 Redis Stream Endpoint 可靠消费契约。"
 ---
 
 # Matrix 参考文档库
@@ -55,3 +58,4 @@ relations:
 - [37_mcp_endpoint_adapter.md](./37_mcp_endpoint_adapter.md): `endpoint/mcp` 与 Matrix MCP adapter core 的当前实现事实。
 - [38_validation_inspection_schema.md](./38_validation_inspection_schema.md): Matrix validation report 与 inspection snapshot 输出模型。
 - [39_internal_error_code_specification.md](./39_internal_error_code_specification.md): Matrix core `aabbbcccc` 内部错误码编码、分配、传播与兼容规范。
+- [40_redis_stream_endpoint_reliability.md](./40_redis_stream_endpoint_reliability.md): Redis Stream Endpoint 的超时、pending recovery、有限投递、DLQ 与多实例契约。
