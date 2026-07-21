@@ -34,7 +34,7 @@ var redisStreamEndpointNodePrototype = &RedisStreamEndpointNode{
 		Description: "Consumes Redis Stream messages with a consumer group and triggers a rule chain.",
 		Dimension:   "Endpoint",
 		Tags:        []string{"endpoint", "redis", "stream", "event", "consumer"},
-		Version:     "1.0.0",
+		Version:     "1.1.0",
 		Icon:        "message-queue",
 	}),
 }
@@ -45,33 +45,108 @@ func init() {
 }
 
 type RedisStreamEndpointConfiguration struct {
-	RedisClient     string                 `json:"redisClient"`
-	Stream          string                 `json:"stream"`
-	Group           string                 `json:"group"`
-	Consumer        string                 `json:"consumer,omitempty"`
-	RuleChainID     string                 `json:"ruleChainId"`
-	StartNodeID     string                 `json:"startNodeId,omitempty"`
-	Input           types.EndpointIOPacket `json:"input,omitempty"`
-	Count           int64                  `json:"count,omitempty"`
-	BlockMs         int64                  `json:"blockMs,omitempty"`
-	Concurrency     int                    `json:"concurrency,omitempty"`
-	AutoCreateGroup bool                   `json:"autoCreateGroup,omitempty"`
-	GroupStartID    string                 `json:"groupStartId,omitempty"`
-	AckOnFailure    bool                   `json:"ackOnFailure,omitempty"`
+	RedisClient         string                                  `json:"redisClient"`
+	Stream              string                                  `json:"stream"`
+	Group               string                                  `json:"group"`
+	Consumer            string                                  `json:"consumer,omitempty"`
+	RuleChainID         string                                  `json:"ruleChainId"`
+	StartNodeID         string                                  `json:"startNodeId,omitempty"`
+	Input               types.EndpointIOPacket                  `json:"input,omitempty"`
+	Count               int64                                   `json:"count,omitempty"`
+	BlockMs             int64                                   `json:"blockMs,omitempty"`
+	Concurrency         int                                     `json:"concurrency,omitempty"`
+	AutoCreateGroup     bool                                    `json:"autoCreateGroup,omitempty"`
+	GroupStartID        string                                  `json:"groupStartId,omitempty"`
+	AckOnFailure        bool                                    `json:"ackOnFailure,omitempty"`
+	ProcessingTimeoutMs int64                                   `json:"processingTimeoutMs,omitempty"`
+	PendingRecovery     RedisStreamPendingRecoveryConfiguration `json:"pendingRecovery,omitempty"`
+}
+
+type RedisStreamPendingRecoveryConfiguration struct {
+	Enabled          bool   `json:"enabled,omitempty"`
+	MinIdleMs        int64  `json:"minIdleMs,omitempty"`
+	IntervalMs       int64  `json:"intervalMs,omitempty"`
+	Count            int64  `json:"count,omitempty"`
+	MaxDeliveries    int64  `json:"maxDeliveries,omitempty"`
+	DeadLetterStream string `json:"deadLetterStream,omitempty"`
 }
 
 type RedisStreamEndpointNode struct {
 	types.BaseNode
 	types.Instance
-	config      RedisStreamEndpointConfiguration
-	runtimePool types.RuntimePool
-	client      *redis.Client
-	ctx         context.Context
-	cancel      context.CancelFunc
-	wg          sync.WaitGroup
-	startOnce   sync.Once
-	stopOnce    sync.Once
-	startErr    error
+	config         RedisStreamEndpointConfiguration
+	runtimePool    types.RuntimePool
+	transport      redisStreamTransport
+	processMessage func(context.Context, string, redis.XMessage) error
+	ctx            context.Context
+	cancel         context.CancelFunc
+	wg             sync.WaitGroup
+	startOnce      sync.Once
+	stopOnce       sync.Once
+	startErr       error
+}
+
+type redisStreamTransport interface {
+	readNew(ctx context.Context, stream, group, consumer string, count int64, block time.Duration) ([]redis.XStream, error)
+	autoClaim(ctx context.Context, stream, group, consumer string, minIdle time.Duration, start string, count int64) ([]redis.XMessage, string, error)
+	pendingRetryCount(ctx context.Context, stream, group, messageID string) (int64, error)
+	ack(ctx context.Context, stream, group string, ids ...string) error
+	add(ctx context.Context, stream string, values map[string]any) error
+	createGroup(ctx context.Context, stream, group, startID string) error
+}
+
+type goRedisStreamTransport struct {
+	client *redis.Client
+}
+
+func (t *goRedisStreamTransport) readNew(ctx context.Context, stream, group, consumer string, count int64, block time.Duration) ([]redis.XStream, error) {
+	return t.client.XReadGroup(ctx, &redis.XReadGroupArgs{
+		Group:    group,
+		Consumer: consumer,
+		Streams:  []string{stream, ">"},
+		Count:    count,
+		Block:    block,
+	}).Result()
+}
+
+func (t *goRedisStreamTransport) autoClaim(ctx context.Context, stream, group, consumer string, minIdle time.Duration, start string, count int64) ([]redis.XMessage, string, error) {
+	return t.client.XAutoClaim(ctx, &redis.XAutoClaimArgs{
+		Stream:   stream,
+		Group:    group,
+		Consumer: consumer,
+		MinIdle:  minIdle,
+		Start:    start,
+		Count:    count,
+	}).Result()
+}
+
+func (t *goRedisStreamTransport) pendingRetryCount(ctx context.Context, stream, group, messageID string) (int64, error) {
+	entries, err := t.client.XPendingExt(ctx, &redis.XPendingExtArgs{
+		Stream: stream,
+		Group:  group,
+		Start:  messageID,
+		End:    messageID,
+		Count:  1,
+	}).Result()
+	if err != nil {
+		return 0, err
+	}
+	if len(entries) == 0 || entries[0].ID != messageID {
+		return 0, fmt.Errorf("pending message %s not found", messageID)
+	}
+	return entries[0].RetryCount, nil
+}
+
+func (t *goRedisStreamTransport) ack(ctx context.Context, stream, group string, ids ...string) error {
+	return t.client.XAck(ctx, stream, group, ids...).Err()
+}
+
+func (t *goRedisStreamTransport) add(ctx context.Context, stream string, values map[string]any) error {
+	return t.client.XAdd(ctx, &redis.XAddArgs{Stream: stream, Values: values}).Err()
+}
+
+func (t *goRedisStreamTransport) createGroup(ctx context.Context, stream, group, startID string) error {
+	return t.client.XGroupCreateMkStream(ctx, stream, group, startID).Err()
 }
 
 var _ types.ActiveEndpoint = (*RedisStreamEndpointNode)(nil)
@@ -109,6 +184,35 @@ func (n *RedisStreamEndpointNode) Init(cfg types.ConfigMap) error {
 	if strings.TrimSpace(n.config.GroupStartID) == "" {
 		n.config.GroupStartID = "0"
 	}
+	if n.config.ProcessingTimeoutMs < 0 {
+		return FaultRedisStreamEndpointConfig.Wrap(fmt.Errorf("processingTimeoutMs must not be negative"))
+	}
+	if n.config.PendingRecovery.Enabled {
+		if n.config.AckOnFailure {
+			return FaultRedisStreamEndpointConfig.Wrap(fmt.Errorf("ackOnFailure must be false when pendingRecovery is enabled"))
+		}
+		if n.config.ProcessingTimeoutMs == 0 {
+			n.config.ProcessingTimeoutMs = 30000
+		}
+		if n.config.PendingRecovery.MinIdleMs <= 0 {
+			n.config.PendingRecovery.MinIdleMs = max(60000, n.config.ProcessingTimeoutMs+30000)
+		}
+		if n.config.PendingRecovery.MinIdleMs <= n.config.ProcessingTimeoutMs {
+			return FaultRedisStreamEndpointConfig.Wrap(fmt.Errorf("pendingRecovery.minIdleMs must be greater than processingTimeoutMs"))
+		}
+		if n.config.PendingRecovery.IntervalMs <= 0 {
+			n.config.PendingRecovery.IntervalMs = 10000
+		}
+		if n.config.PendingRecovery.Count <= 0 {
+			n.config.PendingRecovery.Count = n.config.Count
+		}
+		if n.config.PendingRecovery.MaxDeliveries < 0 {
+			return FaultRedisStreamEndpointConfig.Wrap(fmt.Errorf("pendingRecovery.maxDeliveries must not be negative"))
+		}
+		if n.config.PendingRecovery.MaxDeliveries > 0 && strings.TrimSpace(n.config.PendingRecovery.DeadLetterStream) == "" {
+			return FaultRedisStreamEndpointConfig.Wrap(fmt.Errorf("pendingRecovery.deadLetterStream is required when maxDeliveries is set"))
+		}
+	}
 	return nil
 }
 
@@ -123,8 +227,9 @@ func (n *RedisStreamEndpointNode) SetRuntimePool(pool any) error {
 func (n *RedisStreamEndpointNode) Start(ctx context.Context) error {
 	n.startOnce.Do(func() {
 		startedAt := time.Now()
-		fmt.Printf("redis stream endpoint starting: node_id=%s stream=%s group=%s consumer=%s ruleChainId=%s concurrency=%d blockMs=%d autoCreateGroup=%t\n",
-			n.ID(), n.config.Stream, n.config.Group, n.config.Consumer, n.config.RuleChainID, n.config.Concurrency, n.config.BlockMs, n.config.AutoCreateGroup)
+		fmt.Printf("redis stream endpoint starting: node_id=%s stream=%s group=%s consumer=%s ruleChainId=%s concurrency=%d blockMs=%d autoCreateGroup=%t pendingRecovery=%t processingTimeoutMs=%d minIdleMs=%d maxDeliveries=%d deadLetterStream=%s\n",
+			n.ID(), n.config.Stream, n.config.Group, n.config.Consumer, n.config.RuleChainID, n.config.Concurrency, n.config.BlockMs, n.config.AutoCreateGroup,
+			n.config.PendingRecovery.Enabled, n.config.ProcessingTimeoutMs, n.config.PendingRecovery.MinIdleMs, n.config.PendingRecovery.MaxDeliveries, n.config.PendingRecovery.DeadLetterStream)
 		client, err := n.resolveClient()
 		if err != nil {
 			fmt.Printf("redis stream endpoint resolve client failed: node_id=%s stream=%s group=%s redisClient=%s duration_ms=%d error=%v\n",
@@ -132,7 +237,7 @@ func (n *RedisStreamEndpointNode) Start(ctx context.Context) error {
 			n.startErr = err
 			return
 		}
-		n.client = client
+		n.transport = &goRedisStreamTransport{client: client}
 		n.ctx, n.cancel = context.WithCancel(ctx)
 		if n.config.AutoCreateGroup {
 			if err := n.ensureGroup(n.ctx); err != nil {
@@ -188,6 +293,8 @@ func (n *RedisStreamEndpointNode) GetTargetChainID() string {
 
 func (n *RedisStreamEndpointNode) runWorker(workerID int) {
 	consumer := n.consumerName(workerID)
+	recoveryCursor := "0-0"
+	nextRecoveryAt := time.Now().Add(n.recoveryInitialDelay(consumer))
 	fmt.Printf("redis stream endpoint worker started: node_id=%s stream=%s group=%s consumer=%s worker_id=%d\n",
 		n.ID(), n.config.Stream, n.config.Group, consumer, workerID)
 	defer func() {
@@ -202,19 +309,34 @@ func (n *RedisStreamEndpointNode) runWorker(workerID int) {
 		default:
 		}
 
-		streams, err := n.client.XReadGroup(n.ctx, &redis.XReadGroupArgs{
-			Group:    n.config.Group,
-			Consumer: consumer,
-			Streams:  []string{n.config.Stream, ">"},
-			Count:    n.config.Count,
-			Block:    time.Duration(n.config.BlockMs) * time.Millisecond,
-		}).Result()
+		if n.config.PendingRecovery.Enabled && !time.Now().Before(nextRecoveryAt) {
+			nextCursor, err := n.recoverPendingBatch(n.ctx, consumer, recoveryCursor)
+			if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+				fmt.Printf("redis stream endpoint pending recovery failed: node_id=%s stream=%s group=%s consumer=%s cursor=%s error=%v\n",
+					n.ID(), n.config.Stream, n.config.Group, consumer, recoveryCursor, err)
+			}
+			if strings.TrimSpace(nextCursor) != "" {
+				recoveryCursor = nextCursor
+			}
+			nextRecoveryAt = time.Now().Add(time.Duration(n.config.PendingRecovery.IntervalMs) * time.Millisecond)
+		}
+
+		streams, err := n.transport.readNew(
+			n.ctx,
+			n.config.Stream,
+			n.config.Group,
+			consumer,
+			n.config.Count,
+			time.Duration(n.config.BlockMs)*time.Millisecond,
+		)
 		if err != nil {
 			if errors.Is(err, redis.Nil) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				continue
 			}
 			fmt.Printf("redis stream endpoint read error: stream=%s group=%s consumer=%s error=%v\n", n.config.Stream, n.config.Group, consumer, err)
-			time.Sleep(time.Second)
+			if !waitRedisStreamEndpoint(n.ctx, time.Second) {
+				return
+			}
 			continue
 		}
 		messageCount := 0
@@ -227,13 +349,13 @@ func (n *RedisStreamEndpointNode) runWorker(workerID int) {
 		}
 		for _, stream := range streams {
 			for _, redisMessage := range stream.Messages {
-				n.handleMessage(n.ctx, stream.Stream, redisMessage)
+				_ = n.handleDelivery(n.ctx, stream.Stream, redisMessage, consumer)
 			}
 		}
 	}
 }
 
-func (n *RedisStreamEndpointNode) handleMessage(ctx context.Context, stream string, redisMessage redis.XMessage) {
+func (n *RedisStreamEndpointNode) handleDelivery(ctx context.Context, stream string, redisMessage redis.XMessage, consumer string) error {
 	startedAt := time.Now()
 	fmt.Printf("redis stream endpoint message received: node_id=%s stream=%s group=%s message_id=%s event_id=%s event_type=%s tenant_id=%s idempotency_key=%s\n",
 		n.ID(), stream, n.config.Group, redisMessage.ID,
@@ -242,30 +364,17 @@ func (n *RedisStreamEndpointNode) handleMessage(ctx context.Context, stream stri
 		redisEndpointMessageValue(redisMessage, "tenant_id"),
 		redisEndpointMessageValue(redisMessage, "idempotency_key"),
 	)
-	rt, ok := n.resolveRuntime()
-	if !ok {
-		fmt.Printf("redis stream endpoint runtime not found: node_id=%s stream=%s group=%s message_id=%s ruleChainId=%s duration_ms=%d\n",
-			n.ID(), stream, n.config.Group, redisMessage.ID, n.config.RuleChainID, endpointElapsedMilliseconds(startedAt))
-		return
+	processingCtx := ctx
+	cancel := func() {}
+	if n.config.ProcessingTimeoutMs > 0 {
+		processingCtx, cancel = context.WithTimeout(ctx, time.Duration(n.config.ProcessingTimeoutMs)*time.Millisecond)
 	}
-	msg, err := n.buildRuleMsg(stream, redisMessage)
-	if err != nil {
-		fmt.Printf("redis stream endpoint build message failed: node_id=%s stream=%s group=%s message_id=%s duration_ms=%d error=%v\n",
-			n.ID(), stream, n.config.Group, redisMessage.ID, endpointElapsedMilliseconds(startedAt), err)
-		if n.config.AckOnFailure {
-			if _, ackErr := n.client.XAck(ctx, stream, n.config.Group, redisMessage.ID).Result(); ackErr != nil {
-				fmt.Printf("redis stream endpoint ack failed after build failure: node_id=%s stream=%s group=%s message_id=%s error=%v\n",
-					n.ID(), stream, n.config.Group, redisMessage.ID, ackErr)
-			}
-		}
-		return
+	defer cancel()
+	processor := n.processMessage
+	if processor == nil {
+		processor = n.executeMessage
 	}
-	finalMsg, err := rt.ExecuteAndWait(ctx, n.config.StartNodeID, msg, nil)
-	if err == nil && finalMsg != nil {
-		if errText, failed := finalMsg.Metadata()[types.MetaError]; failed && strings.TrimSpace(errText) != "" {
-			err = fmt.Errorf(errText)
-		}
-	}
+	err := processor(processingCtx, stream, redisMessage)
 	if err != nil {
 		fmt.Printf("redis stream endpoint processing failed: node_id=%s stream=%s group=%s message_id=%s event_id=%s event_type=%s tenant_id=%s idempotency_key=%s ruleChainId=%s duration_ms=%d error=%v\n",
 			n.ID(), stream, n.config.Group, redisMessage.ID,
@@ -277,17 +386,22 @@ func (n *RedisStreamEndpointNode) handleMessage(ctx context.Context, stream stri
 			endpointElapsedMilliseconds(startedAt),
 			err)
 		if n.config.AckOnFailure {
-			if _, ackErr := n.client.XAck(ctx, stream, n.config.Group, redisMessage.ID).Result(); ackErr != nil {
+			if ackErr := n.transport.ack(ctx, stream, n.config.Group, redisMessage.ID); ackErr != nil {
 				fmt.Printf("redis stream endpoint ack failed after processing failure: node_id=%s stream=%s group=%s message_id=%s error=%v\n",
 					n.ID(), stream, n.config.Group, redisMessage.ID, ackErr)
+				return errors.Join(err, ackErr)
 			}
+			return err
 		}
-		return
+		if dlqErr := n.deadLetterIfExhausted(ctx, stream, redisMessage, consumer, err); dlqErr != nil {
+			return errors.Join(err, dlqErr)
+		}
+		return err
 	}
-	if _, err := n.client.XAck(ctx, stream, n.config.Group, redisMessage.ID).Result(); err != nil {
+	if err := n.transport.ack(ctx, stream, n.config.Group, redisMessage.ID); err != nil {
 		fmt.Printf("redis stream endpoint ack failed: node_id=%s stream=%s group=%s message_id=%s duration_ms=%d error=%v\n",
 			n.ID(), stream, n.config.Group, redisMessage.ID, endpointElapsedMilliseconds(startedAt), err)
-		return
+		return err
 	}
 	fmt.Printf("redis stream endpoint message processed: node_id=%s stream=%s group=%s message_id=%s event_id=%s event_type=%s tenant_id=%s idempotency_key=%s ruleChainId=%s duration_ms=%d\n",
 		n.ID(), stream, n.config.Group, redisMessage.ID,
@@ -298,6 +412,85 @@ func (n *RedisStreamEndpointNode) handleMessage(ctx context.Context, stream stri
 		n.config.RuleChainID,
 		endpointElapsedMilliseconds(startedAt),
 	)
+	return nil
+}
+
+func (n *RedisStreamEndpointNode) executeMessage(ctx context.Context, stream string, redisMessage redis.XMessage) error {
+	rt, ok := n.resolveRuntime()
+	if !ok {
+		return fmt.Errorf("rule chain runtime %s not found", n.config.RuleChainID)
+	}
+	msg, err := n.buildRuleMsg(stream, redisMessage)
+	if err != nil {
+		return fmt.Errorf("build rule message: %w", err)
+	}
+	finalMsg, err := rt.ExecuteAndWait(ctx, n.config.StartNodeID, msg, nil)
+	if err == nil && finalMsg != nil {
+		if errText, failed := finalMsg.Metadata()[types.MetaError]; failed && strings.TrimSpace(errText) != "" {
+			err = errors.New(errText)
+		}
+	}
+	return err
+}
+
+func (n *RedisStreamEndpointNode) recoverPendingBatch(ctx context.Context, consumer, cursor string) (string, error) {
+	messages, next, err := n.transport.autoClaim(
+		ctx,
+		n.config.Stream,
+		n.config.Group,
+		consumer,
+		time.Duration(n.config.PendingRecovery.MinIdleMs)*time.Millisecond,
+		cursor,
+		n.config.PendingRecovery.Count,
+	)
+	if err != nil {
+		return cursor, err
+	}
+	if len(messages) > 0 {
+		fmt.Printf("redis stream endpoint pending messages claimed: node_id=%s stream=%s group=%s consumer=%s message_count=%d cursor=%s next_cursor=%s\n",
+			n.ID(), n.config.Stream, n.config.Group, consumer, len(messages), cursor, next)
+	}
+	for _, message := range messages {
+		_ = n.handleDelivery(ctx, n.config.Stream, message, consumer)
+	}
+	if strings.TrimSpace(next) == "" {
+		return "0-0", nil
+	}
+	return next, nil
+}
+
+func (n *RedisStreamEndpointNode) deadLetterIfExhausted(ctx context.Context, stream string, message redis.XMessage, consumer string, processingErr error) error {
+	recovery := n.config.PendingRecovery
+	if !recovery.Enabled || recovery.MaxDeliveries <= 0 {
+		return nil
+	}
+	deliveryCount, err := n.transport.pendingRetryCount(ctx, stream, n.config.Group, message.ID)
+	if err != nil {
+		return fmt.Errorf("read pending delivery count: %w", err)
+	}
+	if deliveryCount < recovery.MaxDeliveries {
+		return nil
+	}
+	values := make(map[string]any, len(message.Values)+8)
+	for key, value := range message.Values {
+		values[key] = value
+	}
+	values["matrix_original_stream"] = stream
+	values["matrix_original_group"] = n.config.Group
+	values["matrix_original_consumer"] = consumer
+	values["matrix_original_message_id"] = message.ID
+	values["matrix_delivery_count"] = deliveryCount
+	values["matrix_failed_at"] = time.Now().UTC().Format(time.RFC3339Nano)
+	values["matrix_failure"] = processingErr.Error()
+	if err := n.transport.add(ctx, recovery.DeadLetterStream, values); err != nil {
+		return fmt.Errorf("dead-letter write failed: %w", err)
+	}
+	if err := n.transport.ack(ctx, stream, n.config.Group, message.ID); err != nil {
+		return fmt.Errorf("dead-letter ack failed: %w", err)
+	}
+	fmt.Printf("redis stream endpoint message dead-lettered: node_id=%s stream=%s group=%s message_id=%s consumer=%s delivery_count=%d dead_letter_stream=%s\n",
+		n.ID(), stream, n.config.Group, message.ID, consumer, deliveryCount, recovery.DeadLetterStream)
+	return nil
 }
 
 func (n *RedisStreamEndpointNode) buildRuleMsg(stream string, redisMessage redis.XMessage) (types.RuleMsg, error) {
@@ -324,7 +517,7 @@ func (n *RedisStreamEndpointNode) buildRuleMsg(stream string, redisMessage redis
 }
 
 func (n *RedisStreamEndpointNode) ensureGroup(ctx context.Context) error {
-	err := n.client.XGroupCreateMkStream(ctx, n.config.Stream, n.config.Group, n.config.GroupStartID).Err()
+	err := n.transport.createGroup(ctx, n.config.Stream, n.config.Group, n.config.GroupStartID)
 	if err == nil {
 		return nil
 	}
@@ -359,6 +552,29 @@ func (n *RedisStreamEndpointNode) consumerName(workerID int) string {
 		return base
 	}
 	return fmt.Sprintf("%s-%d", base, workerID)
+}
+
+func (n *RedisStreamEndpointNode) recoveryInitialDelay(consumer string) time.Duration {
+	if !n.config.PendingRecovery.Enabled || n.config.PendingRecovery.IntervalMs <= 0 {
+		return 0
+	}
+	interval := time.Duration(n.config.PendingRecovery.IntervalMs) * time.Millisecond
+	var hash uint64
+	for index := range consumer {
+		hash = hash*33 + uint64(consumer[index])
+	}
+	return time.Duration(hash % uint64(interval))
+}
+
+func waitRedisStreamEndpoint(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 func endpointElapsedMilliseconds(startedAt time.Time) int64 {

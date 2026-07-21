@@ -4,7 +4,7 @@ type: "Reference"
 title: "学习Matrix组件目录"
 status: "Stable"
 owner: "neohetj"
-version: "1.1.0"
+version: "1.2.0"
 tags:
   - "component"
   - "catalog"
@@ -45,7 +45,7 @@ relations:
 | `endpoint/http` | HTTP 入口 |
 | `endpoint/mcp` | MCP tool 入口，transport host 由 WhiteRoom 等宿主承载 |
 | `endpoint/pipeline` | Pipeline 入口 |
-| `endpoint/redis_stream` | Redis Stream consumer group 消费入口 |
+| `endpoint/redis_stream` | Redis Stream consumer group 消费入口；支持处理超时、`XAUTOCLAIM` pending 重领、有限投递与 DLQ |
 
 ## 4. Pipeline / Shared Resources
 
