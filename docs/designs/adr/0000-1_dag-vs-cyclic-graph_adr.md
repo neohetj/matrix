@@ -18,7 +18,7 @@ relations:
   - type: "realizes"
     target_uuid: "f1d4c850-1f6e-4dcb-8d51-1fe6a46701ae"
     description: "本决策为拓扑与执行流拆分场景提供通用 DAG 约束。"
-  - type: "documents"
+  - type: "supports"
     target_uuid: "e4a9b8c1-3d2a-4b1e-8c5d-7a4b9c2d8e1f"
     description: "本决策补充并强化 Matrix 核心架构中的 DAG 原则。"
 

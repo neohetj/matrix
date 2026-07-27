@@ -11,7 +11,7 @@ tags:
   - "uri"
   - "design"
 relations:
-  - type: "is_explained_by"
+  - type: "has_guide"
     target_uuid: "788737cf-d58e-4931-8bbf-37841c6de80c"
     description: "当前 `config://` 协议与 helper 读取方式见对应指南。"
   - type: "is_formalized_by"

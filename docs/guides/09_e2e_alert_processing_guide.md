@@ -15,9 +15,6 @@ tags:
 
 # === Node Relations: 定义与其他文档节点的关系 ===
 relations:
-  - type: "is_referenced_by"
-    target_uuid: "a0b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d"
-    description: "Matrix 项目总览中会引导开发者阅读此端到端案例。"
   - type: "references"
     target_uuid: "b4c5d6e7-f8a9-0b1c-2d3e-4f5a6b7c8d9e"
     description: "本文档遵循 guides 目录的共享编写规范。"

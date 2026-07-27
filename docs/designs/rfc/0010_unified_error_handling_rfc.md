@@ -10,10 +10,10 @@ tags:
   - "design"
   - "error-handling"
 relations:
-  - type: "is_supported_by"
+  - type: "uses_reference"
     target_uuid: "d1e2f3a4-b5c6-d7e8-f9a0-b1c2d3e4f5a6"
     description: "统一错误处理仍建立在 RuleMsg 与 metadata 传播模型之上。"
-  - type: "is_explained_by"
+  - type: "has_guide"
     target_uuid: "ab800e51-847f-4523-b330-9f14e71caf29"
     description: "当前统一错误处理与 HTTP 错误映射的使用方式见指南文档。"
   - type: "references"

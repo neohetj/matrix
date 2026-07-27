@@ -15,7 +15,7 @@ tags:
 
 # === Node Relations: 定义与其他文档节点的关系 ===
 relations:
-  - type: "is_part of"
+  - type: "is_part_of"
     target_uuid: "a0b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d"
     description: "本节点是Matrix规则链的主动型入口点之一。"
   - type: "references"

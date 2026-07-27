@@ -11,7 +11,7 @@ tags:
   - "refactor"
   - "cohesion"
 relations:
-  - type: "is_explained_by"
+  - type: "has_guide"
     target_uuid: "a0b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d"
     description: "项目总览已经按当前统一入口与框架职责描述 Matrix。"
   - type: "references"

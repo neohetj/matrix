@@ -12,6 +12,9 @@ tags:
   - "architecture"
 
 relations:
+  - type: "references"
+    target_uuid: "c0b9a8d1-e6f7-4b5c-9d0e-1f2a3b4c5d6e"
+    description: "总览引导开发者阅读端到端告警处理案例。"
 
 ---
 

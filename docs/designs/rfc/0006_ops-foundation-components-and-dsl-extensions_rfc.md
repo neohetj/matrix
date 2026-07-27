@@ -12,10 +12,10 @@ tags:
   - "dsl"
   - "node"
 relations:
-  - type: "is_based_on"
+  - type: "depends_on"
     target_uuid: "eff7782a-52fe-4a3e-a38f-85321e43208a"
     description: "[external] 本 RFC 仍然对应一条外部运维建模需求。"
-  - type: "is_explained_by"
+  - type: "has_guide"
     target_uuid: "4231ef33-0963-4b9c-87c9-76277c7e8472"
     description: "当前已落地的 `ops/*` 节点与建模方式见对应组件指南。"
   - type: "is_formalized_by"

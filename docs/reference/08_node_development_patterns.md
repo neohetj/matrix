@@ -25,6 +25,9 @@ relations:
   - type: "references"
     target_uuid: "f745eae6-f75c-4849-b7fb-407d6c439182" # -> 12_node_specification.md
     description: "本文档引导开发者在需要时，查阅更详细的通用节点规范。"
+  - type: "references"
+    target_uuid: "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e" # -> guides/06_dynamic_object_conversion_guide.md
+    description: "本文档引导开发者在需要时，阅读动态数据处理高级技巧指南。"
 ---
 
 # Matrix节点开发模式

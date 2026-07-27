@@ -12,9 +12,6 @@ tags:
   - "expression"
   - "advanced"
 relations:
-  - type: "is_referenced_by"
-    target_uuid: "60c07c47-df0e-4b76-9ed9-62fabe2e2add"
-    description: "参考-08 会在需要时引导开发者阅读这份高级技巧指南。"
 ---
 
 # 指南：动态数据处理核心技巧 (DynamicDataHandlingGuide)

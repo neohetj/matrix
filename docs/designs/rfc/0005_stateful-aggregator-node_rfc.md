@@ -16,7 +16,7 @@ relations:
   - type: "is_formalized_by"
     target_uuid: "a6b7c8d9-e0f1-4a2b-8c3d-4e5f6a7b8c9d"
     description: "当前组件目录已收录 `action/aggregator` 为内建节点。"
-  - type: "is_explained_by"
+  - type: "has_guide"
     target_uuid: "9f9f0df6-dbc9-4fcb-8f60-d39971809d7e"
     description: "当前 `action/aggregator` 的使用方式见对应组件指南。"
 ---

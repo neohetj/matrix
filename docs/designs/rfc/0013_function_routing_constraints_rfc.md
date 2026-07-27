@@ -14,7 +14,7 @@ relations:
   - type: "is_formalized_by"
     target_uuid: "dbf6fb21-5e26-44b6-b1bb-d94d13112ae9"
     description: "当前规范性内容已并入 Reference-11。"
-  - type: "is_explained_by"
+  - type: "has_guide"
     target_uuid: "98c5b4a3-e7f6-4b0d-8c6a-1e2f3a4b5c6d"
     description: "当前 `functions` 节点与决策函数的使用方式见组件指南。"
 ---
