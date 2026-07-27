@@ -587,7 +587,7 @@ go test ./...
 执行：
 
 ```bash
-python3 platform/Matrix/skills/matrix-doc-graph-auditor/scripts/audit_matrix_docs.py --root platform/Matrix/docs --scope . --strict-targets
+make docs-audit DOCS_ROOT=platform/Matrix/docs AUDIT_ARGS="--strict-targets"
 ```
 
 结果：扫描 80 个文档，26 个 error，39 个 warning。
@@ -893,7 +893,7 @@ go test -run '^$' ./internal/builtin/base ./internal/runtime ./pkg/helper ./pkg/
 聚焦验证：
 
 ```bash
-python3 skills/matrix-doc-graph-auditor/scripts/audit_matrix_docs.py --root docs --scope reference --strict-targets
+make docs-audit DOCS_ROOT=platform/Matrix/docs DOCS_SCOPE=reference AUDIT_ARGS="--strict-targets"
 ```
 
 ### 9.13 Stage 0.5 Slice 7：Full Docs Error Baseline Cleanup
@@ -916,7 +916,7 @@ python3 skills/matrix-doc-graph-auditor/scripts/audit_matrix_docs.py --root docs
 聚焦验证：
 
 ```bash
-python3 skills/matrix-doc-graph-auditor/scripts/audit_matrix_docs.py --root docs --scope . --strict-targets
+make docs-audit DOCS_ROOT=platform/Matrix/docs AUDIT_ARGS="--strict-targets"
 ```
 
 ### 9.14 Stage 0.5 Slice 8：Endpoint Catalog / Extended Report-Only Validation

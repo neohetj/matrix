@@ -55,8 +55,8 @@ go run ./cmd/matrix-validate --module-root ../../modules/sellitx
 | `go test -count=1 ./pkg/validation ./pkg/types ./pkg/inspection ./cmd/matrix-validate` | 验证 validation / inspection 契约。 |
 | `go test -run '^$' ./internal/builtin/base ./internal/runtime ./pkg/helper ./pkg/validation ./cmd/matrix-validate` | 对边界重构触达包做编译检查。 |
 | `go run ./cmd/matrix-validate --module-root <module-root>` | 对业务模块输出 report-only `ValidationReport`。 |
-| `python3 skills/matrix-doc-graph-auditor/scripts/audit_matrix_docs.py --root docs --scope reference --strict-targets` | 审计 Matrix Reference 文档。 |
-| `python3 skills/matrix-doc-graph-auditor/scripts/audit_matrix_docs.py --root docs --scope designs/plan --strict-targets` | 审计 Matrix Plan 文档。 |
+| `make docs-audit DOCS_ROOT=platform/Matrix/docs DOCS_SCOPE=reference AUDIT_ARGS="--strict-targets"` | 审计 Matrix Reference 文档（从 workspace 根运行）。 |
+| `make docs-audit DOCS_ROOT=platform/Matrix/docs DOCS_SCOPE=designs/plan AUDIT_ARGS="--strict-targets"` | 审计 Matrix Plan 文档（从 workspace 根运行）。 |
 | `git diff --check` | 提交前检查 whitespace。 |
 
 只有在明确要检查全仓 baseline 时才运行 `go test ./...`。当前重构计划已经记录

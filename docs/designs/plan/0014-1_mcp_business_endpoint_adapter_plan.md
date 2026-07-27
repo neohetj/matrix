@@ -120,8 +120,8 @@ relations:
 文档阶段：
 
 ```bash
-python3 platform/Matrix/skills/matrix-doc-graph-auditor/scripts/audit_matrix_docs.py --root platform/Matrix/docs --scope designs/rfc
-python3 platform/Matrix/skills/matrix-doc-graph-auditor/scripts/audit_matrix_docs.py --root platform/Matrix/docs --scope designs/plan
+make docs-audit DOCS_ROOT=platform/Matrix/docs DOCS_SCOPE=designs/rfc
+make docs-audit DOCS_ROOT=platform/Matrix/docs DOCS_SCOPE=designs/plan
 git diff --check
 ```
 
