@@ -16,11 +16,8 @@ tags:
 # === Node Relations: 定义与其他文档节点的关系 ===
 relations:
   - type: "supersedes"
-    target_uuid: "d8a3bfe2-0a7e-4b3a-9c1d-8e7f6a5b4c3d"
-    description: "[external] 本文档吸收并取代了一份仓外历史数据合约规范。"
-  - type: "supersedes"
-    target_uuid: "d9e8f7c6-4b1f-4b9e-9c3a-1f8e6d2c5b4a"
-    description: "[external] 本文档吸收并取代了一份仓外历史节点生命周期文档。"
+    target_uuid: "589dab79-3b5c-4231-ada6-b2617d375abb"
+    description: "本文档取代并合并了 RFC-0001 的数据合约规范内容。"
 ---
 
 # 参考-12: 通用节点规范

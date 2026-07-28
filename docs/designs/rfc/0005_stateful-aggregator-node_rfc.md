@@ -13,7 +13,7 @@ tags:
   - "join"
   - "fan-in"
 relations:
-  - type: "is_formalized_by"
+  - type: "has_reference"
     target_uuid: "a6b7c8d9-e0f1-4a2b-8c3d-4e5f6a7b8c9d"
     description: "当前组件目录已收录 `action/aggregator` 为内建节点。"
   - type: "has_guide"

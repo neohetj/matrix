@@ -17,7 +17,7 @@ relations:
   - type: "is_plan_for"
     target_uuid: "978c1b44-65eb-43ef-bcf8-793c1793a0b3" # -> 指向RFC-0006
     description: "本实现计划旨在将RFC-0006中定义的提案转化为可执行的开发步骤。"
-  - type: "is_guided_by"
+  - type: "implements"
     target_uuid: "becf62ab-9a79-483a-96d9-243928855ff9" # -> 指向ADR-0006-1
     description: "本计划的实施将严格遵循ADR-0006-1中记录的架构决策。"
 ---

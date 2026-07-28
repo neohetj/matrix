@@ -14,7 +14,7 @@ relations:
   - type: "has_guide"
     target_uuid: "788737cf-d58e-4931-8bbf-37841c6de80c"
     description: "当前 `config://` 协议与 helper 读取方式见对应指南。"
-  - type: "is_formalized_by"
+  - type: "is_specified_by"
     target_uuid: "5a8b3c7e-9f0d-4a1b-8c2d-6e5f4a3b2c1d"
     description: "当前 DSL 侧 URI 使用约定以 Reference-18 为准。"
 ---
@@ -111,6 +111,6 @@ relations:
 
 ## 6. 相关现行文档
 
-1. [指南：Config URI 协议与统一配置读取](../../guides/12_config_uri_usage_guide.md)
+1. [指南：Config URI 协议与统一配置读取](../../guides/config-uri-usage-guide.md)
 2. [学习 Matrix DSL 规范](../../reference/18_dsl_specification.md)
 3. [参考-11：函数开发与注册规范](../../reference/11_function_registration_spec.md)

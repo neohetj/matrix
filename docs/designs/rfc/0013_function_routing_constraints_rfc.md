@@ -11,7 +11,7 @@ tags:
   - "routing"
   - "validation"
 relations:
-  - type: "is_formalized_by"
+  - type: "is_specified_by"
     target_uuid: "dbf6fb21-5e26-44b6-b1bb-d94d13112ae9"
     description: "当前规范性内容已并入 Reference-11。"
   - type: "has_guide"

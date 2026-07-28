@@ -12,9 +12,9 @@ tags:
   - "agent"
   - "llm"
 relations:
-  - type: "realizes"
-    target_uuid: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
-    description: "[external] 这仍然是一份 Agent 能力需求草案。"
+  - type: "has_adr"
+    target_uuid: "e1f2a3b4-c5d6-e7f8-a9b0-c1d2e3f4a5b6"
+    description: "本 RFC 的 Agent 架构决策由 ADR-0008-1 固化。"
 ---
 
 # RFC: Matrix通用Agent与LLM核心节点 (Title)

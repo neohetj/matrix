@@ -17,10 +17,10 @@ relations:
   - type: "is_plan_for"
     target_uuid: "f1d4c850-1f6e-4dcb-8d51-1fe6a46701ae"
     description: "本实现计划将 RFC-0012 转化为可分阶段交付的工程蓝图。"
-  - type: "is_guided_by"
+  - type: "implements"
     target_uuid: "fb5bdc48-90b9-49d7-8b66-8676a72fbfe3"
     description: "本计划遵循 Matrix 规则链执行保持 DAG 的核心约束。"
-  - type: "is_guided_by"
+  - type: "depends_on"
     target_uuid: "becf62ab-9a79-483a-96d9-243928855ff9"
     description: "本计划复用运维实体建模与 DSL 扩展的已有决策。"
 ---

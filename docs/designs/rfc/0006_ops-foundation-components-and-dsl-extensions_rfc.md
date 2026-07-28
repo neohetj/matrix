@@ -18,7 +18,7 @@ relations:
   - type: "has_guide"
     target_uuid: "4231ef33-0963-4b9c-87c9-76277c7e8472"
     description: "当前已落地的 `ops/*` 节点与建模方式见对应组件指南。"
-  - type: "is_formalized_by"
+  - type: "is_specified_by"
     target_uuid: "5a8b3c7e-9f0d-4a1b-8c2d-6e5f4a3b2c1d"
     description: "当前 DSL 中 `relations` / `imports` / `attrs` 的现行语义以 Reference-18 为准。"
 ---
