@@ -143,5 +143,5 @@ relations:
 *   **异步模式**: 子链的失败只会被记录为错误日志，**不会**影响主链的执行流程。
 
 <!-- 链接定义区域 -->
-[Guide-MatrixOverview-2b3c4d]: ../00_matrix_guide.md
+[Guide-MatrixOverview-2b3c4d]: ../matrix-guide.md
 [Ref-SemanticDoc-d45bce]: ./README.md

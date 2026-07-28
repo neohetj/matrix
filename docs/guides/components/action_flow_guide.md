@@ -119,5 +119,5 @@ flowchart TD
 *   **子链执行失败**: 如果子链在执行过程中任何一个节点走向了 `Failure` 链路，整个子链的执行被视为失败。`flow` 节点会捕获这个失败状态，并将子链的最终消息和错误信息路由到主链的 `Failure` 链路。
 
 <!-- 链接定义区域 -->
-[Guide-MatrixOverview-2b3c4d]: ../00_matrix_guide.md
+[Guide-MatrixOverview-2b3c4d]: ../matrix-guide.md
 [Ref-SemanticDoc-d45bce]: ./README.md

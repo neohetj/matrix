@@ -99,7 +99,7 @@ relations:
 
 1. [参考-10：HttpEndpoint 节点深度解析](../../reference/10_http_endpoint_deep_dive.md)
 2. [组件指南：HTTP Endpoint (endpoint/http)](../../guides/components/endpoint_http_guide.md)
-3. [指南：动态对象转换](../../guides/06_dynamic_object_conversion_guide.md)
+3. [指南：动态对象转换](../../guides/dynamic-object-conversion-guide.md)
 4. [组件指南：SQL Query 函数](../../guides/components/functions_sql_query_guide.md) 中对 packet / DSL 风险的说明
 
 ## 7. 结论

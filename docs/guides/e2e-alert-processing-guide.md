@@ -268,5 +268,5 @@ flowchart TD
 4. 如果这个链路要补自动化验证，优先用 `matrix-test-author` 设计 packet 边界和分支验证。
 
 <!-- 链接定义区域 -->
-[Guide-MatrixOverview-2b3c4d]: ./00_matrix_guide.md
+[Guide-MatrixOverview-2b3c4d]: ./matrix-guide.md
 [Ref-SemanticDoc-d45bce]: ./README.md

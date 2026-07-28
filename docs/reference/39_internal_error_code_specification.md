@@ -155,6 +155,6 @@ Matrix 内部码和产品公开码可以同时使用 `FailureInfo.Code` 这个�
 
 ## 9. 相关文档
 
-- [统一错误处理指南](../guides/15_unified_error_handling_guide.md)
+- [统一错误处理指南](../guides/unified-error-handling-guide.md)
 - [HTTP Endpoint 深度解析](10_http_endpoint_deep_dive.md)
 - [Unified Error Handling RFC](../designs/rfc/0010_unified_error_handling_rfc.md)

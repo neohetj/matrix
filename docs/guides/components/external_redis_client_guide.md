@@ -91,5 +91,5 @@ relations:
 `redisClient` 节点是一个资源管理节点，它**不参与**消息的数据流处理。它不会读取或修改 `RuleMsg` 的任何部分 (`Data`, `DataT`, `Metadata`)。
 
 <!-- 链接定义区域 -->
-[Guide-MatrixOverview]: ../00_matrix_guide.md
-[Guide-SharedNode-7c8d]: ../03_shared_node_guide.md
+[Guide-MatrixOverview]: ../matrix-guide.md
+[Guide-SharedNode-7c8d]: ../shared-node-guide.md

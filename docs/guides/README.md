@@ -26,20 +26,22 @@ relations:
 - `reference/` 用于解释“是什么”与“为什么”。
 - 组件级指南统一放在 [components/README.md](./components/README.md) 所管理的子目录中。
 
-## 2. 命名建议
+## 2. 命名规则
 
-本目录下的非组件指南通常使用 `NN[-M]_<topic_description>.md`，其中：
+本目录下的非组件指南使用 `<slug>-guide.md`，与 Evolution 文档治理规范一致（审计器按该规则检查）：
 
-1. `00` 预留为目录入口类总览。
-2. 顶级主题使用两位数字排序。
-3. 次级变体可使用 `-M` 编号。
+1. `slug` 使用小写字母、数字和连字符，描述指南主题。
+2. 不使用数字前缀排序；阅读入口与顺序由本 README 的文档索引给出。
+3. 目录入口类总览命名为 `matrix-guide.md`。
+
+`reference/` 目录仍保留 `NN_<topic>.md` 编号，因为其编号被正文与 relation 以 `Reference-NN` 形式稳定引用；guides 不存在这类引用，故不编号。
 
 ## 3. 文档索引
 
-- [00_matrix_guide.md](./00_matrix_guide.md): Matrix 开发路径与学习入口。
-- [03_shared_node_guide.md](./03_shared_node_guide.md): 共享节点的概念与使用方法。
-- [06_dynamic_object_conversion_guide.md](./06_dynamic_object_conversion_guide.md): 动态数据处理技巧。
-- [09_e2e_alert_processing_guide.md](./09_e2e_alert_processing_guide.md): 端到端告警处理案例。
-- [12_config_uri_usage_guide.md](./12_config_uri_usage_guide.md): `config://` 协议、scope 回退与 helper 读取方式。
-- [15_unified_error_handling_guide.md](./15_unified_error_handling_guide.md): `Fault -> FailureInfo -> ServiceError` 与 HTTP 错误映射。
+- [matrix-guide.md](./matrix-guide.md): Matrix 开发路径与学习入口。
+- [shared-node-guide.md](./shared-node-guide.md): 共享节点的概念与使用方法。
+- [dynamic-object-conversion-guide.md](./dynamic-object-conversion-guide.md): 动态数据处理技巧。
+- [e2e-alert-processing-guide.md](./e2e-alert-processing-guide.md): 端到端告警处理案例。
+- [config-uri-usage-guide.md](./config-uri-usage-guide.md): `config://` 协议、scope 回退与 helper 读取方式。
+- [unified-error-handling-guide.md](./unified-error-handling-guide.md): `Fault -> FailureInfo -> ServiceError` 与 HTTP 错误映射。
 - [components/README.md](./components/README.md): 组件级使用指南与编写规范。

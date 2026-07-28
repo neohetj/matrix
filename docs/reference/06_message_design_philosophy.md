@@ -120,4 +120,4 @@ sequenceDiagram
 <!-- qa_section_end -->
 
 <!-- 链接定义区域 -->
-[Guide-MatrixOverview]: ../guides/00_matrix_guide.md
+[Guide-MatrixOverview]: ../guides/matrix-guide.md

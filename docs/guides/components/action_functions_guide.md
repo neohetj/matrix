@@ -218,6 +218,6 @@ func EnrichUserProfile(ctx types.NodeCtx, msg types.RuleMsg) {
 *   **自定义 relation 校验失败**: 如果某个 `functions` 节点连接了 `Success` / `Failure` 之外的 relation，但对应函数未声明为 `decision`，或未在 `DeclaredRelations` 中声明该 relation，运行时会在规则链初始化阶段直接报错。
 
 <!-- 链接定义区域 -->
-[Guide-MatrixOverview-2b3c4d]: ../00_matrix_guide.md
+[Guide-MatrixOverview-2b3c4d]: ../matrix-guide.md
 [Ref-SemanticDoc-d45bce]: ./README.md
 [Ref-CoreObj]: ../../reference/09_core_objects.md

@@ -111,5 +111,5 @@ relations:
 *   **无匹配且无默认**: 如果所有 `cases` 都不匹配，并且没有配置 `defaultRelation`，消息将被路由到 `Failure` 链路，并附带 `ErrNoMatchCase` 错误。
 
 <!-- 链接定义区域 -->
-[Guide-MatrixOverview-2b3c4d]: ../00_matrix_guide.md
+[Guide-MatrixOverview-2b3c4d]: ../matrix-guide.md
 [Ref-SemanticDoc-d45bce]: ./README.md

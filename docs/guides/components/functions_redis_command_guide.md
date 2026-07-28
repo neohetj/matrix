@@ -130,4 +130,4 @@ relations:
 <!-- qa_section_end -->
 
 <!-- 链接定义区域 -->
-[Guide-MatrixOverview]: ../00_matrix_guide.md
+[Guide-MatrixOverview]: ../matrix-guide.md

@@ -97,6 +97,6 @@ relations:
 
 ## 6. 相关现行文档
 
-1. [Matrix 项目总览：README First](../../guides/00_matrix_guide.md)
+1. [Matrix 项目总览：README First](../../guides/matrix-guide.md)
 2. [参考-08：Matrix 节点开发模式](../../reference/08_node_development_patterns.md)
 3. [参考-12：通用节点规范](../../reference/12_node_specification.md)

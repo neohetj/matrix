@@ -110,6 +110,6 @@ relations:
 
 ## 6. 相关现行文档
 
-1. [指南：统一错误处理与 HTTP 错误映射](../../guides/15_unified_error_handling_guide.md)
+1. [指南：统一错误处理与 HTTP 错误映射](../../guides/unified-error-handling-guide.md)
 2. [参考-10：HttpEndpoint 节点深度解析](../../reference/10_http_endpoint_deep_dive.md)
 3. [参考：Matrix 消息设计哲学 (RuleMsg)](../../reference/06_message_design_philosophy.md)
