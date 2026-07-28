@@ -1,6 +1,6 @@
 ---
 uuid: "affcadae-091e-4f63-9072-c3c8216e8f40"
-type: "README"
+type: "Reference"
 title: "README: Matrix 迁移指南库"
 status: "Stable"
 owner: "neohetj"

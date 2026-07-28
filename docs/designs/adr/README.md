@@ -1,6 +1,6 @@
 ---
 uuid: "6c2ad10a-5f92-4832-b050-ec08026ffb42"
-type: "README"
+type: "Reference"
 title: "README: Matrix ADR 文档库"
 status: "Stable"
 owner: "neohetj"

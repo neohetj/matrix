@@ -1,7 +1,7 @@
 ---
 # === Node Properties: 定义文档节点自身 ===
 uuid: "68b1646b-2238-48e0-b77d-c81ecfc4317d"
-type: "README"
+type: "Reference"
 title: "README: Matrix RFC 文档库"
 status: "Stable"
 owner: "neohetj"

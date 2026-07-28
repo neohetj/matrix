@@ -1,6 +1,6 @@
 ---
 uuid: "a422d409-4b02-431a-b14e-2dec8f75b506"
-type: "README"
+type: "Reference"
 title: "README: Matrix 文档总览"
 status: "Stable"
 owner: "neohetj"

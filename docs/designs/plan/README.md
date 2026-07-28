@@ -1,6 +1,6 @@
 ---
 uuid: "fde86d18-74ce-4350-9137-553929ee1261"
-type: "README"
+type: "Reference"
 title: "README: Matrix Plan 文档库"
 status: "Stable"
 owner: "neohetj"
