@@ -121,6 +121,65 @@ func TestEndpointRejectsForbiddenToolArguments(t *testing.T) {
 	}
 }
 
+func TestEndpointRejectsArgumentsThatDoNotMatchInputSchemaBeforeDispatch(t *testing.T) {
+	dispatched := false
+	endpoint, err := NewEndpoint(types.McpEndpointNodeConfiguration{
+		ServerName: "lingbao-kb",
+		Tools: []types.McpToolDefinition{
+			{
+				Name:      "kb_read_document",
+				RiskLevel: "read",
+				InputSchema: map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+					"required":             []any{"doc_id"},
+					"properties": map[string]any{
+						"doc_id": map[string]any{"type": "string"},
+					},
+				},
+				Target: types.McpTargetSpec{
+					Kind: TargetKindHandler,
+					ID:   "kb_read_document",
+				},
+			},
+		},
+	}, WithTargetDispatcher(TargetDispatcherFunc(func(context.Context, DispatchRequest) (types.McpToolResult, bool, error) {
+		dispatched = true
+		return NewTextToolResult(`{"ok":true}`), true, nil
+	})))
+	if err != nil {
+		t.Fatalf("NewEndpoint failed: %v", err)
+	}
+
+	result, err := endpoint.CallTool(context.Background(), "kb_read_document", map[string]any{
+		"doc_id": float64(2),
+	})
+	if err != nil {
+		t.Fatalf("CallTool returned protocol error: %v", err)
+	}
+	if !result.IsError {
+		t.Fatalf("expected schema validation tool error, got %+v", result)
+	}
+	if dispatched {
+		t.Fatal("dispatcher must not run when arguments fail inputSchema validation")
+	}
+	if len(result.Content) != 1 ||
+		!strings.Contains(result.Content[0].Text, "invalid arguments for tool") ||
+		!strings.Contains(result.Content[0].Text, "doc_id") {
+		t.Fatalf("expected actionable validation error, got %+v", result.Content)
+	}
+
+	result, err = endpoint.CallTool(context.Background(), "kb_read_document", map[string]any{
+		"doc_id": "c39de16e54c159ce",
+	})
+	if err != nil {
+		t.Fatalf("CallTool with valid arguments failed: %v", err)
+	}
+	if result.IsError || !dispatched {
+		t.Fatalf("valid arguments should reach dispatcher, got result=%+v dispatched=%t", result, dispatched)
+	}
+}
+
 func TestEndpointRedactsSecretsFromHTTPToolResult(t *testing.T) {
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

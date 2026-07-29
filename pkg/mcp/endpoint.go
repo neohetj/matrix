@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/neohetj/matrix/pkg/types"
 )
 
@@ -76,6 +77,7 @@ type Endpoint struct {
 	httpClient   *http.Client
 	configValues map[string]any
 	toolsByName  map[string]types.McpToolDefinition
+	inputSchemas map[string]*openapi3.Schema
 	dispatcher   TargetDispatcher
 }
 
@@ -85,6 +87,7 @@ func NewEndpoint(cfg types.McpEndpointNodeConfiguration, opts ...Option) (*Endpo
 		cfg:          cfg,
 		configValues: map[string]any{},
 		toolsByName:  map[string]types.McpToolDefinition{},
+		inputSchemas: map[string]*openapi3.Schema{},
 	}
 	timeout := time.Duration(cfg.HTTP.TimeoutMs) * time.Millisecond
 	if timeout <= 0 {
@@ -154,6 +157,11 @@ func (e *Endpoint) CallTool(ctx context.Context, name string, arguments map[stri
 	if err := rejectForbiddenArguments(arguments); err != nil {
 		return errorToolResult(err.Error()), nil
 	}
+	if schema := e.inputSchemas[tool.Name]; schema != nil {
+		if err := schema.VisitJSON(arguments, openapi3.MultiErrors()); err != nil {
+			return errorToolResult(fmt.Sprintf("invalid arguments for tool %q: %v", tool.Name, err)), nil
+		}
+	}
 	authContext, err := e.resolveAuthContext(ctx, tool.AuthContext)
 	if err != nil {
 		return errorToolResult(err.Error()), nil
@@ -192,13 +200,15 @@ func (e *Endpoint) validate() error {
 		if !isReadOnlyTool(tool) {
 			return fmt.Errorf("mcp tool %q must declare riskLevel=read for MVP", name)
 		}
-		if err := validateInputSchema(name, tool.InputSchema); err != nil {
+		inputSchema, err := validateInputSchema(name, tool.InputSchema)
+		if err != nil {
 			return err
 		}
 		if strings.TrimSpace(tool.Target.Kind) == "" {
 			return fmt.Errorf("mcp tool %q target.kind is required", name)
 		}
 		e.toolsByName[name] = tool
+		e.inputSchemas[name] = inputSchema
 	}
 	return nil
 }
@@ -463,12 +473,27 @@ func isReadOnlyTool(tool types.McpToolDefinition) bool {
 	return strings.EqualFold(strings.TrimSpace(tool.RiskLevel), "read")
 }
 
-func validateInputSchema(toolName string, schema map[string]any) error {
+func validateInputSchema(toolName string, schema map[string]any) (*openapi3.Schema, error) {
 	forbidden := collectForbiddenKeys(schema)
 	if len(forbidden) > 0 {
-		return fmt.Errorf("mcp tool %q inputSchema contains forbidden security context fields: %s", toolName, strings.Join(forbidden, ", "))
+		return nil, fmt.Errorf("mcp tool %q inputSchema contains forbidden security context fields: %s", toolName, strings.Join(forbidden, ", "))
 	}
-	return nil
+	if len(schema) == 0 {
+		return nil, nil
+	}
+
+	data, err := json.Marshal(schema)
+	if err != nil {
+		return nil, fmt.Errorf("mcp tool %q inputSchema cannot be encoded: %w", toolName, err)
+	}
+	compiled := &openapi3.Schema{}
+	if err := json.Unmarshal(data, compiled); err != nil {
+		return nil, fmt.Errorf("mcp tool %q inputSchema is invalid: %w", toolName, err)
+	}
+	if err := compiled.Validate(context.Background()); err != nil {
+		return nil, fmt.Errorf("mcp tool %q inputSchema is invalid: %w", toolName, err)
+	}
+	return compiled, nil
 }
 
 func collectForbiddenKeys(value any) []string {
