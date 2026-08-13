@@ -31,6 +31,7 @@ import (
 	"github.com/neohetj/matrix/internal/aop"
 	"github.com/neohetj/matrix/internal/builder"
 	_ "github.com/neohetj/matrix/internal/builtin"
+	"github.com/neohetj/matrix/internal/endpointgate"
 	"github.com/neohetj/matrix/internal/log"
 	"github.com/neohetj/matrix/internal/runtime"
 	"github.com/neohetj/matrix/pkg/config"
@@ -243,6 +244,17 @@ func (e *MatrixEngine) StartActiveEndpoints(ctx context.Context) error {
 	for _, endpoint := range e.registry.GetSharedNodePool().GetEndpoints() {
 		active, ok := endpoint.(types.ActiveEndpoint)
 		if !ok {
+			continue
+		}
+		enabled, err := endpointgate.Enabled(endpoint, e.config.Business)
+		if err != nil {
+			cancel()
+			return fmt.Errorf("active endpoint %s: %w", endpoint.ID(), err)
+		}
+		if !enabled {
+			if e.logger != nil {
+				e.logger.Infof(endpointCtx, "active endpoint %s disabled by configuration, skipped", endpoint.ID())
+			}
 			continue
 		}
 		if err := active.Start(endpointCtx); err != nil {

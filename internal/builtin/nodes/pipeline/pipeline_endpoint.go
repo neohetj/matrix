@@ -33,6 +33,7 @@ type PipelineStageConfig struct {
 }
 
 type PipelineConfig struct {
+	Enabled         string                `json:"enabled,omitempty"`
 	Stages          []PipelineStageConfig `json:"stages"`
 	ExposedChannels map[string]string     `json:"exposedChannels"` // "input": "stage_id_in"
 	// ChannelManager is the URI reference to the shared channel manager node (e.g. ref://channel_manager)
@@ -69,6 +70,13 @@ type PipelineEndpointNode struct {
 // Ensure PipelineEndpointNode implements ActiveEndpoint interface
 var _ types.ActiveEndpoint = (*PipelineEndpointNode)(nil)
 var _ types.PipelineInputRouter = (*PipelineEndpointNode)(nil)
+var _ types.GatedEndpoint = (*PipelineEndpointNode)(nil)
+
+// EnableExpression implements types.GatedEndpoint. An empty value keeps the
+// historical behaviour of always starting the pipeline.
+func (n *PipelineEndpointNode) EnableExpression() string {
+	return n.config.Enabled
+}
 
 // OnMsg implements the Node interface.
 // While PipelineEndpoint is primarily an Endpoint, implementing OnMsg allows it to be used
@@ -89,6 +97,9 @@ func (n *PipelineEndpointNode) New() types.Node {
 func (n *PipelineEndpointNode) Init(config types.ConfigMap) error {
 	if err := utils.Decode(config, &n.config); err != nil {
 		return types.InvalidConfiguration.Wrap(err)
+	}
+	if err := asset.ValidateBoolExpression(n.config.Enabled); err != nil {
+		return types.InvalidConfiguration.Wrap(fmt.Errorf("enabled: %w", err))
 	}
 	n.activeChannels = make(map[string]chan types.RuleMsg)
 	return nil

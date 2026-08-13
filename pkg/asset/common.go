@@ -172,6 +172,32 @@ func IsURI(uri string, schemas ...string) bool {
 	return true
 }
 
+// ValidateBoolExpression checks a configuration value that must end up being a
+// boolean, but may be written either as a literal or as a template that can only
+// be resolved later (for example "${config:///feature.enabled?default=false}").
+//
+// An empty value is accepted and means "not configured"; the caller decides what
+// that implies. Templates are only checked for shape here, never resolved.
+func ValidateBoolExpression(value string) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	if trimmed != value {
+		return fmt.Errorf("boolean expression %q must not contain surrounding whitespace", value)
+	}
+	if IsTemplate(trimmed) {
+		if !placeholderRegex.MatchString(trimmed) {
+			return fmt.Errorf("boolean expression %q is not a well-formed ${...} template", value)
+		}
+		return nil
+	}
+	if trimmed != "true" && trimmed != "false" {
+		return fmt.Errorf("boolean expression %q must be \"true\", \"false\", or a ${...} template", value)
+	}
+	return nil
+}
+
 // RenderTemplate renders a template string by resolving any embedded URIs using Asset logic.
 // It supports placeholders like ${config:///key}, ${rulemsg://data/path} or ${rulemsg://dataT/path}.
 func RenderTemplate(template string, ctx *AssetContext) (string, error) {

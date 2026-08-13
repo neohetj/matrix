@@ -45,6 +45,7 @@ func init() {
 }
 
 type RedisStreamEndpointConfiguration struct {
+	Enabled             string                                  `json:"enabled,omitempty"`
 	RedisClient         string                                  `json:"redisClient"`
 	Stream              string                                  `json:"stream"`
 	Group               string                                  `json:"group"`
@@ -151,14 +152,24 @@ func (t *goRedisStreamTransport) createGroup(ctx context.Context, stream, group,
 
 var _ types.ActiveEndpoint = (*RedisStreamEndpointNode)(nil)
 var _ types.SubChainTrigger = (*RedisStreamEndpointNode)(nil)
+var _ types.GatedEndpoint = (*RedisStreamEndpointNode)(nil)
 
 func (n *RedisStreamEndpointNode) New() types.Node {
 	return &RedisStreamEndpointNode{BaseNode: n.BaseNode}
 }
 
+// EnableExpression implements types.GatedEndpoint. An empty value keeps the
+// historical behaviour of always starting the consumer.
+func (n *RedisStreamEndpointNode) EnableExpression() string {
+	return n.config.Enabled
+}
+
 func (n *RedisStreamEndpointNode) Init(cfg types.ConfigMap) error {
 	if err := utils.Decode(cfg, &n.config); err != nil {
 		return FaultRedisStreamEndpointConfig.Wrap(err)
+	}
+	if err := asset.ValidateBoolExpression(n.config.Enabled); err != nil {
+		return FaultRedisStreamEndpointConfig.Wrap(fmt.Errorf("enabled: %w", err))
 	}
 	if strings.TrimSpace(n.config.RedisClient) == "" {
 		return FaultRedisStreamEndpointConfig.Wrap(fmt.Errorf("redisClient is required"))

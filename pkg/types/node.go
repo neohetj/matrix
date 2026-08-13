@@ -253,6 +253,19 @@ type ActiveEndpoint interface {
 	Stop() error
 }
 
+// GatedEndpoint is an optional interface for ActiveEndpoints whose startup can be
+// switched off by configuration. The endpoint only reports the raw expression it
+// was configured with; resolving it is the engine's responsibility, because the
+// engine owns the config and environment scopes that the expression may read.
+//
+// An empty expression means "always start", which keeps every existing endpoint
+// definition behaving exactly as before.
+type GatedEndpoint interface {
+	// EnableExpression returns a boolean literal ("true"/"false") or a
+	// "${config:///...}" template that resolves to one.
+	EnableExpression() string
+}
+
 // Endpoint is a special type of Node that acts as an entry point to a rule chain.
 // By design, Endpoints are also considered SharedNodes, as they are typically instantiated
 // once at the application level and their lifecycle is not tied to a single rule chain execution.
