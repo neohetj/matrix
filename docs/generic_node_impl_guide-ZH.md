@@ -53,6 +53,7 @@ func (n *MyNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 *   必须实现 `types.Endpoint` 接口。
 *   如果是主动运行（如监听端口、后台任务），必须实现 `types.ActiveEndpoint` 接口（包含 `Start` 和 `Stop` 方法）。
 *   添加编译期检查：`var _ types.ActiveEndpoint = (*MyEndpoint)(nil)`。
+*   如果这个端点应当支持按配置整体关闭（关闭后连资源都不连、副作用一个都不产生），再实现可选的 `types.GatedEndpoint` 接口：配置里加 `Enabled string` 字段，`Init` 中用 `asset.ValidateBoolExpression` 只校验格式，`EnableExpression()` 原样返回该字符串。**不要在节点内部自行解析开关取值**——解析由引擎在 `StartActiveEndpoints` 统一完成，节点在 `Init` 阶段拿不到引擎配置和环境变量作用域。语义见 [Redis Stream Endpoint 可靠消费](reference/40_redis_stream_endpoint_reliability.md) 第 2.1 节。
 
 ## 3. 配置管理
 

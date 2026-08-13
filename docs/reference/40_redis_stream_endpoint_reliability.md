@@ -32,6 +32,7 @@ Matrix 负责读取、pending 重领、处理超时、ACK、有限投递和 DLQ�
 
 | 字段 | 必填 | 默认值 | 当前语义 |
 | --- | --- | --- | --- |
+| `enabled` | 否 | 空 | 启用开关表达式。留空表示始终启动。取值为 `true` / `false` 字面量，或解析为布尔值的 `${config:///...}` 模板。见第 2.1 节。 |
 | `redisClient` | 是 | 无 | `ref://...` Redis 共享资源。 |
 | `stream` | 是 | 无 | 源 Stream。 |
 | `group` | 是 | 无 | consumer group。 |
@@ -51,6 +52,28 @@ Matrix 负责读取、pending 重领、处理超时、ACK、有限投递和 DLQ�
 | `pendingRecovery.count` | 否 | 同 `count` | 单次重领上限。 |
 | `pendingRecovery.maxDeliveries` | 否 | `0` | `0` 表示不限制；正数表示达到该投递次数后进入 DLQ。 |
 | `pendingRecovery.deadLetterStream` | 条件必填 | 无 | 设置 `maxDeliveries` 时必填。 |
+
+### 2.1 启用开关
+
+`enabled` 决定引擎是否启动这个端点，而不是端点启动后是否处理消息。关闭时端点不解析 Redis 客户端、不建 consumer group、不 claim pending、不产生 DLQ，等价于该定义没有被部署。
+
+判定发生在 `StartActiveEndpoints`，由引擎统一执行；端点节点只在 `Init` 校验表达式格式，不自行解析取值。因此同一份 DSL 可以在不同环境按配置决定是否生效，不需要为"可关闭的端点"单独拆分 Matrix component。
+
+| 写法 | 解析结果 |
+| --- | --- |
+| 不写 `enabled` | 始终启动，与该字段引入前的行为完全一致。 |
+| `"true"` / `"false"` | 直接按字面量判定。 |
+| `"${config:///<key>?scope=engine,env&default=false}"` | 按 `config://` 协议解析，见 [Config URI 使用指南](../guides/config-uri-usage-guide.md)。 |
+
+作用域边界与失败行为：
+
+- 只支持 `engine` 和 `env` 两个作用域。判定发生在引擎启动阶段，此时没有 `NodeCtx` 与 `RuleMsg`，`business` 和 `node` 作用域无法解析。引擎会把 `MatrixConfig.Business` 作为 `engine` 作用域喂入，因此 `business:` 配置树里的键仍然读得到。
+- `env` 回退沿用既有规则：`a.b.c` 找不到时查 `A_B_C`。
+- 表达式解析失败（键不存在且未给 `default`）或解析结果不是布尔值时，`StartActiveEndpoints` 返回错误、引擎启动失败。开关读不出来时不按"启用"处理。
+- `Init` 阶段的格式校验比 `strconv.ParseBool` 严格：只接受 `true` / `false` 和 `${...}` 模板，`yes`、`TRUE`、`1` 和带首尾空格的值一律在加载期拒绝。
+- 取值只在引擎启动时读取一次，不支持运行时热更新；改开关需要重启进程。
+
+同一套语义适用于所有实现 `types.GatedEndpoint` 的主动端点，当前为 `endpoint/redis_stream` 和 `endpoint/pipeline`。被动端点（如 `endpoint/http`）不走这条链路，也不支持该字段。
 
 ## 3. 投递与确认语义
 
@@ -95,6 +118,7 @@ flowchart TD
 
 ## 6. 兼容边界
 
+- 未配置 `enabled` 的既有端点定义行为不变，仍然无条件启动；该字段是 additive 的。
 - 未配置 `pendingRecovery` 时，读取和 ACK 行为与旧实现一致，不会自动重领历史 pending。
 - `ackOnFailure: true` 只为旧配置保留，会丢弃失败消息；它与 pending recovery 互斥。
 - `XAUTOCLAIM` 要求 Redis 6.2 或更高版本。
@@ -104,4 +128,8 @@ flowchart TD
 
 - `internal/builtin/nodes/endpoint/redis_stream_endpoint.go`
 - `internal/builtin/nodes/endpoint/redis_stream_endpoint_test.go`
+- `internal/builtin/nodes/endpoint/redis_stream_endpoint_enabled_test.go`
+- `internal/endpointgate/gate.go`、`internal/endpointgate/gate_test.go`
+- `matrix.go` 的 `StartActiveEndpoints`
+- `pkg/types/node.go` 的 `GatedEndpoint`
 - [Redis Stream Endpoint 使用指南](../guides/components/endpoint_redis_stream_guide.md)

@@ -53,6 +53,7 @@ func (n *MyNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 *   Must implement the `types.Endpoint` interface.
 *   If active (e.g., listening on a port, running background tasks), must implement the `types.ActiveEndpoint` interface (including `Start` and `Stop` methods).
 *   Add compile-time check: `var _ types.ActiveEndpoint = (*MyEndpoint)(nil)`.
+*   If the endpoint should be switchable off by configuration (off means no resource is even connected and no side effect is produced), also implement the optional `types.GatedEndpoint` interface: add an `Enabled string` config field, validate only its shape in `Init` with `asset.ValidateBoolExpression`, and return it verbatim from `EnableExpression()`. **Do not resolve the switch inside the node** — the engine resolves it in `StartActiveEndpoints`, because a node has no access to the engine config and environment scopes during `Init`. See section 2.1 of [Redis Stream Endpoint reliability](reference/40_redis_stream_endpoint_reliability.md).
 
 ### 2.3 Sub-Chain Trigger Nodes
 *   Nodes that trigger a sub-chain execution must implement the `types.SubChainTrigger` interface.

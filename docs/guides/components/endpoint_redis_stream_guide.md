@@ -60,6 +60,32 @@ relations:
 
 完整字段和默认值见 [Redis Stream Endpoint 可靠消费](../../reference/40_redis_stream_endpoint_reliability.md)。
 
+### 2.1 按配置关闭这个端点
+
+需要"某些环境不消费这条 Stream"时，加 `enabled`，不要为此单独拆一个 Matrix component：
+
+```json
+{
+  "configuration": {
+    "enabled": "${config:///billing.settlement_consumer_enabled?scope=engine,env&default=false}",
+    "redisClient": "ref://shared_redis",
+    "stream": "billing.settlement.events",
+    "group": "billing-settlement"
+  }
+}
+```
+
+关闭时引擎跳过启动：不连 Redis、不建 consumer group、不 claim pending、不产生 DLQ。开关按 `config://` 协议解析，因此上面这个键在部署里也可以直接用环境变量 `BILLING_SETTLEMENT_CONSUMER_ENABLED` 提供。
+
+使用时注意四点：
+
+1. 不写 `enabled` 就是始终启动，既有定义不受影响。
+2. 只支持 `scope=engine,env`。判定发生在引擎启动阶段，`business` 和 `node` 作用域此时没有上下文可读；`business:` 配置树里的键通过 `engine` 作用域仍然可读。
+3. 键不存在又没写 `default`，或解析出来不是布尔值，引擎会启动失败。开关读不出来时不会当成"启用"。
+4. 只在启动时读一次，改开关要重启进程。
+
+字面量只接受 `true` 和 `false`。`yes`、`TRUE`、`1` 这类写法在加载 DSL 时就会报错，不会拖到重启才发现。
+
 ## 3. 输入数据契约
 
 每条 Redis 消息会转换成一个 JSON `RuleMsg`：

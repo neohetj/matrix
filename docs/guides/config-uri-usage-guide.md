@@ -105,6 +105,25 @@ config:///service.endpoint?scope=engine,env
 
 如果某次解析后需要构造“剩余 scope”继续传递，底层会使用 `scope=-` 表示不再继续向下回退。这个行为更多是 helper / asset 内部机制，业务 DSL 一般不需要手写。
 
+### 4.4 主动端点的启用开关
+
+`endpoint/redis_stream` 和 `endpoint/pipeline` 的 `enabled` 字段也接受 `config://` 模板，用来决定引擎启不启动这个端点：
+
+```json
+{
+  "configuration": {
+    "enabled": "${config:///feature.consumer_enabled?scope=engine,env&default=false}"
+  }
+}
+```
+
+这条解析发生在引擎启动阶段，和上面几种用法有两点不同：
+
+- **只有 `engine` 和 `env` 两个作用域可用。** 此时还没有 `NodeCtx` 与 `RuleMsg`，`business` 和 `node` 作用域读不到东西。引擎会把 `MatrixConfig.Business` 作为 `engine` 作用域喂入，所以 `business:` 配置树里的键仍然读得到。
+- **解析失败不会回落成默认行为。** 键不存在又没写 `default`，或结果不是布尔值，引擎直接启动失败。
+
+语义细节见 [Redis Stream Endpoint 可靠消费](../reference/40_redis_stream_endpoint_reliability.md) 第 2.1 节。
+
 ## 5. 在 Go 代码中怎么读 (GoUsage)
 
 当前推荐通过 `assetCtx + helper` 读取，而不是手动拆 URI。
