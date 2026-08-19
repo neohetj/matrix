@@ -8,6 +8,13 @@ import (
 	"github.com/neohetj/matrix/pkg/types"
 )
 
+// publicErrorDetailsProvider is intentionally opt-in. Only errors that implement
+// this contract may place structured details on the public protocol boundary.
+// Arbitrary error text, causes and FailureInfo remain private.
+type publicErrorDetailsProvider interface {
+	PublicErrorDetails() any
+}
+
 // defaultPublicErrorMessage 把 HTTP 状态码映射为不包含内部实现细节的兜底文案。
 func defaultPublicErrorMessage(statusCode int) string {
 	switch statusCode {
@@ -44,6 +51,7 @@ func defaultPublicErrorMessage(statusCode int) string {
 // newPublicErrorResponse 只读取显式标记为安全的 UserMessage，不序列化 Cause 或 FailureInfo.Error。
 func newPublicErrorResponse(statusCode int, err error) ErrorResponse {
 	message := defaultPublicErrorMessage(statusCode)
+	var details any
 
 	var serviceErr *types.ServiceError
 	if errors.As(err, &serviceErr) {
@@ -51,9 +59,14 @@ func newPublicErrorResponse(statusCode int, err error) ErrorResponse {
 			message = publicMessage
 		}
 	}
+	var provider publicErrorDetailsProvider
+	if errors.As(err, &provider) {
+		details = provider.PublicErrorDetails()
+	}
 
 	return ErrorResponse{
 		Code:    statusCode,
 		Message: message,
+		Details: details,
 	}
 }

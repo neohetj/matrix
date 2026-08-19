@@ -135,7 +135,7 @@ var DefInvalidTenantID = &types.Fault{
 1. `Fault.Code` / `FailureInfo.Code` 先通过 DSL `errorMappings` 映射 HTTP status。
 2. 宿主如果注入 `ServiceErrorAspect`，可按结构化错误码把 status 和 `UserMessage` 映射为产品可展示结果。
 3. 未配置产品映射时，Matrix 按最终 HTTP status 使用安全兜底文案。
-4. HTTP writer 只读取 `ServiceError.UserMessage`；普通 `error.Error()`、`Cause` 和 `FailureInfo.Error` 不进入响应。
+4. HTTP writer 只读取 `ServiceError.UserMessage`，并可从错误链的 `PublicErrorDetails() any` 读取显式公开的结构化 `details`；普通 `error.Error()`、`Cause` 和 `FailureInfo.Error` 不进入响应。
 
 默认兜底映射保持协议级、与具体业务无关：
 
@@ -156,9 +156,14 @@ Matrix 默认响应结构保持兼容：
 ```json
 {
   "code": 400,
-  "message": "invalid request"
+  "message": "invalid request",
+  "details": {
+    "reason_code": "EXPLICIT_PUBLIC_REASON"
+  }
 }
 ```
+
+`details` 为可选字段；上例只适用于错误类型主动实现 public-details provider 的场景。没有该接口时响应仍只有 `code/message`。
 
 例如请求体里的 Product URL 解码失败时，`FailureInfo` 仍保留 `202501004` 和原始解码链路，公开响应只返回安全文案，不再出现字段路径、SID、URL 原值或重复的 `cause`。
 

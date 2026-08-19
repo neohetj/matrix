@@ -266,7 +266,7 @@ func (n *HttpEndpointNode) GetTargetChainID() string {
 type ErrorResponse struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
-	Details string `json:"details,omitempty"`
+	Details any    `json:"details,omitempty"`
 }
 
 // writeResponse 统一写入成功或失败响应；失败响应不会序列化内部错误原文。

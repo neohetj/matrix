@@ -15,6 +15,9 @@ tags:
 
 # === Node Relations: 定义与其他文档节点的关系 ===
 relations:
+  - type: "is_part_of"
+    target_uuid: "c5d6e7f8-a9b0-c1d2-e3f4-a5b6c7d8e9f0"
+    description: "HttpEndpoint 实现事实属于 Matrix Reference 文档库。"
   - type: "supports"
     target_uuid: "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
     description: "本文档深入解析 HttpEndpoint 组件指南背后的实现原理。"
@@ -139,7 +142,7 @@ err = message.SetInMsg(msg, field.BindPath, convertedVal)
 2. 可选调用宿主注入的 `ServiceErrorAspect`，按 `FailureInfo.Code` 映射安全文案和 status。
 3. 调用公开错误呈现层写出 `{code, message, details?}`。
 
-公开 writer 不调用 `ServiceError.Error()`，也不序列化普通 `error.Error()`。未知错误按 HTTP status fail closed，例如 `400` 返回 `invalid request`，`500` 返回 `internal server error`。只有 `ServiceError.UserMessage` 属于显式安全字段；`details` 也只能由调用方显式提供公开内容。
+公开 writer 不调用 `ServiceError.Error()`，也不序列化普通 `error.Error()`。未知错误按 HTTP status fail closed，例如 `400` 返回 `invalid request`，`500` 返回 `internal server error`。只有 `ServiceError.UserMessage` 属于显式安全文案；结构化 `details` 仅在错误链显式实现 `PublicErrorDetails() any` 时序列化，普通 cause、字符串 details 或内部 metadata 不会被自动公开。
 
 这条边界保留了内部诊断能力，同时避免将 DataT bind path、SID、原始 URL、存储信息或多层 `cause` 暴露给浏览器。产品级业务 code / 本地化文案仍由模块或 server adapter 负责，Matrix 不硬编码产品身份。
 

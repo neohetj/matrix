@@ -17,6 +17,18 @@ type recordingServiceErrorAspect struct {
 	received *types.ServiceError
 }
 
+type explicitPublicDetailsError struct{}
+
+func (explicitPublicDetailsError) Error() string { return "private database diagnostic" }
+func (explicitPublicDetailsError) PublicErrorDetails() any {
+	return map[string]any{
+		"reason_code":       "ENTRY_REVISION_STALE",
+		"resource_kind":     "entry",
+		"expected_revision": int64(3),
+		"actual_revision":   int64(4),
+	}
+}
+
 func (a *recordingServiceErrorAspect) Handle(err *types.ServiceError) error {
 	a.received = err
 	return fmt.Errorf("mapped product error: %w", &types.ServiceError{
@@ -63,6 +75,33 @@ func TestWriteResponse_HidesPlainInternalError(t *testing.T) {
 	}
 	if strings.Contains(recorder.Body.String(), "password") {
 		t.Fatalf("response exposed internal error: %s", recorder.Body.String())
+	}
+}
+
+func TestWriteResponse_IncludesOnlyExplicitPublicDetails(t *testing.T) {
+	node := &HttpEndpointNode{}
+	recorder := httptest.NewRecorder()
+	serviceErr := &types.ServiceError{
+		ResponseCode: http.StatusConflict,
+		UserMessage:  "request conflict",
+		Cause:        explicitPublicDetailsError{},
+	}
+
+	node.writeResponse(recorder, http.StatusConflict, nil, nil, serviceErr)
+
+	var response map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	details, ok := response["details"].(map[string]any)
+	if !ok {
+		t.Fatalf("details=%#v, want object", response["details"])
+	}
+	if details["reason_code"] != "ENTRY_REVISION_STALE" || details["resource_kind"] != "entry" {
+		t.Fatalf("details=%#v", details)
+	}
+	if strings.Contains(recorder.Body.String(), "database diagnostic") {
+		t.Fatalf("response exposed internal cause: %s", recorder.Body.String())
 	}
 }
 
