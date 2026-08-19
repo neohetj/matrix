@@ -41,19 +41,27 @@ func defaultPublicErrorMessage(statusCode int) string {
 	}
 }
 
-// newPublicErrorResponse 只读取显式标记为安全的 UserMessage，不序列化 Cause 或 FailureInfo.Error。
+// newPublicErrorResponse 只读取显式标记为安全的 UserMessage 与结构化业务错误码，
+// 不序列化 Cause 或 FailureInfo.Error 等内部细节。
 func newPublicErrorResponse(statusCode int, err error) ErrorResponse {
 	message := defaultPublicErrorMessage(statusCode)
+	errorCode := ""
 
 	var serviceErr *types.ServiceError
 	if errors.As(err, &serviceErr) {
 		if publicMessage := strings.TrimSpace(serviceErr.UserMessage); publicMessage != "" {
 			message = publicMessage
 		}
+		if serviceErr.FailureInfo != nil {
+			if code := strings.TrimSpace(serviceErr.FailureInfo.Code); code != "" {
+				errorCode = code
+			}
+		}
 	}
 
 	return ErrorResponse{
-		Code:    statusCode,
-		Message: message,
+		Code:      statusCode,
+		Message:   message,
+		ErrorCode: errorCode,
 	}
 }

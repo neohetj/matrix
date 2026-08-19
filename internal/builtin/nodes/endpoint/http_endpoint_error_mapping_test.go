@@ -138,8 +138,58 @@ func TestCreateServiceErrorFromExecErr_MapsFaultCode(t *testing.T) {
 	if serviceErr.FailureInfo.Code != "40005000" {
 		t.Fatalf("expected failure code 40005000, got %q", serviceErr.FailureInfo.Code)
 	}
-	if serviceErr.UserMessage != "invalid request" {
-		t.Fatalf("expected safe public message, got %q", serviceErr.UserMessage)
+	// 结构化 fault 的 Message 应作为面向用户的公开文案透出，而非默认兜底文案。
+	if serviceErr.UserMessage != "bad request from flow" {
+		t.Fatalf("expected fault message as public message, got %q", serviceErr.UserMessage)
+	}
+}
+
+func TestCreateServiceErrorFromExecErr_KeepsDefaultMessageForPlainError(t *testing.T) {
+	node := &HttpEndpointNode{
+		defaultErrorCode: http.StatusBadGateway,
+	}
+
+	serviceErr := node.createServiceErrorFromExecErr(errors.New("internal db timeout"))
+	if serviceErr == nil {
+		t.Fatalf("expected service error, got nil")
+	}
+	if serviceErr.ResponseCode != http.StatusBadGateway {
+		t.Fatalf("expected response code %d, got %d", http.StatusBadGateway, serviceErr.ResponseCode)
+	}
+	if serviceErr.FailureInfo == nil || serviceErr.FailureInfo.Code != string(cnst.CodeInternalError) {
+		t.Fatalf("expected internal error code, got %+v", serviceErr.FailureInfo)
+	}
+	// 普通内部错误不泄露原因，保持默认兜底文案。
+	if serviceErr.UserMessage != "service unavailable" {
+		t.Fatalf("expected safe default message, got %q", serviceErr.UserMessage)
+	}
+}
+
+func TestCreateServiceErrorFromMsg_PrefersFaultUserMessage(t *testing.T) {
+	node := &HttpEndpointNode{
+		faultCodeMap: map[string]int32{
+			"REDEMPTION_CODE_INCORRECT": http.StatusUnprocessableEntity,
+		},
+		defaultErrorCode: http.StatusBadGateway,
+	}
+
+	msg := types.NewMsg("test", "", types.Metadata{
+		types.MetaErrorCode:        "REDEMPTION_CODE_INCORRECT",
+		types.MetaErrorMessage:     "兑换码输入错误",
+	}, nil)
+
+	serviceErr := node.createServiceErrorFromMsg(msg, "boom")
+	if serviceErr == nil {
+		t.Fatalf("expected service error, got nil")
+	}
+	if serviceErr.ResponseCode != http.StatusUnprocessableEntity {
+		t.Fatalf("expected response code %d, got %d", http.StatusUnprocessableEntity, serviceErr.ResponseCode)
+	}
+	if serviceErr.FailureInfo.Code != "REDEMPTION_CODE_INCORRECT" {
+		t.Fatalf("expected failure code, got %q", serviceErr.FailureInfo.Code)
+	}
+	if serviceErr.UserMessage != "兑换码输入错误" {
+		t.Fatalf("expected fault user message, got %q", serviceErr.UserMessage)
 	}
 }
 

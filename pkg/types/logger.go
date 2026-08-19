@@ -181,4 +181,6 @@ const (
 	MetaErrorTimestamp = "error_timestamp"
 	// MetaErrorCode is the key for the structured error code.
 	MetaErrorCode = "error_code"
+	// MetaErrorMessage is the key for the user-facing message carried by a structured fault.
+	MetaErrorMessage = "error_message"
 )
