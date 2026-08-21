@@ -93,6 +93,8 @@ convertedVal, err := convertValue(rawVal, field.Type)
 err = message.SetInMsg(msg, field.BindPath, convertedVal)
 ```
 
+当 provider 返回合法的 `null` 时，`Asset[T]` 只允许把它解析为可空目标类型（interface、pointer、map、slice、channel 或 function）的零值。这样，首屏请求中尚未生成的游标等可选字段可以继续映射为 `nil`；若目标是 string、number、bool 等非空类型，仍返回类型不匹配错误，不会把 `null` 隐式转换成业务值。
+
 也就是说，当前实现的关键字段是：
 
 - `name`

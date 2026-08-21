@@ -226,6 +226,15 @@ func (a Asset[T]) Resolve(ctx *AssetContext) (T, error) {
 	if err != nil {
 		return zero, err
 	}
+	if val == nil {
+		targetType := reflect.TypeFor[T]()
+		if targetType != nil {
+			switch targetType.Kind() {
+			case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+				return zero, nil
+			}
+		}
+	}
 
 	// 4. 类型转换
 	if tVal, ok := val.(T); ok {

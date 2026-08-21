@@ -199,6 +199,8 @@ func (n *HttpEndpointNode) convertRequestToRuleMsg(r *http.Request) (types.RuleM
 
 通过这种方式，`endpoint/http` 把一个扁平的 HTTP 请求，根据声明式 `bindPath` 规则，重组为结构化 `RuleMsg`。这也是为什么当前所有 HTTP 映射文档都应围绕 `EndpointIOField` / `EndpointIOPacket` 来理解，而不是继续沿用旧版 `mapping.to` 语法。
 
+对于游标、父级 ID 等可选字段，目标 CoreObj 应声明 pointer、interface、map 或 slice 等可空字段。请求值为 `null` 时，Matrix 会保留其 `nil` 语义；不要把可空值绑定到 string、number 或 bool 字段，也不要用空字符串伪装“未提供”。
+
 <!-- 链接定义区域 -->
 [Guide-ActionLog]: ./components/action_log_guide.md
 [Guide-ExternalHttpClient]: ./components/external_http_client_guide.md

@@ -21,6 +21,11 @@ type rulechainValidatorProfile struct {
 	Tags     []string `json:"tags"`
 }
 
+type optionalCursorRequest struct {
+	Query  string  `json:"query"`
+	Cursor *string `json:"cursor"`
+}
+
 func registerTestCoreObjDef(t *testing.T, sample any, sid string) {
 	t.Helper()
 	registry.Default.CoreObjRegistry.Register(types.NewCoreObjDef(sample, sid, "test coreobj def"))
@@ -146,6 +151,33 @@ func TestProcessOutbound(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, expectedSlice, *resultSlice)
 	})
+}
+
+func TestProcessInboundPreservesNilForOptionalPointerField(t *testing.T) {
+	const requestSID = "OptionalCursorRequest_Test"
+	registerTestCoreObjDef(t, &optionalCursorRequest{}, requestSID)
+
+	ctx := registry.NewMinimalNodeCtx("test-node")
+	msg := setupTestMsg(t)
+	rawItem, err := msg.DataT().NewItem(cnst.SID_MAP_STRING_INTERFACE, "rawSearch")
+	require.NoError(t, err)
+	rawSearch := map[string]any{"query": "Turix", "cursor": nil}
+	require.NoError(t, rawItem.SetBody(&rawSearch))
+
+	packet := types.EndpointIOPacket{Fields: []types.EndpointIOField{
+		{Name: "rulemsg://dataT/rawSearch.query?sid=" + cnst.SID_MAP_STRING_INTERFACE, BindPath: "rulemsg://dataT/searchRequest.query?sid=" + requestSID},
+		{Name: "rulemsg://dataT/rawSearch.cursor?sid=" + cnst.SID_MAP_STRING_INTERFACE, BindPath: "rulemsg://dataT/searchRequest.cursor?sid=" + requestSID},
+	}}
+
+	err = helper.ProcessInbound(ctx, msg, packet, helper.RuleMsgProvider{Msg: msg})
+	require.NoError(t, err)
+
+	item, found := msg.DataT().Get("searchRequest")
+	require.True(t, found)
+	request, ok := item.Body().(*optionalCursorRequest)
+	require.True(t, ok)
+	assert.Equal(t, "Turix", request.Query)
+	assert.Nil(t, request.Cursor)
 }
 
 func TestProcessInbound_TypedCollectionPassthroughAndObjectConversion(t *testing.T) {
