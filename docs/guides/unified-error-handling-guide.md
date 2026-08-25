@@ -136,6 +136,7 @@ var DefInvalidTenantID = &types.Fault{
 2. 宿主如果注入 `ServiceErrorAspect`，可按结构化错误码把 status 和 `UserMessage` 映射为产品可展示结果。
 3. 未配置产品映射时，Matrix 按最终 HTTP status 使用安全兜底文案。
 4. HTTP writer 只读取 `ServiceError.UserMessage`，并可从错误链的 `PublicErrorDetails() any` 读取显式公开的结构化 `details`；普通 `error.Error()`、`Cause` 和 `FailureInfo.Error` 不进入响应。
+5. 结构化 `Fault` 的 `Message` 会作为 `ServiceError.UserMessage` 透出（经 `HandleError` 写入 metadata 或随 execErr 传递），响应同时携带 `error_code`（`FailureInfo.Code`），产品侧可直接消费，无需解析文本；无结构化 fault 时保持默认兜底文案。
 
 默认兜底映射保持协议级、与具体业务无关：
 
@@ -151,7 +152,7 @@ var DefInvalidTenantID = &types.Fault{
 | 其他 `4xx` | `request failed` |
 | 其他 `5xx` | `internal server error` |
 
-Matrix 默认响应结构保持兼容：
+无结构化 fault 时，响应保持兼容结构：
 
 ```json
 {
@@ -163,7 +164,19 @@ Matrix 默认响应结构保持兼容：
 }
 ```
 
-`details` 为可选字段；上例只适用于错误类型主动实现 public-details provider 的场景。没有该接口时响应仍只有 `code/message`。
+存在结构化 fault 时，响应透出业务文案与业务码：
+
+```json
+{
+  "code": 422,
+  "message": "兑换码输入错误",
+  "error_code": "REDEMPTION_CODE_INCORRECT"
+}
+```
+
+`error_code` 字段仅当 `FailureInfo.Code` 非空时输出（`omitempty`），不影响既有响应结构兼容。
+
+`details` 为可选字段，只适用于错误类型主动实现 public-details provider 的场景；`error_code` 与 `details` 可独立出现。两者都不存在时，响应仍只有 `code/message`。
 
 例如请求体里的 Product URL 解码失败时，`FailureInfo` 仍保留 `202501004` 和原始解码链路，公开响应只返回安全文案，不再出现字段路径、SID、URL 原值或重复的 `cause`。
 

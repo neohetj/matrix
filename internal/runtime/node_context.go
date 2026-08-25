@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -199,6 +200,10 @@ func (ctx *DefaultNodeCtx) HandleError(msg types.RuleMsg, err error) {
 	var fault *types.Fault
 	if errors.As(err, &fault) {
 		metadata[types.MetaErrorCode] = string(fault.Code)
+		// 保留 fault 的面向用户文案，供端点层在生成公开错误响应时透出。
+		if publicMessage := strings.TrimSpace(fault.Message); publicMessage != "" {
+			metadata[types.MetaErrorMessage] = publicMessage
+		}
 	}
 
 	if def := ctx.SelfDef(); def != nil {

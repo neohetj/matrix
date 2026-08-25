@@ -144,7 +144,7 @@ err = message.SetInMsg(msg, field.BindPath, convertedVal)
 2. 可选调用宿主注入的 `ServiceErrorAspect`，按 `FailureInfo.Code` 映射安全文案和 status。
 3. 调用公开错误呈现层写出 `{code, message, details?}`。
 
-公开 writer 不调用 `ServiceError.Error()`，也不序列化普通 `error.Error()`。未知错误按 HTTP status fail closed，例如 `400` 返回 `invalid request`，`500` 返回 `internal server error`。只有 `ServiceError.UserMessage` 属于显式安全文案；结构化 `details` 仅在错误链显式实现 `PublicErrorDetails() any` 时序列化，普通 cause、字符串 details 或内部 metadata 不会被自动公开。
+公开 writer 不调用 `ServiceError.Error()`，也不序列化普通 `error.Error()`。未知错误按 HTTP status fail closed，例如 `400` 返回 `invalid request`，`500` 返回 `internal server error`。只有 `ServiceError.UserMessage` 属于显式安全文案；结构化 `details` 仅在错误链显式实现 `PublicErrorDetails() any` 时序列化，普通 cause、字符串 details 或内部 metadata 不会被自动公开。结构化 `Fault` 的 `Message` 会作为 `UserMessage` 透出（`HandleError` 将其写入 `MetaErrorMessage` metadata，`createServiceErrorFromExecErr` 直接从 fault 读取），响应同时携带 `error_code`（`FailureInfo.Code`，如 `REDEMPTION_CODE_INCORRECT`）供产品侧直接消费。
 
 这条边界保留了内部诊断能力，同时避免将 DataT bind path、SID、原始 URL、存储信息或多层 `cause` 暴露给浏览器。产品级业务 code / 本地化文案仍由模块或 server adapter 负责，Matrix 不硬编码产品身份。
 
