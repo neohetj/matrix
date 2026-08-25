@@ -66,8 +66,9 @@ type McpToolContent struct {
 // McpToolResult is the Matrix adapter-neutral representation of a tool call
 // result before JSON-RPC serialization.
 type McpToolResult struct {
-	Content []McpToolContent `json:"content"`
-	IsError bool             `json:"isError,omitempty"`
+	Content           []McpToolContent `json:"content"`
+	StructuredContent map[string]any   `json:"structuredContent,omitempty"`
+	IsError           bool             `json:"isError,omitempty"`
 }
 
 // McpEndpoint is the runtime contract implemented by endpoint/mcp nodes.

@@ -4,7 +4,8 @@ type: "Reference"
 title: "Reference: MCP Endpoint Adapter"
 status: "Draft"
 owner: "neohetj"
-version: "0.1.0"
+version: "0.2.0"
+updated_at: "2026-08-24"
 tags:
   - "matrix"
   - "mcp"
@@ -49,6 +50,16 @@ Transport host ownership:
 | `tools/list` | Returns only module catalog tools after adapter validation. |
 | `tools/call` | Dispatches one whitelisted tool to its configured target. |
 
+## Tool Result Contract
+
+`types.McpToolResult` preserves the MCP result fields independently:
+
+- `content`: ordinary text/image/resource blocks consumed by the model;
+- `structuredContent`: optional JSON object for machine-readable output and generic presentation metadata;
+- `isError`: optional tool-level failure marker.
+
+The protocol server serializes `structuredContent` at the top level of the `tools/call` result. Matrix does not interpret provider-specific fields and does not replace text content when structured content is present. Module handlers may therefore return a generic contract such as `structuredContent.presentation.sources`, while the consuming Agent Core remains responsible for validation, budgets, persistence and UI projection.
+
 ## Target Dispatch
 
 Current target support:
@@ -84,3 +95,5 @@ Focused Matrix tests:
 ```bash
 go test ./pkg/mcp ./internal/builtin/nodes/endpoint
 ```
+
+`pkg/mcp/protocol_test.go` also verifies that handler-produced `structuredContent` survives HTTP JSON-RPC serialization without dropping the ordinary content blocks.

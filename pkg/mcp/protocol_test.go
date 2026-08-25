@@ -151,3 +151,41 @@ func TestServerServeHTTPPropagatesIncomingHeadersToGatewayAssertionContext(t *te
 		t.Fatalf("tools/call missing propagated gateway header: %s", rec.Body.String())
 	}
 }
+
+func TestServerServeHTTPPreservesStructuredToolContent(t *testing.T) {
+	endpoint, err := NewEndpoint(types.McpEndpointNodeConfiguration{
+		ServerName: "knowledge",
+		Tools: []types.McpToolDefinition{{
+			Name:      "kb_register_citations",
+			Target:    types.McpTargetSpec{Kind: TargetKindHandler, ID: "knowledge/register-citations"},
+			RiskLevel: "read",
+		}},
+	}, WithTargetDispatcher(TargetDispatcherFunc(func(context.Context, DispatchRequest) (types.McpToolResult, bool, error) {
+		return types.McpToolResult{
+			Content: []types.McpToolContent{{Type: "text", Text: "citations registered"}},
+			StructuredContent: map[string]any{
+				"presentation": map[string]any{
+					"sources": []any{map[string]any{"id": "doc-1", "title": "Policy"}},
+				},
+			},
+		}, true, nil
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := NewServer([]ToolProvider{endpoint})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp/knowledge", bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"kb_register_citations","arguments":{}}}`))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"structuredContent":{"presentation":{"sources":[{"id":"doc-1","title":"Policy"}]}}`) {
+		t.Fatalf("tools/call dropped structured content: %s", rec.Body.String())
+	}
+}
