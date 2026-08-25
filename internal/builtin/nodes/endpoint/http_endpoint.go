@@ -128,9 +128,17 @@ func (n *HttpEndpointNode) createServiceErrorFromMsg(msg types.RuleMsg, errStr s
 		}
 	}
 
+	userMessage := defaultPublicErrorMessage(int(responseCode))
+	// HandleError 会把结构化 fault 的面向用户文案写入 MetaErrorMessage，优先透出。
+	if val, ok := msg.Metadata()[types.MetaErrorMessage]; ok {
+		if publicMessage := strings.TrimSpace(val); publicMessage != "" {
+			userMessage = publicMessage
+		}
+	}
+
 	return &types.ServiceError{
 		ResponseCode: responseCode,
-		UserMessage:  defaultPublicErrorMessage(int(responseCode)),
+		UserMessage:  userMessage,
 		FailureInfo:  failureInfo,
 	}
 }
@@ -152,9 +160,18 @@ func (n *HttpEndpointNode) createServiceErrorFromExecErr(execErr error) *types.S
 		}
 	}
 
+	userMessage := defaultPublicErrorMessage(int(responseCode))
+	// 结构化 fault 由业务定义 Message 作为面向用户的公开文案，优先透出；
+	// 非 fault 的普通内部错误保持默认兜底文案，不泄露内部细节。
+	if fault != nil {
+		if publicMessage := strings.TrimSpace(fault.Message); publicMessage != "" {
+			userMessage = publicMessage
+		}
+	}
+
 	return &types.ServiceError{
 		ResponseCode: responseCode,
-		UserMessage:  defaultPublicErrorMessage(int(responseCode)),
+		UserMessage:  userMessage,
 		Cause:        execErr,
 		FailureInfo:  failureInfo,
 	}
@@ -263,10 +280,12 @@ func (n *HttpEndpointNode) GetTargetChainID() string {
 }
 
 // ErrorResponse is the standard JSON structure for error responses.
+// ErrorCode 仅当存在结构化业务 fault（如 REDEMPTION_CODE_INCORRECT）时输出。
 type ErrorResponse struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-	Details any    `json:"details,omitempty"`
+	Code      int    `json:"code"`
+	Message   string `json:"message"`
+	Details   any    `json:"details,omitempty"`
+	ErrorCode string `json:"error_code,omitempty"`
 }
 
 // writeResponse 统一写入成功或失败响应；失败响应不会序列化内部错误原文。
