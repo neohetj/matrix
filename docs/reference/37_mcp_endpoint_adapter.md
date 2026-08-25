@@ -68,9 +68,31 @@ Current target support:
 | --- | --- | --- |
 | `http_api` | Implemented | Calls an existing module HTTP API using configured base URL / method / path. |
 | `external_http` | Implemented | Calls an approved external HTTP URL using the same HTTP dispatch path. |
-| `rulechain` | Reserved | Returns a tool error until a runtime-bound adapter is designed and approved. |
+| `rulechain` | Implemented with host binding | Dispatches through the module-supplied `TargetDispatcher`; returns a tool error when the host did not bind one. |
+| `handler` | Implemented with host binding | Uses the same `TargetDispatcher` contract for module-local handlers. |
 
 The adapter rejects MVP tools whose `riskLevel` is not `read`.
+
+## Input Schema Boundary
+
+Each non-empty tool `inputSchema` is compiled and validated when the endpoint is
+created. An invalid schema prevents endpoint creation.
+
+For every `tools/call`, Matrix validates the JSON-decoded `arguments` against
+that compiled schema before resolving auth context or invoking HTTP,
+`rulechain`, or `handler` targets. Type mismatches, missing required fields, and
+unexpected properties return an MCP tool result with `isError=true`; the target
+is not invoked. Matrix does not coerce a number into a declared string merely
+because a downstream typed object could accept the converted representation.
+
+```mermaid
+flowchart LR
+  Call["tools/call"] --> Security["Reject caller-supplied security context"]
+  Security --> Schema["Validate arguments against inputSchema"]
+  Schema -->|"invalid"| ToolError["MCP tool error; no dispatch"]
+  Schema -->|"valid"| Auth["Resolve trusted auth context"]
+  Auth --> Dispatch["HTTP or module TargetDispatcher"]
+```
 
 ## Security Boundary
 
