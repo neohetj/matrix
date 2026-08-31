@@ -1,0 +1,6 @@
+schema: keymaker/skill-manifest/v1
+id: matrix-rulechain-validator
+revision: v1
+display:
+  name: Matrix DSL 契约审查
+  description: 只读校验 Matrix endpoint、rulechain、函数节点签名与数据映射契约。
