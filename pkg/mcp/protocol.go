@@ -217,6 +217,7 @@ func (s *Server) handleToolsList(ctx context.Context) (map[string]any, error) {
 				Title:       tool.Title,
 				Description: tool.Description,
 				InputSchema: inputSchemaOrEmpty(tool.InputSchema),
+				Annotations: protocolAnnotations(tool),
 			})
 		}
 	}
@@ -287,10 +288,28 @@ type jsonRPCErrorObject struct {
 }
 
 type protocolTool struct {
-	Name        string         `json:"name"`
-	Title       string         `json:"title,omitempty"`
-	Description string         `json:"description,omitempty"`
-	InputSchema map[string]any `json:"inputSchema"`
+	Name        string                  `json:"name"`
+	Title       string                  `json:"title,omitempty"`
+	Description string                  `json:"description,omitempty"`
+	InputSchema map[string]any          `json:"inputSchema"`
+	Annotations protocolToolAnnotations `json:"annotations"`
+}
+
+type protocolToolAnnotations struct {
+	ReadOnlyHint    bool `json:"readOnlyHint"`
+	DestructiveHint bool `json:"destructiveHint"`
+	IdempotentHint  bool `json:"idempotentHint"`
+	OpenWorldHint   bool `json:"openWorldHint"`
+}
+
+func protocolAnnotations(tool types.McpToolDefinition) protocolToolAnnotations {
+	readOnly := normalizedRiskLevel(tool) == "read"
+	return protocolToolAnnotations{
+		ReadOnlyHint:    readOnly,
+		DestructiveHint: !readOnly,
+		IdempotentHint:  readOnly,
+		OpenWorldHint:   true,
+	}
 }
 
 func inputSchemaOrEmpty(schema map[string]any) map[string]any {

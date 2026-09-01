@@ -43,12 +43,14 @@ type McpToolDefinition struct {
 
 // McpTargetSpec declares the existing capability path behind an MCP tool.
 type McpTargetSpec struct {
-	Kind   string            `json:"kind"`
-	ID     string            `json:"id,omitempty"`
-	Method string            `json:"method,omitempty"`
-	Path   string            `json:"path,omitempty"`
-	URL    string            `json:"url,omitempty"`
-	Params map[string]string `json:"params,omitempty"`
+	Kind           string            `json:"kind"`
+	ID             string            `json:"id,omitempty"`
+	Method         string            `json:"method,omitempty"`
+	Path           string            `json:"path,omitempty"`
+	URL            string            `json:"url,omitempty"`
+	Params         map[string]string `json:"params,omitempty"`
+	PathArguments  map[string]string `json:"pathArguments,omitempty"`
+	QueryArguments map[string]string `json:"queryArguments,omitempty"`
 }
 
 // McpOutputSpec declares lightweight output normalization hints.

@@ -197,8 +197,14 @@ func (e *Endpoint) validate() error {
 			return fmt.Errorf("duplicate mcp tool %q", name)
 		}
 		seen[name] = struct{}{}
-		if !isReadOnlyTool(tool) {
-			return fmt.Errorf("mcp tool %q must declare riskLevel=read for MVP", name)
+		switch normalizedRiskLevel(tool) {
+		case "read":
+		case "write":
+			if strings.TrimSpace(tool.AuthContext) == "" {
+				return fmt.Errorf("mcp write tool %q must declare a trusted authContext", name)
+			}
+		default:
+			return fmt.Errorf("mcp tool %q must declare riskLevel=read or write", name)
 		}
 		inputSchema, err := validateInputSchema(name, tool.InputSchema)
 		if err != nil {
@@ -214,14 +220,14 @@ func (e *Endpoint) validate() error {
 }
 
 func (e *Endpoint) callHTTP(ctx context.Context, tool types.McpToolDefinition, args map[string]any, authContext ResolvedAuthContext) (types.McpToolResult, error) {
-	method, targetURL, err := e.resolveHTTPTarget(tool)
+	method, targetURL, err := e.resolveHTTPTarget(tool, args)
 	if err != nil {
 		return errorToolResult(err.Error()), nil
 	}
 
 	var body io.Reader
 	if method != http.MethodGet && method != http.MethodHead {
-		payload, err := json.Marshal(args)
+		payload, err := json.Marshal(bodyArguments(tool.Target, args))
 		if err != nil {
 			return types.McpToolResult{}, err
 		}
@@ -257,7 +263,7 @@ func (e *Endpoint) callHTTP(ctx context.Context, tool types.McpToolDefinition, a
 	return NewHTTPToolResult(resp.StatusCode, data, limit), nil
 }
 
-func (e *Endpoint) resolveHTTPTarget(tool types.McpToolDefinition) (string, string, error) {
+func (e *Endpoint) resolveHTTPTarget(tool types.McpToolDefinition, args map[string]any) (string, string, error) {
 	method := strings.ToUpper(strings.TrimSpace(tool.Target.Method))
 	path := strings.TrimSpace(tool.Target.Path)
 	if method == "" || path == "" {
@@ -282,7 +288,8 @@ func (e *Endpoint) resolveHTTPTarget(tool types.McpToolDefinition) (string, stri
 		if _, err := url.ParseRequestURI(resolved); err != nil {
 			return "", "", fmt.Errorf("invalid MCP tool target url: %w", err)
 		}
-		return method, resolved, nil
+		boundURL, err := bindHTTPArguments(resolved, tool.Target, args)
+		return method, boundURL, err
 	}
 	if path == "" {
 		return "", "", fmt.Errorf("mcp tool %q must define target.path, target.url, or target.id", tool.Name)
@@ -311,7 +318,8 @@ func (e *Endpoint) resolveHTTPTarget(tool types.McpToolDefinition) (string, stri
 	if err != nil {
 		return "", "", fmt.Errorf("invalid MCP tool target path: %w", err)
 	}
-	return method, u.ResolveReference(ref).String(), nil
+	boundURL, err := bindHTTPArguments(u.ResolveReference(ref).String(), tool.Target, args)
+	return method, boundURL, err
 }
 
 func (e *Endpoint) resolveAuthContext(ctx context.Context, authContextName string) (ResolvedAuthContext, error) {
@@ -469,8 +477,87 @@ func splitTargetID(id string) (string, string) {
 	}
 }
 
-func isReadOnlyTool(tool types.McpToolDefinition) bool {
-	return strings.EqualFold(strings.TrimSpace(tool.RiskLevel), "read")
+func normalizedRiskLevel(tool types.McpToolDefinition) string {
+	return strings.ToLower(strings.TrimSpace(tool.RiskLevel))
+}
+
+func bindHTTPArguments(rawURL string, target types.McpTargetSpec, arguments map[string]any) (string, error) {
+	resolved := rawURL
+	for pathName, argumentName := range target.PathArguments {
+		value, found := arguments[strings.TrimSpace(argumentName)]
+		if !found || strings.TrimSpace(fmt.Sprint(value)) == "" {
+			return "", fmt.Errorf("mcp target path argument %q is required", argumentName)
+		}
+		escaped := url.PathEscape(fmt.Sprint(value))
+		colonToken := ":" + strings.TrimSpace(pathName)
+		braceToken := "{" + strings.TrimSpace(pathName) + "}"
+		if !strings.Contains(resolved, colonToken) && !strings.Contains(resolved, braceToken) {
+			return "", fmt.Errorf("mcp target path does not contain argument %q", pathName)
+		}
+		resolved = strings.ReplaceAll(resolved, colonToken, escaped)
+		resolved = strings.ReplaceAll(resolved, braceToken, escaped)
+	}
+	u, err := url.Parse(resolved)
+	if err != nil {
+		return "", fmt.Errorf("invalid resolved MCP target URL: %w", err)
+	}
+	query := u.Query()
+	for queryName, argumentName := range target.QueryArguments {
+		value, found := arguments[strings.TrimSpace(argumentName)]
+		if !found || value == nil {
+			continue
+		}
+		values, err := httpArgumentValues(value)
+		if err != nil {
+			return "", fmt.Errorf("mcp target query argument %q: %w", argumentName, err)
+		}
+		for _, item := range values {
+			if strings.TrimSpace(item) != "" {
+				query.Add(queryName, item)
+			}
+		}
+	}
+	u.RawQuery = query.Encode()
+	return u.String(), nil
+}
+
+func httpArgumentValues(value any) ([]string, error) {
+	switch typed := value.(type) {
+	case string:
+		return []string{typed}, nil
+	case bool:
+		return []string{fmt.Sprint(typed)}, nil
+	case float64, float32, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return []string{fmt.Sprint(typed)}, nil
+	case []string:
+		return typed, nil
+	case []any:
+		values := make([]string, 0, len(typed))
+		for _, item := range typed {
+			items, err := httpArgumentValues(item)
+			if err != nil || len(items) != 1 {
+				return nil, errors.New("must contain only scalar values")
+			}
+			values = append(values, items[0])
+		}
+		return values, nil
+	default:
+		return nil, errors.New("must be a scalar or scalar list")
+	}
+}
+
+func bodyArguments(target types.McpTargetSpec, arguments map[string]any) map[string]any {
+	body := make(map[string]any, len(arguments))
+	for key, value := range arguments {
+		body[key] = value
+	}
+	for _, argumentName := range target.PathArguments {
+		delete(body, argumentName)
+	}
+	for _, argumentName := range target.QueryArguments {
+		delete(body, argumentName)
+	}
+	return body
 }
 
 func validateInputSchema(toolName string, schema map[string]any) (*openapi3.Schema, error) {

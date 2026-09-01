@@ -4,8 +4,8 @@ type: "Reference"
 title: "Reference: MCP Endpoint Adapter"
 status: "Draft"
 owner: "neohetj"
-version: "0.2.0"
-updated_at: "2026-08-24"
+version: "0.3.0"
+updated_at: "2026-09-01"
 tags:
   - "matrix"
   - "mcp"
@@ -47,7 +47,7 @@ Transport host ownership:
 | `initialize` | Returns MCP capabilities with `tools` enabled and server info. |
 | `notifications/initialized` | Accepted as notification. |
 | `ping` | Returns an empty result. |
-| `tools/list` | Returns only module catalog tools after adapter validation. |
+| `tools/list` | Returns only module catalog tools after adapter validation, including MCP risk annotations derived from `riskLevel`. |
 | `tools/call` | Dispatches one whitelisted tool to its configured target. |
 
 ## Tool Result Contract
@@ -71,7 +71,25 @@ Current target support:
 | `rulechain` | Implemented with host binding | Dispatches through the module-supplied `TargetDispatcher`; returns a tool error when the host did not bind one. |
 | `handler` | Implemented with host binding | Uses the same `TargetDispatcher` contract for module-local handlers. |
 
-The adapter rejects MVP tools whose `riskLevel` is not `read`.
+The adapter accepts `riskLevel=read|write`. A `write` tool must declare a
+trusted `authContext`; catalog loading fails before the MCP server starts when
+that context is absent. Higher-risk classes such as `admin_write` and
+`billing_sensitive` remain rejected.
+
+The protocol projection always emits explicit MCP tool annotations. A `read`
+tool is advertised with `readOnlyHint=true`, `destructiveHint=false`, and
+`idempotentHint=true`. A `write` tool is conservatively advertised with
+`readOnlyHint=false`, `destructiveHint=true`, and `idempotentHint=false`.
+`openWorldHint=true` is used for both because a Matrix MCP target may observe or
+change state outside the Agent workspace. This allows non-interactive clients
+to execute declared read tools under a no-prompt approval policy while keeping
+mutation tools on the approval path.
+
+HTTP targets may explicitly bind tool arguments through
+`target.pathArguments` and `target.queryArguments`. Path values are URL-escaped;
+query names may differ from MCP argument names; arguments consumed by either
+binding are removed from a non-GET JSON body. Undeclared arguments are never
+implicitly copied into a URL.
 
 ## Input Schema Boundary
 
@@ -109,6 +127,9 @@ MCP tool arguments are not trusted identity facts. The adapter rejects argument/
 - `x_identityx_*`
 
 `dev_static_context` is resolved from host config or env and may inject static headers for local smoke. It does not bypass business module middleware.
+For a local mutation tool, the module owns the concrete operator identity
+variables and loopback listener policy; Matrix only enforces that a trusted
+context is declared and continues to reject model-supplied identity fields.
 
 ## Validation
 

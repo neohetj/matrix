@@ -73,6 +73,60 @@ func TestServerHandlesInitializeListAndCall(t *testing.T) {
 	}
 }
 
+func TestServerToolsListPublishesRiskAnnotations(t *testing.T) {
+	endpoint, err := NewEndpoint(types.McpEndpointNodeConfiguration{
+		ServerName: "annotated-tools",
+		AuthContexts: map[string]types.McpAuthContext{
+			"writer": {Mode: AuthModeDevStaticContext},
+		},
+		Tools: []types.McpToolDefinition{
+			{
+				Name:      "read_run",
+				Target:    types.McpTargetSpec{Kind: TargetKindHTTPAPI, URL: "http://127.0.0.1:1/runs/1"},
+				RiskLevel: "read",
+			},
+			{
+				Name:        "create_run",
+				Target:      types.McpTargetSpec{Kind: TargetKindHTTPAPI, Method: http.MethodPost, URL: "http://127.0.0.1:1/runs"},
+				RiskLevel:   "write",
+				AuthContext: "writer",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := NewServer([]ToolProvider{endpoint})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	response, ok := server.HandleMessage(context.Background(), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	if !ok {
+		t.Fatal("expected tools/list response")
+	}
+	var envelope struct {
+		Result struct {
+			Tools []struct {
+				Name        string                  `json:"name"`
+				Annotations protocolToolAnnotations `json:"annotations"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if len(envelope.Result.Tools) != 2 {
+		t.Fatalf("tools/list returned %d tools", len(envelope.Result.Tools))
+	}
+	if got := envelope.Result.Tools[0]; got.Name != "read_run" || !got.Annotations.ReadOnlyHint || got.Annotations.DestructiveHint || !got.Annotations.IdempotentHint {
+		t.Fatalf("read annotations = %+v", got)
+	}
+	if got := envelope.Result.Tools[1]; got.Name != "create_run" || got.Annotations.ReadOnlyHint || !got.Annotations.DestructiveHint || got.Annotations.IdempotentHint {
+		t.Fatalf("write annotations = %+v", got)
+	}
+}
+
 func TestServerServeHTTPHandlesJSONRPCPost(t *testing.T) {
 	endpoint, err := NewEndpoint(types.McpEndpointNodeConfiguration{
 		ServerName: "identityx",

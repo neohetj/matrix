@@ -35,6 +35,7 @@ relations:
 | RFC | 状态 | 设计承接 | 当前事实 / 操作承接 |
 | --- | --- | --- | --- |
 | [0010 Unified Error Handling](../designs/rfc/0010_unified_error_handling_rfc.md) | `Accepted` | `Fault -> FailureInfo -> ServiceError` 与 DSL `errorMappings` 已落地 | 当前错误分层与安全公开映射见 [10_http_endpoint_deep_dive.md](10_http_endpoint_deep_dive.md)，Matrix core 内部错误码见 [39_internal_error_code_specification.md](39_internal_error_code_specification.md)，操作规则见 [unified-error-handling-guide.md](../guides/unified-error-handling-guide.md)。 |
+| [0014 MCP Business Endpoint Adapter](../designs/rfc/0014_mcp_business_endpoint_adapter_rfc.md) | `Draft` | [Plan 0014-1](../designs/plan/0014-1_mcp_business_endpoint_adapter_plan.md)；2026-09-01 用户明确批准本机 Operator 通过 MCP 创建并执行 Keymaker Run | 当前 `read|write` 风险级别、写工具可信上下文门槛及显式 HTTP path/query 参数绑定见 [37_mcp_endpoint_adapter.md](37_mcp_endpoint_adapter.md)。业务工具清单仍由模块拥有。 |
 | [0015 Matrix Core Interface Boundary Refactor](../designs/rfc/0015_matrix_core_interface_boundary_refactor_rfc.md) | `Draft` | [Plan 0015-1](../designs/plan/0015-1_matrix_core_interface_boundary_refactor_plan.md) | 当前事实参考 [03_architecture_overview.md](03_architecture_overview.md)、[11_function_registration_spec.md](11_function_registration_spec.md)、[12_node_specification.md](12_node_specification.md)、[15_shared_resource_management.md](15_shared_resource_management.md)、[37_mcp_endpoint_adapter.md](37_mcp_endpoint_adapter.md)、[38_validation_inspection_schema.md](38_validation_inspection_schema.md) |
 
 ## 2. Plan 执行追踪

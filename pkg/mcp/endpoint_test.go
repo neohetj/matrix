@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,118 @@ import (
 
 	"github.com/neohetj/matrix/pkg/types"
 )
+
+func TestEndpointRejectsWriteToolWithoutTrustedAuthContext(t *testing.T) {
+	_, err := NewEndpoint(types.McpEndpointNodeConfiguration{
+		ServerName: "keymaker",
+		Tools: []types.McpToolDefinition{{
+			Name:      "create_spec_run",
+			RiskLevel: "write",
+			Target: types.McpTargetSpec{
+				Kind: TargetKindHTTPAPI,
+				ID:   "POST /api/keymaker/runs",
+			},
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "trusted authContext") {
+		t.Fatalf("expected write tool authContext rejection, got %v", err)
+	}
+}
+
+func TestEndpointCallsWriteToolWithTrustedContext(t *testing.T) {
+	var gotBody map[string]any
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/keymaker/runs" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("X-IdentityX-User-Id") != "mcp-operator" {
+			t.Fatalf("operator header = %q", r.Header.Get("X-IdentityX-User-Id"))
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"run_id":"run-1","status":"pending"}}`))
+	}))
+	defer target.Close()
+
+	endpoint, err := NewEndpoint(types.McpEndpointNodeConfiguration{
+		ServerName: "keymaker",
+		HTTP:       types.McpHTTPConfiguration{BaseURL: target.URL},
+		AuthContexts: map[string]types.McpAuthContext{
+			"operator": {
+				Mode: AuthModeDevStaticContext,
+				Headers: map[string]string{
+					"X-IdentityX-User-Id": "mcp-operator",
+				},
+			},
+		},
+		Tools: []types.McpToolDefinition{{
+			Name:        "create_spec_run",
+			RiskLevel:   "write",
+			AuthContext: "operator",
+			Target: types.McpTargetSpec{
+				Kind: TargetKindHTTPAPI,
+				ID:   "POST /api/keymaker/runs",
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("NewEndpoint() error = %v", err)
+	}
+	result, err := endpoint.CallTool(context.Background(), "create_spec_run", map[string]any{"run_name": "MCP run"})
+	if err != nil || result.IsError {
+		t.Fatalf("CallTool() result=%+v error=%v", result, err)
+	}
+	if gotBody["run_name"] != "MCP run" {
+		t.Fatalf("body = %#v", gotBody)
+	}
+}
+
+func TestEndpointBindsPathAndQueryArgumentsForHTTPAPI(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.EscapedPath() != "/api/keymaker/spec-definitions/spec%2Freview/topology" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.EscapedPath())
+		}
+		if got := r.URL.Query().Get("version"); got != "1.2.0" {
+			t.Fatalf("version query = %q", got)
+		}
+		if got := r.URL.Query().Get("pageSize"); got != "50" {
+			t.Fatalf("pageSize query = %q", got)
+		}
+		_, _ = w.Write([]byte(`{"data":{"definition_id":"spec/review"}}`))
+	}))
+	defer target.Close()
+
+	endpoint, err := NewEndpoint(types.McpEndpointNodeConfiguration{
+		ServerName: "keymaker",
+		HTTP:       types.McpHTTPConfiguration{BaseURL: target.URL},
+		Tools: []types.McpToolDefinition{{
+			Name:      "get_spec_topology",
+			RiskLevel: "read",
+			Target: types.McpTargetSpec{
+				Kind:          TargetKindHTTPAPI,
+				ID:            "GET /api/keymaker/spec-definitions/:definition_id/topology",
+				PathArguments: map[string]string{"definition_id": "definition_id"},
+				QueryArguments: map[string]string{
+					"version":  "version",
+					"pageSize": "page_size",
+				},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("NewEndpoint() error = %v", err)
+	}
+	result, err := endpoint.CallTool(context.Background(), "get_spec_topology", map[string]any{
+		"definition_id": "spec/review",
+		"version":       "1.2.0",
+		"page_size":     float64(50),
+	})
+	if err != nil || result.IsError {
+		t.Fatalf("CallTool() result=%+v error=%v", result, err)
+	}
+}
 
 func TestEndpointCallHTTPAPIWithDevStaticContext(t *testing.T) {
 	var gotUserID string
