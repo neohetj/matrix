@@ -15,6 +15,7 @@ func TestLoadEndpointsFromDir(t *testing.T) {
   "name": "Test MCP Endpoint",
   "configuration": {
     "serverName": "test",
+    "argumentPolicy": {},
     "http": {"baseURL": "http://127.0.0.1:1"},
     "tools": [
       {

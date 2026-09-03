@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"os"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
@@ -33,21 +32,6 @@ var (
 	placeholderPattern = regexp.MustCompile(`\$\{config:///([^}?]+)(?:\?([^}]*))?\}`)
 	bearerTokenPattern = regexp.MustCompile(`(?i)Bearer\s+[A-Za-z0-9._~+/=-]+`)
 	secretPairPattern  = regexp.MustCompile(`(?i)(authorization|cookie|access_token|refresh_token|id_token|client_secret|internal_token|api_key)(["'\s:=]+)([^"'\s,}&]+)`)
-	forbiddenArgKeys   = map[string]struct{}{
-		"authorization":              {},
-		"cookie":                     {},
-		"company_id":                 {},
-		"current_team_ids":           {},
-		"identityx_current_team_ids": {},
-		"identityx_permissions":      {},
-		"identityx_roles":            {},
-		"internal_token":             {},
-		"permissions":                {},
-		"roles":                      {},
-		"session_id":                 {},
-		"team_ids":                   {},
-		"user_id":                    {},
-	}
 )
 
 // Option configures an Endpoint.
@@ -73,12 +57,13 @@ func WithConfigValues(values map[string]any) Option {
 
 // Endpoint adapts a Matrix endpoint/mcp configuration into MCP tool semantics.
 type Endpoint struct {
-	cfg          types.McpEndpointNodeConfiguration
-	httpClient   *http.Client
-	configValues map[string]any
-	toolsByName  map[string]types.McpToolDefinition
-	inputSchemas map[string]*openapi3.Schema
-	dispatcher   TargetDispatcher
+	cfg            types.McpEndpointNodeConfiguration
+	httpClient     *http.Client
+	configValues   map[string]any
+	toolsByName    map[string]types.McpToolDefinition
+	inputSchemas   map[string]*openapi3.Schema
+	dispatcher     TargetDispatcher
+	argumentPolicy *argumentPolicy
 }
 
 // NewEndpoint creates a validated MCP endpoint adapter.
@@ -154,7 +139,7 @@ func (e *Endpoint) CallTool(ctx context.Context, name string, arguments map[stri
 	if arguments == nil {
 		arguments = map[string]any{}
 	}
-	if err := rejectForbiddenArguments(arguments); err != nil {
+	if err := e.argumentPolicy.rejectArguments(arguments); err != nil {
 		return errorToolResult(err.Error()), nil
 	}
 	if schema := e.inputSchemas[tool.Name]; schema != nil {
@@ -187,6 +172,11 @@ func (e *Endpoint) validate() error {
 	if strings.TrimSpace(e.cfg.ToolCatalog) != "" {
 		return errors.New("mcp endpoint toolCatalog is reserved for a future shared-node catalog")
 	}
+	policy, err := compileArgumentPolicy(e.cfg.ArgumentPolicy, e.cfg.AuthContexts)
+	if err != nil {
+		return err
+	}
+	e.argumentPolicy = policy
 	seen := map[string]struct{}{}
 	for _, tool := range e.cfg.Tools {
 		name := strings.TrimSpace(tool.Name)
@@ -206,7 +196,7 @@ func (e *Endpoint) validate() error {
 		default:
 			return fmt.Errorf("mcp tool %q must declare riskLevel=read or write", name)
 		}
-		inputSchema, err := validateInputSchema(name, tool.InputSchema)
+		inputSchema, err := e.argumentPolicy.validateInputSchema(name, tool.InputSchema)
 		if err != nil {
 			return err
 		}
@@ -558,73 +548,6 @@ func bodyArguments(target types.McpTargetSpec, arguments map[string]any) map[str
 		delete(body, argumentName)
 	}
 	return body
-}
-
-func validateInputSchema(toolName string, schema map[string]any) (*openapi3.Schema, error) {
-	forbidden := collectForbiddenKeys(schema)
-	if len(forbidden) > 0 {
-		return nil, fmt.Errorf("mcp tool %q inputSchema contains forbidden security context fields: %s", toolName, strings.Join(forbidden, ", "))
-	}
-	if len(schema) == 0 {
-		return nil, nil
-	}
-
-	data, err := json.Marshal(schema)
-	if err != nil {
-		return nil, fmt.Errorf("mcp tool %q inputSchema cannot be encoded: %w", toolName, err)
-	}
-	compiled := &openapi3.Schema{}
-	if err := json.Unmarshal(data, compiled); err != nil {
-		return nil, fmt.Errorf("mcp tool %q inputSchema is invalid: %w", toolName, err)
-	}
-	if err := compiled.Validate(context.Background()); err != nil {
-		return nil, fmt.Errorf("mcp tool %q inputSchema is invalid: %w", toolName, err)
-	}
-	return compiled, nil
-}
-
-func collectForbiddenKeys(value any) []string {
-	seen := map[string]struct{}{}
-	var walk func(any)
-	walk = func(v any) {
-		switch typed := v.(type) {
-		case map[string]any:
-			for key, child := range typed {
-				normalized := normalizeSecurityKey(key)
-				if _, ok := forbiddenArgKeys[normalized]; ok || strings.HasPrefix(normalized, "x_identityx_") {
-					seen[key] = struct{}{}
-				}
-				walk(child)
-			}
-		case []any:
-			for _, child := range typed {
-				walk(child)
-			}
-		}
-	}
-	walk(value)
-	out := make([]string, 0, len(seen))
-	for key := range seen {
-		out = append(out, key)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func rejectForbiddenArguments(arguments map[string]any) error {
-	forbidden := collectForbiddenKeys(arguments)
-	if len(forbidden) > 0 {
-		return fmt.Errorf("mcp tool arguments must not provide security context field %q", forbidden[0])
-	}
-	return nil
-}
-
-func normalizeSecurityKey(key string) string {
-	key = strings.TrimSpace(strings.ToLower(key))
-	key = strings.ReplaceAll(key, "-", "_")
-	key = strings.ReplaceAll(key, ".", "_")
-	key = strings.ReplaceAll(key, " ", "_")
-	return key
 }
 
 func textToolResult(text string) types.McpToolResult {

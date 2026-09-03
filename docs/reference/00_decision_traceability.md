@@ -52,7 +52,7 @@ relations:
 | [11_function_registration_spec.md](11_function_registration_spec.md) | `Stable` | 函数节点注册、routing mode、declared relations 和函数配置契约。 |
 | [12_node_specification.md](12_node_specification.md) | `Draft` | 通用节点生命周期、数据契约和节点接口事实。 |
 | [15_shared_resource_management.md](15_shared_resource_management.md) | `Stable` | 共享节点池、`ref://` 引用和共享资源管理语义。 |
-| [37_mcp_endpoint_adapter.md](37_mcp_endpoint_adapter.md) | `Draft` | `endpoint/mcp`、Matrix MCP adapter core，以及 `content`/`structuredContent`/`isError` 独立透传合同的当前实现事实。 |
+| [37_mcp_endpoint_adapter.md](37_mcp_endpoint_adapter.md) | `Draft` | `endpoint/mcp`、Matrix MCP adapter core、模块声明 `argumentPolicy` 的启动/调用保护与升级边界，以及 `content`/`structuredContent`/`isError` 独立透传合同。策略回归覆盖 `pkg/mcp/argument_policy*_test.go` 与真实 DSL 节点初始化。 |
 | [38_validation_inspection_schema.md](38_validation_inspection_schema.md) | `Draft` | Validation report 与 inspection snapshot 的当前输出模型。 |
 | [39_internal_error_code_specification.md](39_internal_error_code_specification.md) | `Stable` | Matrix core `aabbbcccc` 内部错误码的格式、命名空间分配、传播与兼容边界。 |
 | [40_redis_stream_endpoint_reliability.md](40_redis_stream_endpoint_reliability.md) | `Stable` | Redis Stream Endpoint 的超时、pending 重领、有限投递、DLQ、ACK、多实例契约，以及主动端点 `enabled` 启用开关（`types.GatedEndpoint`）的解析作用域与失败行为；操作见 [endpoint_redis_stream_guide.md](../guides/components/endpoint_redis_stream_guide.md)。 |

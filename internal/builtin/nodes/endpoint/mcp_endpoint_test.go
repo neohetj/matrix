@@ -14,17 +14,18 @@ func TestMcpEndpointNodeImplementsEndpointContract(t *testing.T) {
 		t.Fatalf("expected McpEndpoint implementation, got %T", node)
 	}
 	err := ep.Init(types.ConfigMap{
-		"serverName": "identityx",
+		"serverName":     "example",
+		"argumentPolicy": map[string]any{},
 		"http": map[string]any{
 			"baseURL": "http://127.0.0.1:1",
 		},
 		"tools": []any{
 			map[string]any{
-				"name":      "identityx_get_me_access",
+				"name":      "example_get_me_access",
 				"riskLevel": "read",
 				"target": map[string]any{
 					"kind": "http_api",
-					"id":   "GET /api/identityx/auth/me/access",
+					"id":   "GET /api/example/auth/me/access",
 				},
 			},
 		},
@@ -36,7 +37,7 @@ func TestMcpEndpointNodeImplementsEndpointContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools failed: %v", err)
 	}
-	if len(tools) != 1 || tools[0].Name != "identityx_get_me_access" {
+	if len(tools) != 1 || tools[0].Name != "example_get_me_access" {
 		t.Fatalf("unexpected tools: %+v", tools)
 	}
 }

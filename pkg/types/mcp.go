@@ -7,12 +7,13 @@ import "context"
 // The node is business-agnostic: module repositories own the tool catalog and
 // Matrix owns the MCP protocol-facing adapter contract.
 type McpEndpointNodeConfiguration struct {
-	ServerName   string                    `json:"serverName"`
-	Instructions string                    `json:"instructions,omitempty"`
-	HTTP         McpHTTPConfiguration      `json:"http,omitempty"`
-	AuthContexts map[string]McpAuthContext `json:"authContexts,omitempty"`
-	Tools        []McpToolDefinition       `json:"tools,omitempty"`
-	ToolCatalog  string                    `json:"toolCatalog,omitempty"`
+	ServerName     string                    `json:"serverName"`
+	Instructions   string                    `json:"instructions,omitempty"`
+	HTTP           McpHTTPConfiguration      `json:"http,omitempty"`
+	AuthContexts   map[string]McpAuthContext `json:"authContexts,omitempty"`
+	ArgumentPolicy *McpArgumentPolicy        `json:"argumentPolicy"`
+	Tools          []McpToolDefinition       `json:"tools,omitempty"`
+	ToolCatalog    string                    `json:"toolCatalog,omitempty"`
 }
 
 // McpHTTPConfiguration defines defaults for HTTP-backed MCP tool targets.

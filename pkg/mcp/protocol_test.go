@@ -20,17 +20,18 @@ func TestServerHandlesInitializeListAndCall(t *testing.T) {
 	defer target.Close()
 
 	endpoint, err := NewEndpoint(types.McpEndpointNodeConfiguration{
-		ServerName: "identityx",
-		HTTP:       types.McpHTTPConfiguration{BaseURL: target.URL},
+		ArgumentPolicy: &types.McpArgumentPolicy{},
+		ServerName:     "example",
+		HTTP:           types.McpHTTPConfiguration{BaseURL: target.URL},
 		Tools: []types.McpToolDefinition{
 			{
-				Name:        "identityx_get_me_access",
+				Name:        "example_get_me_access",
 				Description: "Read access context",
 				InputSchema: map[string]any{
 					"type":       "object",
 					"properties": map[string]any{},
 				},
-				Target:    types.McpTargetSpec{Kind: TargetKindHTTPAPI, ID: "GET /api/identityx/auth/me/access"},
+				Target:    types.McpTargetSpec{Kind: TargetKindHTTPAPI, ID: "GET /api/example/auth/me/access"},
 				RiskLevel: "read",
 			},
 		},
@@ -60,11 +61,11 @@ func TestServerHandlesInitializeListAndCall(t *testing.T) {
 	if !ok {
 		t.Fatal("expected tools/list response")
 	}
-	if !strings.Contains(string(listResp), `"identityx_get_me_access"`) {
+	if !strings.Contains(string(listResp), `"example_get_me_access"`) {
 		t.Fatalf("tools/list missing tool: %s", listResp)
 	}
 
-	callResp, ok := server.HandleMessage(context.Background(), []byte(`{"jsonrpc":"2.0","id":"call","method":"tools/call","params":{"name":"identityx_get_me_access","arguments":{}}}`))
+	callResp, ok := server.HandleMessage(context.Background(), []byte(`{"jsonrpc":"2.0","id":"call","method":"tools/call","params":{"name":"example_get_me_access","arguments":{}}}`))
 	if !ok {
 		t.Fatal("expected tools/call response")
 	}
@@ -75,7 +76,8 @@ func TestServerHandlesInitializeListAndCall(t *testing.T) {
 
 func TestServerToolsListPublishesRiskAnnotations(t *testing.T) {
 	endpoint, err := NewEndpoint(types.McpEndpointNodeConfiguration{
-		ServerName: "annotated-tools",
+		ArgumentPolicy: &types.McpArgumentPolicy{},
+		ServerName:     "annotated-tools",
 		AuthContexts: map[string]types.McpAuthContext{
 			"writer": {Mode: AuthModeDevStaticContext},
 		},
@@ -129,10 +131,11 @@ func TestServerToolsListPublishesRiskAnnotations(t *testing.T) {
 
 func TestServerServeHTTPHandlesJSONRPCPost(t *testing.T) {
 	endpoint, err := NewEndpoint(types.McpEndpointNodeConfiguration{
-		ServerName: "identityx",
+		ArgumentPolicy: &types.McpArgumentPolicy{},
+		ServerName:     "example",
 		Tools: []types.McpToolDefinition{
 			{
-				Name:      "identityx_get_me_access",
+				Name:      "example_get_me_access",
 				Target:    types.McpTargetSpec{Kind: TargetKindHTTPAPI, URL: "http://127.0.0.1:1"},
 				RiskLevel: "read",
 			},
@@ -146,44 +149,45 @@ func TestServerServeHTTPHandlesJSONRPCPost(t *testing.T) {
 		t.Fatalf("NewServer failed: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/mcp/identityx", bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	req := httptest.NewRequest(http.MethodPost, "/mcp/example", bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), `"identityx_get_me_access"`) {
+	if !strings.Contains(rec.Body.String(), `"example_get_me_access"`) {
 		t.Fatalf("tools/list missing tool: %s", rec.Body.String())
 	}
 }
 
 func TestServerServeHTTPPropagatesIncomingHeadersToGatewayAssertionContext(t *testing.T) {
 	endpoint, err := NewEndpoint(types.McpEndpointNodeConfiguration{
-		ServerName: "identityx",
+		ArgumentPolicy: &types.McpArgumentPolicy{},
+		ServerName:     "example",
 		AuthContexts: map[string]types.McpAuthContext{
 			"gateway_assertion_context": {
 				Mode: AuthModeGatewayAssertion,
 				Headers: map[string]string{
-					"X-IdentityX-User-Id": "X-IdentityX-User-Id",
+					"X-Example-User-Id": "X-Example-User-Id",
 				},
 			},
 		},
 		Tools: []types.McpToolDefinition{
 			{
-				Name:        "identityx_get_me_runtime_stats",
+				Name:        "example_get_me_runtime_stats",
 				Description: "Read runtime stats",
 				InputSchema: map[string]any{
 					"type":       "object",
 					"properties": map[string]any{},
 				},
-				Target:      types.McpTargetSpec{Kind: TargetKindRuleChain, ID: "identityx/rc-auth-get-me-runtime-stats"},
+				Target:      types.McpTargetSpec{Kind: TargetKindRuleChain, ID: "example/rc-auth-get-me-runtime-stats"},
 				RiskLevel:   "read",
 				AuthContext: "gateway_assertion_context",
 			},
 		},
 	}, WithTargetDispatcher(TargetDispatcherFunc(func(ctx context.Context, req DispatchRequest) (types.McpToolResult, bool, error) {
-		return NewTextToolResult(req.AuthContext.Headers["X-IdentityX-User-Id"]), true, nil
+		return NewTextToolResult(req.AuthContext.Headers["X-Example-User-Id"]), true, nil
 	})))
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %v", err)
@@ -193,8 +197,8 @@ func TestServerServeHTTPPropagatesIncomingHeadersToGatewayAssertionContext(t *te
 		t.Fatalf("NewServer failed: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/mcp/identityx", bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"identityx_get_me_runtime_stats","arguments":{}}}`))
-	req.Header.Set("X-IdentityX-User-Id", "gateway-user")
+	req := httptest.NewRequest(http.MethodPost, "/mcp/example", bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"example_get_me_runtime_stats","arguments":{}}}`))
+	req.Header.Set("X-Example-User-Id", "gateway-user")
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -208,7 +212,8 @@ func TestServerServeHTTPPropagatesIncomingHeadersToGatewayAssertionContext(t *te
 
 func TestServerServeHTTPPreservesStructuredToolContent(t *testing.T) {
 	endpoint, err := NewEndpoint(types.McpEndpointNodeConfiguration{
-		ServerName: "knowledge",
+		ArgumentPolicy: &types.McpArgumentPolicy{},
+		ServerName:     "knowledge",
 		Tools: []types.McpToolDefinition{{
 			Name:      "kb_register_citations",
 			Target:    types.McpTargetSpec{Kind: TargetKindHandler, ID: "knowledge/register-citations"},

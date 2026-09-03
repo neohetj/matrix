@@ -13,13 +13,14 @@ import (
 
 func TestEndpointRejectsWriteToolWithoutTrustedAuthContext(t *testing.T) {
 	_, err := NewEndpoint(types.McpEndpointNodeConfiguration{
-		ServerName: "keymaker",
+		ArgumentPolicy: &types.McpArgumentPolicy{},
+		ServerName:     "sample",
 		Tools: []types.McpToolDefinition{{
 			Name:      "create_spec_run",
 			RiskLevel: "write",
 			Target: types.McpTargetSpec{
 				Kind: TargetKindHTTPAPI,
-				ID:   "POST /api/keymaker/runs",
+				ID:   "POST /api/sample/runs",
 			},
 		}},
 	})
@@ -31,11 +32,11 @@ func TestEndpointRejectsWriteToolWithoutTrustedAuthContext(t *testing.T) {
 func TestEndpointCallsWriteToolWithTrustedContext(t *testing.T) {
 	var gotBody map[string]any
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/keymaker/runs" {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/sample/runs" {
 			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
 		}
-		if r.Header.Get("X-IdentityX-User-Id") != "mcp-operator" {
-			t.Fatalf("operator header = %q", r.Header.Get("X-IdentityX-User-Id"))
+		if r.Header.Get("X-Example-User-Id") != "mcp-operator" {
+			t.Fatalf("operator header = %q", r.Header.Get("X-Example-User-Id"))
 		}
 		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 			t.Fatal(err)
@@ -46,13 +47,14 @@ func TestEndpointCallsWriteToolWithTrustedContext(t *testing.T) {
 	defer target.Close()
 
 	endpoint, err := NewEndpoint(types.McpEndpointNodeConfiguration{
-		ServerName: "keymaker",
-		HTTP:       types.McpHTTPConfiguration{BaseURL: target.URL},
+		ArgumentPolicy: &types.McpArgumentPolicy{},
+		ServerName:     "sample",
+		HTTP:           types.McpHTTPConfiguration{BaseURL: target.URL},
 		AuthContexts: map[string]types.McpAuthContext{
 			"operator": {
 				Mode: AuthModeDevStaticContext,
 				Headers: map[string]string{
-					"X-IdentityX-User-Id": "mcp-operator",
+					"X-Example-User-Id": "mcp-operator",
 				},
 			},
 		},
@@ -62,7 +64,7 @@ func TestEndpointCallsWriteToolWithTrustedContext(t *testing.T) {
 			AuthContext: "operator",
 			Target: types.McpTargetSpec{
 				Kind: TargetKindHTTPAPI,
-				ID:   "POST /api/keymaker/runs",
+				ID:   "POST /api/sample/runs",
 			},
 		}},
 	})
@@ -80,7 +82,7 @@ func TestEndpointCallsWriteToolWithTrustedContext(t *testing.T) {
 
 func TestEndpointBindsPathAndQueryArgumentsForHTTPAPI(t *testing.T) {
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.EscapedPath() != "/api/keymaker/spec-definitions/spec%2Freview/topology" {
+		if r.Method != http.MethodGet || r.URL.EscapedPath() != "/api/sample/spec-definitions/spec%2Freview/topology" {
 			t.Fatalf("request = %s %s", r.Method, r.URL.EscapedPath())
 		}
 		if got := r.URL.Query().Get("version"); got != "1.2.0" {
@@ -94,14 +96,15 @@ func TestEndpointBindsPathAndQueryArgumentsForHTTPAPI(t *testing.T) {
 	defer target.Close()
 
 	endpoint, err := NewEndpoint(types.McpEndpointNodeConfiguration{
-		ServerName: "keymaker",
-		HTTP:       types.McpHTTPConfiguration{BaseURL: target.URL},
+		ArgumentPolicy: &types.McpArgumentPolicy{},
+		ServerName:     "sample",
+		HTTP:           types.McpHTTPConfiguration{BaseURL: target.URL},
 		Tools: []types.McpToolDefinition{{
 			Name:      "get_spec_topology",
 			RiskLevel: "read",
 			Target: types.McpTargetSpec{
 				Kind:          TargetKindHTTPAPI,
-				ID:            "GET /api/keymaker/spec-definitions/:definition_id/topology",
+				ID:            "GET /api/sample/spec-definitions/:definition_id/topology",
 				PathArguments: map[string]string{"definition_id": "definition_id"},
 				QueryArguments: map[string]string{
 					"version":  "version",
@@ -129,17 +132,18 @@ func TestEndpointCallHTTPAPIWithDevStaticContext(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Fatalf("expected GET, got %s", r.Method)
 		}
-		if r.URL.Path != "/api/identityx/auth/me/access" {
+		if r.URL.Path != "/api/example/auth/me/access" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
-		gotUserID = r.Header.Get("X-IdentityX-User-Id")
+		gotUserID = r.Header.Get("X-Example-User-Id")
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"userId":"user-local","companies":[]}`))
 	}))
 	defer target.Close()
 
 	endpoint, err := NewEndpoint(types.McpEndpointNodeConfiguration{
-		ServerName: "identityx",
+		ArgumentPolicy: &types.McpArgumentPolicy{},
+		ServerName:     "example",
 		HTTP: types.McpHTTPConfiguration{
 			BaseURL: target.URL,
 		},
@@ -147,17 +151,17 @@ func TestEndpointCallHTTPAPIWithDevStaticContext(t *testing.T) {
 			"dev_static_context": {
 				Mode: AuthModeDevStaticContext,
 				Headers: map[string]string{
-					"X-IdentityX-User-Id": "${config:///IDENTITYX_MCP_DEV_USER_ID?scope=env&default=user-local}",
+					"X-Example-User-Id": "${config:///EXAMPLE_MCP_DEV_USER_ID?scope=env&default=user-local}",
 				},
 			},
 		},
 		Tools: []types.McpToolDefinition{
 			{
-				Name:      "identityx_get_me_access",
+				Name:      "example_get_me_access",
 				RiskLevel: "read",
 				Target: types.McpTargetSpec{
 					Kind: TargetKindHTTPAPI,
-					ID:   "GET /api/identityx/auth/me/access",
+					ID:   "GET /api/example/auth/me/access",
 				},
 				AuthContext: "dev_static_context",
 			},
@@ -167,7 +171,7 @@ func TestEndpointCallHTTPAPIWithDevStaticContext(t *testing.T) {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
 
-	result, err := endpoint.CallTool(context.Background(), "identityx_get_me_access", nil)
+	result, err := endpoint.CallTool(context.Background(), "example_get_me_access", nil)
 	if err != nil {
 		t.Fatalf("CallTool failed: %v", err)
 	}
@@ -184,10 +188,11 @@ func TestEndpointCallHTTPAPIWithDevStaticContext(t *testing.T) {
 
 func TestEndpointRejectsForbiddenInputSchemaFields(t *testing.T) {
 	_, err := NewEndpoint(types.McpEndpointNodeConfiguration{
-		ServerName: "identityx",
+		ArgumentPolicy: &types.McpArgumentPolicy{},
+		ServerName:     "example",
 		Tools: []types.McpToolDefinition{
 			{
-				Name:      "identityx_get_me_access",
+				Name:      "example_get_me_access",
 				RiskLevel: "read",
 				InputSchema: map[string]any{
 					"type": "object",
@@ -209,10 +214,11 @@ func TestEndpointRejectsForbiddenInputSchemaFields(t *testing.T) {
 
 func TestEndpointRejectsForbiddenToolArguments(t *testing.T) {
 	endpoint, err := NewEndpoint(types.McpEndpointNodeConfiguration{
-		ServerName: "identityx",
+		ArgumentPolicy: &types.McpArgumentPolicy{},
+		ServerName:     "example",
 		Tools: []types.McpToolDefinition{
 			{
-				Name:      "identityx_get_me_access",
+				Name:      "example_get_me_access",
 				RiskLevel: "read",
 				Target:    types.McpTargetSpec{Kind: TargetKindHTTPAPI, URL: "http://127.0.0.1"},
 			},
@@ -221,7 +227,7 @@ func TestEndpointRejectsForbiddenToolArguments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
-	result, err := endpoint.CallTool(context.Background(), "identityx_get_me_access", map[string]any{
+	result, err := endpoint.CallTool(context.Background(), "example_get_me_access", map[string]any{
 		"filters": map[string]any{
 			"company_id": "company-forged",
 		},
@@ -237,7 +243,8 @@ func TestEndpointRejectsForbiddenToolArguments(t *testing.T) {
 func TestEndpointRejectsArgumentsThatDoNotMatchInputSchemaBeforeDispatch(t *testing.T) {
 	dispatched := false
 	endpoint, err := NewEndpoint(types.McpEndpointNodeConfiguration{
-		ServerName: "lingbao-kb",
+		ArgumentPolicy: &types.McpArgumentPolicy{},
+		ServerName:     "knowledge",
 		Tools: []types.McpToolDefinition{
 			{
 				Name:      "kb_read_document",
@@ -301,10 +308,11 @@ func TestEndpointRedactsSecretsFromHTTPToolResult(t *testing.T) {
 	defer target.Close()
 
 	endpoint, err := NewEndpoint(types.McpEndpointNodeConfiguration{
-		ServerName: "identityx",
+		ArgumentPolicy: &types.McpArgumentPolicy{},
+		ServerName:     "example",
 		Tools: []types.McpToolDefinition{
 			{
-				Name:      "identityx_get_me_access",
+				Name:      "example_get_me_access",
 				RiskLevel: "read",
 				Target:    types.McpTargetSpec{Kind: TargetKindHTTPAPI, URL: target.URL},
 			},
@@ -313,7 +321,7 @@ func TestEndpointRedactsSecretsFromHTTPToolResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
-	result, err := endpoint.CallTool(context.Background(), "identityx_get_me_access", nil)
+	result, err := endpoint.CallTool(context.Background(), "example_get_me_access", nil)
 	if err != nil {
 		t.Fatalf("CallTool failed: %v", err)
 	}
@@ -332,23 +340,24 @@ func TestEndpointRedactsSecretsFromHTTPToolResult(t *testing.T) {
 func TestEndpointDispatchesRulechainTargetWithGatewayAssertionContext(t *testing.T) {
 	var got DispatchRequest
 	endpoint, err := NewEndpoint(types.McpEndpointNodeConfiguration{
-		ServerName: "identityx",
+		ArgumentPolicy: &types.McpArgumentPolicy{},
+		ServerName:     "example",
 		AuthContexts: map[string]types.McpAuthContext{
 			"gateway_assertion_context": {
 				Mode: AuthModeGatewayAssertion,
 				Headers: map[string]string{
-					"X-IdentityX-User-Id": "X-IdentityX-User-Id",
-					"X-IdentityX-Sub":     "X-IdentityX-Sub",
+					"X-Example-User-Id": "X-Example-User-Id",
+					"X-Example-Sub":     "X-Example-Sub",
 				},
 			},
 		},
 		Tools: []types.McpToolDefinition{
 			{
-				Name:      "identityx_get_me_runtime_stats",
+				Name:      "example_get_me_runtime_stats",
 				RiskLevel: "read",
 				Target: types.McpTargetSpec{
 					Kind: TargetKindRuleChain,
-					ID:   "identityx/rc-auth-get-me-runtime-stats",
+					ID:   "example/rc-auth-get-me-runtime-stats",
 				},
 				AuthContext: "gateway_assertion_context",
 			},
@@ -362,26 +371,26 @@ func TestEndpointDispatchesRulechainTargetWithGatewayAssertionContext(t *testing
 	}
 
 	ctx := WithIncomingHTTPHeaders(context.Background(), http.Header{
-		"X-IdentityX-User-Id": []string{"user-from-gateway"},
-		"X-IdentityX-Sub":     []string{"sub-from-gateway"},
+		"X-Example-User-Id": []string{"user-from-gateway"},
+		"X-Example-Sub":     []string{"sub-from-gateway"},
 	})
-	result, err := endpoint.CallTool(ctx, "identityx_get_me_runtime_stats", nil)
+	result, err := endpoint.CallTool(ctx, "example_get_me_runtime_stats", nil)
 	if err != nil {
 		t.Fatalf("CallTool failed: %v", err)
 	}
 	if result.IsError {
 		t.Fatalf("expected success result, got error: %+v", result)
 	}
-	if got.Tool.Name != "identityx_get_me_runtime_stats" {
+	if got.Tool.Name != "example_get_me_runtime_stats" {
 		t.Fatalf("dispatcher received unexpected tool: %+v", got.Tool)
 	}
 	if got.AuthContext.Mode != AuthModeGatewayAssertion {
 		t.Fatalf("expected gateway assertion mode, got %q", got.AuthContext.Mode)
 	}
-	if got.AuthContext.Headers["X-IdentityX-User-Id"] != "user-from-gateway" {
+	if got.AuthContext.Headers["X-Example-User-Id"] != "user-from-gateway" {
 		t.Fatalf("unexpected resolved user header: %+v", got.AuthContext.Headers)
 	}
-	if got.AuthContext.Headers["X-IdentityX-Sub"] != "sub-from-gateway" {
+	if got.AuthContext.Headers["X-Example-Sub"] != "sub-from-gateway" {
 		t.Fatalf("unexpected resolved sub header: %+v", got.AuthContext.Headers)
 	}
 }

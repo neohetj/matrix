@@ -188,6 +188,7 @@ func TestValidateLoaderResourcesBuildsEndpointCatalog(t *testing.T) {
 		"name": "Order Tools",
 		"configuration": {
 			"serverName": "order-tools",
+    "argumentPolicy": {},
 			"tools": [
 				{
 					"name": "get_order",

@@ -4,8 +4,8 @@ type: "Reference"
 title: "Reference: MCP Endpoint Adapter"
 status: "Draft"
 owner: "neohetj"
-version: "0.3.0"
-updated_at: "2026-09-01"
+version: "0.4.0"
+updated_at: "2026-09-03"
 tags:
   - "matrix"
   - "mcp"
@@ -114,7 +114,7 @@ flowchart LR
 
 ## Security Boundary
 
-MCP tool arguments are not trusted identity facts. The adapter rejects argument/schema fields such as:
+MCP tool arguments are not trusted identity facts. Every `endpoint/mcp` must explicitly declare `configuration.argumentPolicy`; `{}` means generic protection only. The adapter always rejects generic argument/schema fields such as:
 
 - `user_id`
 - `company_id`
@@ -124,7 +124,36 @@ MCP tool arguments are not trusted identity facts. The adapter rejects argument/
 - `internal_token`
 - `authorization`
 - `cookie`
-- `x_identityx_*`
+
+Modules add business protocol names without changing Matrix:
+
+```json
+{
+  "argumentPolicy": {
+    "denyKeys": ["example_roles"],
+    "denyPrefixes": ["x_example_"]
+  }
+}
+```
+
+`denyKeys` matches exact normalized names; `denyPrefixes` matches literal normalized prefixes (not glob or regex). Names are lowercased and trimmed, with `-`, `.`, and spaces converted to `_`. Checks recurse through object/array arguments and compiled schema properties/required fields and nested schemas; schema keywords are not argument names. Target Header names declared by `authContexts.headers` are protected automatically; aliases not named there must be declared explicitly.
+
+Effective rules combine Matrix's generic list, module rules, and auth Header names. Module rules cannot disable generic protection. Rules are compiled per endpoint; caller arguments cannot override them. Missing/null policy, unknown policy fields, empty rule names, and forbidden input-schema properties fail endpoint creation. An explicit `{}` or empty arrays are valid and do not disable generic protection. Runtime violations return a tool error before auth resolution or target dispatch; rejected values are not included in the policy error.
+
+```mermaid
+flowchart LR
+  Module["Module endpoint JSON: argumentPolicy + authContexts"] --> Load["File loader / DSL Init"]
+  Load --> Compile["NewEndpoint: compile generic + module + Header rules"]
+  Compile --> Startup["Check tool inputSchema"]
+  Compile --> Call["Check tools/call arguments"]
+  Call --> Schema["Validate inputSchema"]
+  Schema --> Auth["Resolve trusted context"]
+  Auth --> Target["HTTP / rulechain / handler"]
+```
+
+Upgrade existing endpoint files before upgrading the Matrix runtime. Configurations without `argumentPolicy` fail closed rather than silently lose their old business-protocol protection. Add the module's existing protected aliases and prefixes; use `{}` only when no module-specific fields need protecting. The WhiteRoom starter emits `{}`, but scaffold sync deliberately preserves existing module catalogs, so those require an explicit edit. Downgrading to a Matrix version without policy support does not preserve custom rules.
+
+`gateway_assertion` forwards configured incoming Headers; it does not authenticate their issuer. Gateway/host authentication and downstream authorization remain required and are not replaced by this argument policy.
 
 `dev_static_context` is resolved from host config or env and may inject static headers for local smoke. It does not bypass business module middleware.
 For a local mutation tool, the module owns the concrete operator identity
