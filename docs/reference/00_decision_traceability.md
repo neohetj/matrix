@@ -26,6 +26,10 @@ relations:
 
 # Matrix 决策追踪索引
 
+## 配置 Reader 与实例装配提案
+
+[本仓 Plan](../designs/plan/0001-2_catalog_reader_runtime_plan.md) 承接跨仓配置运行时 RFC：typed Reader、来源快照、实例隔离与 Init 前注入已在配置分支实现，复用既有 ConfigResolver/Catalog，不传播模块全局状态或业务身份。当前入口见 `pkg/config/catalog/README.md`。专项验证已执行，全模块迁移与版本发布尚未完成；按用户要求不合并 main。
+
 本文档只记录 Matrix repo-local RFC / ADR / Plan / Reference / Guide 的闭环追踪。它不承载 ADR 的决策理由，也不承载 Plan 的阶段执行细节。
 
 当前文档是 Matrix 正式文档集的 seed 索引。历史 RFC / ADR / Plan 的完整回填需要单独治理任务承接；本次只登记新增 RFC，避免把架构 RFC 编写扩散为全量文档治理重构。

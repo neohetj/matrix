@@ -187,6 +187,10 @@ func LoadEndpoints(
 
 			ctx, err := nodePool.NewFromNodeDef(*nodeDef, nodeMgr)
 			if err != nil {
+				// 新配置消费者必须完整装配；普通旧节点继续使用原有 warning 策略。
+				if errors.Is(err, types.ErrConfigReaderUnavailable) || errors.Is(err, types.ErrConfigInitialization) {
+					return err
+				}
 				fmt.Printf("warning: failed to load endpoint from def %s: %v\n", nodeDef.ID, err)
 				return nil
 			}
@@ -275,6 +279,9 @@ func LoadSharedNodes(
 
 			// A shared node file is a rulechain def used as a container for nodes.
 			if _, err := nodePool.LoadFromRuleChainDef(def, nodeMgr); err != nil {
+				if errors.Is(err, types.ErrConfigReaderUnavailable) || errors.Is(err, types.ErrConfigInitialization) {
+					return err
+				}
 				fmt.Printf("warning: failed to load shared nodes from %s: %v\n", filePath, err)
 				return nil
 			}

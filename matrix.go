@@ -77,14 +77,20 @@ func SetLogger(logger types.Logger) {
 // MatrixEngine is the facade for the refactored rule engine.
 // It holds an internal reference to the registry and exposes its components via methods.
 type MatrixEngine struct {
-	config       config.MatrixConfig
-	registry     types.RegistryProvider
-	traceManager *trace.Manager
-	loader       types.ResourceProvider
-	logger       types.Logger
-	embedFSs     []embed.FS
-	activeCancel context.CancelFunc
-	activeWG     sync.WaitGroup
+	config                config.MatrixConfig
+	registry              types.RegistryProvider
+	traceManager          *trace.Manager
+	loader                types.ResourceProvider
+	logger                types.Logger
+	embedFSs              []embed.FS
+	activeCancel          context.CancelFunc
+	activeWG              sync.WaitGroup
+	moduleConfigs         map[string]types.ConfigReader
+	nodeConfigOwners      map[string]string
+	ruleChainConfigOwners map[string]string
+	defaultConfigModule   string
+	moduleConfigErr       error
+	configActiveEndpoints []types.ActiveEndpoint
 }
 
 // --- Getters for core components ---
@@ -190,6 +196,9 @@ func New(cfg config.MatrixConfig, opts ...Option) (*MatrixEngine, error) {
 	for _, opt := range opts {
 		opt(engine)
 	}
+	if engine.moduleConfigErr != nil {
+		return nil, engine.moduleConfigErr
+	}
 
 	// If a loader wasn't provided via an option, create a default one from the config.
 	if engine.loader == nil {
@@ -213,6 +222,13 @@ func newEngine(e *MatrixEngine) (*MatrixEngine, error) {
 	if err != nil {
 		return nil, err
 	}
+	built := false
+	defer func() {
+		if !built && len(e.moduleConfigs) > 0 {
+			e.abortModuleConfigStartup()
+			sch.Stop()
+		}
+	}()
 
 	defs, err := e.loadDefinitions(rulechainPaths)
 	if err != nil {
@@ -231,6 +247,7 @@ func newEngine(e *MatrixEngine) (*MatrixEngine, error) {
 		return nil, err
 	}
 
+	built = true
 	return e, nil
 }
 
@@ -257,8 +274,16 @@ func (e *MatrixEngine) StartActiveEndpoints(ctx context.Context) error {
 			}
 			continue
 		}
+		if len(e.moduleConfigs) > 0 {
+			// Start 可能部分建立监听后失败，因此先登记到本实例的撤销清单。
+			e.configActiveEndpoints = append(e.configActiveEndpoints, active)
+		}
 		if err := active.Start(endpointCtx); err != nil {
 			cancel()
+			if _, aware := endpoint.(types.ConfigReaderAware); aware {
+				// 配置消费者的驱动错误可能含连接凭据，不向宿主传播原始 cause。
+				err = types.ErrConfigInitialization
+			}
 			return fmt.Errorf("failed to start active endpoint %s: %w", endpoint.ID(), err)
 		}
 	}
@@ -313,6 +338,9 @@ func (e *MatrixEngine) loadDefinitions(rulechainPaths []string) (map[string]*typ
 func (e *MatrixEngine) initRegistryAndLoadComponents(sharedNodePaths, endpointPaths []string) error {
 	if e.registry == nil {
 		e.registry = registry.Default
+	}
+	if err := e.prepareModuleConfig(); err != nil {
+		return err
 	}
 
 	nodeMgr := e.registry.GetNodeManager()

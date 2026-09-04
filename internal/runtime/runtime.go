@@ -320,6 +320,15 @@ func (r *DefaultRuntime) handleOnErrorStrategy(ctx context.Context, inMsg types.
 // buildChainInstance creates a live instance of the rule chain from its definition.
 func (r *DefaultRuntime) buildChainInstance(chainDef *types.RuleChainDef) (types.ChainInstance, error) {
 	instance := NewDefaultChainInstance(chainDef)
+	var createdNodes []types.Node
+	usesConfigReader, built := false, false
+	defer func() {
+		if usesConfigReader && !built {
+			for _, node := range createdNodes {
+				node.Destroy()
+			}
+		}
+	}()
 
 	// Initialize all nodes defined in the DSL.
 	for _, nodeDef := range chainDef.Metadata.Nodes {
@@ -345,11 +354,31 @@ func (r *DefaultRuntime) buildChainInstance(chainDef *types.RuleChainDef) (types
 			// 1. Set instance-specific metadata.
 			node.SetID(def.ID)
 			node.SetName(def.Name)
+			if consumer, ok := node.(types.NodePoolAware); ok {
+				consumer.SetNodePool(r.nodePool)
+			}
+			if _, aware := node.(types.ConfigReaderAware); aware {
+				usesConfigReader = true
+			}
+			provider, _ := r.engine.(types.RuleChainConfigReaderProvider)
+			if _, aware := node.(types.ConfigReaderAware); aware && len(chainDef.RuleChain.Attrs.Imports) > 0 {
+				validator, ok := r.engine.(types.RuleChainConfigImportValidator)
+				if !ok {
+					return nil, types.ErrConfigReaderUnavailable
+				}
+				if err := validator.ValidateRuleChainConfigImports(chainDef.RuleChain.ID, chainDef.RuleChain.Attrs.Imports); err != nil {
+					return nil, types.ErrConfigReaderUnavailable
+				}
+			}
+			if err := registry.BindConfigReader(node, chainConfigProvider{provider, chainDef.RuleChain.ID}); err != nil {
+				return nil, fmt.Errorf("node %q: %w", def.ID, err)
+			}
 
 			// 2. Initialize with business-specific configuration only.
 			// TODO: 增加拓扑，以方便检查是否有参数未设置或者连接不正确
+			createdNodes = append(createdNodes, node)
 			if err = node.Init(def.Configuration); err != nil {
-				return nil, fmt.Errorf("failed to initialize node '%s': %w", def.ID, err)
+				return nil, registry.NodeInitializationError(node, err)
 			}
 		}
 
@@ -375,7 +404,22 @@ func (r *DefaultRuntime) buildChainInstance(chainDef *types.RuleChainDef) (types
 		return nil, fmt.Errorf("data contract validation failed: %w", err)
 	}
 
+	built = true
 	return instance, nil
+}
+
+// chainConfigProvider 将链归属适配到统一注入函数，禁止查找共享节点的平面 ID 映射。
+type chainConfigProvider struct {
+	provider types.RuleChainConfigReaderProvider
+	chainID  string
+}
+
+// ConfigReaderForNode 使用链归属，不以局部节点 ID 选择模块。
+func (p chainConfigProvider) ConfigReaderForNode(string) (types.ConfigReader, bool) {
+	if p.provider == nil {
+		return nil, false
+	}
+	return p.provider.ConfigReaderForRuleChain(p.chainID)
 }
 
 func (r *DefaultRuntime) validateFunctionRouting(instance types.ChainInstance) error {

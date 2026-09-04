@@ -29,6 +29,8 @@ relations:
 
 ## 2. 文档索引
 
+- [0001-2_catalog_reader_runtime_plan.md](0001-2_catalog_reader_runtime_plan.md)：承接跨仓配置运行时 RFC 的 Catalog Reader、实例隔离与注入边界；已批准、实施中，配置分支不合并 main。
+
 - [0006-1_ops-components-and-dsl-impl_plan.md](./0006-1_ops-components-and-dsl-impl_plan.md): 运维基础组件与 DSL 扩展的实现计划。
 - [0012-1_topology-driven-deployment-platform_plan.md](./0012-1_topology-driven-deployment-platform_plan.md): 拓扑驱动部署平台的阶段化工程蓝图。
 - [0014-1_mcp_business_endpoint_adapter_plan.md](./0014-1_mcp_business_endpoint_adapter_plan.md): MCP 业务入口适配器的阶段化实施方案。
