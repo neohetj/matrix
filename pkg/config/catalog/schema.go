@@ -68,6 +68,13 @@ func compileDefinitions(defs []Definition) (*Catalog, error) {
 	required := []string{}
 	all := []any{}
 	names := map[string]bool{}
+	primaryKeys := map[string]bool{}
+	for _, d := range c.documents {
+		for _, item := range d.Items {
+			primaryKeys[item.Key] = true
+		}
+	}
+	aliases := map[string]bool{}
 	module := c.documents[0].Module
 	for _, d := range c.documents {
 		if err := checkDefinition(d); err != nil {
@@ -80,6 +87,13 @@ func compileDefinitions(defs []Definition) (*Catalog, error) {
 		for _, item := range d.Items {
 			if _, ok := props[item.Key]; ok {
 				return nil, problem(item.Key, "duplicate_key", "")
+			}
+			for _, alias := range item.Aliases {
+				alias = strings.TrimSpace(alias)
+				if alias == "" || primaryKeys[alias] || aliases[alias] {
+					return nil, problem(item.Key, "duplicate_alias", "")
+				}
+				aliases[alias] = true
 			}
 			base := map[string]any{"type": schemaTypes[item.Type]}
 			if item.Type == "string_list" {

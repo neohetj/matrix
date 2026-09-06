@@ -347,7 +347,7 @@ func (e *MatrixEngine) initRegistryAndLoadComponents(sharedNodePaths, endpointPa
 	sharedNodePool := e.registry.GetSharedNodePool()
 	pool := e.registry.GetRuntimePool()
 
-	if err := builder.LoadSharedNodes(e.loader, sharedNodePaths, nodeMgr, sharedNodePool); err != nil {
+	if err := builder.LoadSharedNodes(e.loader, sharedNodePaths, nodeMgr, sharedNodePool, builder.SharedNodeLoadOptions{FailOnError: len(e.moduleConfigs) > 0}); err != nil {
 		return fmt.Errorf("failed to load shared nodes: %w", err)
 	}
 

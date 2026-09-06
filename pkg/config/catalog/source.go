@@ -79,6 +79,21 @@ func Decode(d Document) (Definition, error) {
 	v.Name = d.Name
 	for i := range v.Items {
 		v.Items[i].Key = strings.TrimSpace(v.Items[i].Key)
+		// v1 modules transported list-like settings as strings and split them in
+		// module code. Preserve that wire format when the declared list default is
+		// textual; v2 requires an actual array.
+		if v.Version == "1" && v.Items[i].Type == "string_list" {
+			if _, ok := v.Items[i].Default.(string); ok {
+				v.Items[i].Type = "string"
+			}
+		}
+		// v1 catalogs used empty strings/JSON collections as absence markers. Drop
+		// these before validation/freezing; they never become secret values.
+		if v.Version == "1" && v.Items[i].Secret {
+			if value, ok := v.Items[i].Default.(string); ok && (value == "" || value == "{}" || value == "[]") {
+				v.Items[i].Default = nil
+			}
+		}
 	}
 	if err := checkDefinition(v); err != nil {
 		return Definition{}, err

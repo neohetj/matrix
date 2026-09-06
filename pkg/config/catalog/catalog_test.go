@@ -120,6 +120,28 @@ items:
 	require.NotContains(t, issues.Error(), "private-secret-value")
 }
 
+func TestCatalogRejectsAmbiguousAliases(t *testing.T) {
+	for name, items := range map[string]string{
+		"alias shadows primary key": `
+  - {key: CURRENT, owner: sample, type: string, description: current, resolution: placeholder, secret: false, aliases: [LEGACY]}
+  - {key: LEGACY, owner: sample, type: string, description: legacy, resolution: placeholder, secret: false}
+`,
+		"alias used by two items": `
+  - {key: FIRST, owner: sample, type: string, description: first, resolution: placeholder, secret: false, aliases: [SHARED]}
+  - {key: SECOND, owner: sample, type: string, description: second, resolution: placeholder, secret: false, aliases: [SHARED]}
+`,
+		"alias repeats its own key": `
+  - {key: CURRENT, owner: sample, type: string, description: current, resolution: placeholder, secret: false, aliases: [CURRENT]}
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			raw := "version: \"2\"\nmodule: sample\ndomain: aliases\nitems:" + items
+			_, err := Load(context.Background(), Documents{{Name: "aliases_catalog.yaml", Content: []byte(raw)}})
+			require.ErrorContains(t, err, "duplicate_alias")
+		})
+	}
+}
+
 func TestCatalogRejectsConflictingTypesAndUndeclaredRuleKeys(t *testing.T) {
 	for _, rule := range []string{
 		"properties: {BACKEND: {type: integer}}",

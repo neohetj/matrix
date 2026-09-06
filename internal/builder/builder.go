@@ -244,13 +244,20 @@ func LoadEndpoints(
 	return nil
 }
 
+// SharedNodeLoadOptions 控制已选中共享资源失败时的启动策略。
+type SharedNodeLoadOptions struct {
+	FailOnError bool
+}
+
 // LoadSharedNodes scans for shared node definitions from a list of base paths.
 func LoadSharedNodes(
 	dslLoader types.ResourceProvider,
 	sharedNodePaths []string,
 	nodeMgr types.NodeManager,
 	nodePool types.NodePool,
+	options ...SharedNodeLoadOptions,
 ) error {
+	failOnError := len(options) > 0 && options[0].FailOnError
 	for _, basePath := range sharedNodePaths {
 		err := dslLoader.WalkDir(basePath, func(filePath string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -265,6 +272,9 @@ func LoadSharedNodes(
 
 			res, err := dslLoader.ReadFile(filePath)
 			if err != nil {
+				if failOnError {
+					return fmt.Errorf("failed to read shared node file %s: %w", filePath, err)
+				}
 				fmt.Printf("warning: failed to read shared node file %s: %v\n", filePath, err)
 				return nil
 			}
@@ -272,6 +282,9 @@ func LoadSharedNodes(
 			jsonParser := &parser.JsonParser{}
 			def, err := jsonParser.DecodeRuleChain(res.Content)
 			if err != nil {
+				if failOnError {
+					return fmt.Errorf("failed to decode shared node file %s (source: %s): %w", filePath, res.Source, err)
+				}
 				fmt.Printf("warning: failed to decode shared node file %s (source: %s): %v\n", filePath, res.Source, err)
 				return nil
 			}
@@ -279,8 +292,8 @@ func LoadSharedNodes(
 
 			// A shared node file is a rulechain def used as a container for nodes.
 			if _, err := nodePool.LoadFromRuleChainDef(def, nodeMgr); err != nil {
-				if errors.Is(err, types.ErrConfigReaderUnavailable) || errors.Is(err, types.ErrConfigInitialization) {
-					return err
+				if failOnError || errors.Is(err, types.ErrConfigReaderUnavailable) || errors.Is(err, types.ErrConfigInitialization) {
+					return fmt.Errorf("failed to load shared nodes from %s: %w", filePath, err)
 				}
 				fmt.Printf("warning: failed to load shared nodes from %s: %v\n", filePath, err)
 				return nil

@@ -80,6 +80,35 @@ func TestModuleConfigNewEngineIsolation(t *testing.T) {
 	}
 }
 
+// TestModuleConfigActiveEndpointUsesPrivateSharedPool 覆盖配置实例启用后 active endpoint 的资源查找。
+func TestModuleConfigActiveEndpointUsesPrivateSharedPool(t *testing.T) {
+	cfg := lifecycleConfig(t, map[string]string{
+		"shared/event_redis.json": `{"ruleChain":{"id":"resources"},"metadata":{"nodes":[{"id":"event-redis","type":"external/redisClient","configuration":{"uri":"redis://127.0.0.1:1/0","dialTimeout":"10ms"}}]}}`,
+		"rulechains/flow.json":    `{"ruleChain":{"id":"event-flow"},"metadata":{"nodes":[]}}`,
+		"endpoints/events.json":   `{"id":"event-endpoint","type":"endpoint/redis_stream","configuration":{"redisClient":"ref://event-redis","stream":"events","group":"consumers","ruleChainId":"event-flow","blockMs":10}}`,
+	})
+	e, err := New(cfg, WithModuleConfig("sample", fixtureReader("value")), WithDefaultConfigModule("sample"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = e.StopActiveEndpoints()
+		for _, id := range e.RuntimePool().ListIDs() {
+			rt, ok := e.RuntimePool().Get(id)
+			if ok {
+				rt.Destroy()
+			}
+		}
+		e.SharedNodePool().Stop()
+	})
+	if _, ok := e.SharedNodePool().Get("event-redis"); !ok {
+		t.Fatal("event redis missing from engine pool")
+	}
+	if _, ok := registry.Default.SharedNodePool.Get("event-redis"); ok {
+		t.Fatal("event redis leaked into global pool")
+	}
+}
+
 // TestModuleConfigRuntimeInjection 验证非共享规则链节点也在 Init 之前获得 Reader。
 func TestModuleConfigRuntimeInjection(t *testing.T) {
 	reg := registry.NewRegistry()

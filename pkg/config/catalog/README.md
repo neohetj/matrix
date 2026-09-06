@@ -5,6 +5,11 @@ It does not discover a workspace, resolve resource credentials, render UI, or wr
 
 - `CatalogSource` supplies explicit documents; `FSSource` reads an explicit filesystem.
 - v1 retains its existing fields. v2 adds item/root `schema` and root `ui_schema`.
+- At source decode only, v1 Secret defaults equal to the exact strings `""` or `"{}"`
+  are normalized to absence for legacy empty-keyring declarations (including dev-3.11.1).
+  They never become credentials, effective values or frozen defaults. Other v1 defaults
+  and every v2 Secret default are rejected. `Restore` remains strict and does not rewrite
+  previously frozen snapshots. Required Secret resolution still requires an env value.
 - `schema` uses JSON Schema draft 2020-12 validation semantics, not a custom condition language.
   The accepted keyword subset is enforced by `checkSchema`. References (including local `$ref`),
   remote loading, schema `default`, format/content vocabularies and unknown keywords are rejected.
@@ -68,3 +73,9 @@ Other asset schemes and node-local scopes require their own runtime context and 
 Hosts register readers using Matrix Engine options before constructing nodes. `ConfigReaderAware`
 and `NodePoolAware` receive their Engine-owned dependencies before `Init`. `FromAssetContext` selects
 the reader using an explicit module ID, without falling back to a process-global resolver.
+
+`Reader.ValidateProvided(ctx)` checks declared supplied values and defaults against the
+same frozen source snapshot. It deliberately defers missing required fields and root
+conditional completeness to capability initialization or full Catalog validation.
+Duration consumers must still call `ReadDuration` with an explicit bare-number unit;
+field validation is not a substitute for unit conversion or overflow checks.

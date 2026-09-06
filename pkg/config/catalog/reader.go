@@ -38,6 +38,11 @@ func NewReader(definition *Catalog, resolver *config.ConfigResolver) (*Reader, e
 
 // LookupConfig 复用来源核心和字段转换；节点 override 不污染全局值视图。
 func (r *Reader) LookupConfig(ctx context.Context, key string, override types.ConfigOverride) (any, bool, error) {
+	return r.lookupConfig(ctx, key, override, true)
+}
+
+// lookupConfig 共用字段转换，仅允许启动预检延后缺失项的完整性检查。
+func (r *Reader) lookupConfig(ctx context.Context, key string, override types.ConfigOverride, requireMissing bool) (any, bool, error) {
 	if r == nil || r.definition == nil || ctx == nil {
 		return nil, false, problem(key, "reader_missing", "")
 	}
@@ -63,7 +68,7 @@ func (r *Reader) LookupConfig(ctx context.Context, key string, override types.Co
 		return nil, false, problem(key, "source_read", "")
 	}
 	if meta.Source == config.SourceNone || raw == nil {
-		if item.Required {
+		if item.Required && requireMissing {
 			return nil, false, problem(key, "required", "")
 		}
 		return nil, false, nil
