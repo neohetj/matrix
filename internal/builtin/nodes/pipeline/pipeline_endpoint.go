@@ -60,6 +60,7 @@ type PipelineEndpointNode struct {
 	types.Instance
 	config      PipelineConfig
 	runtimePool types.RuntimePool
+	nodePool    types.NodePool
 	// Active channels managed by this endpoint instance
 	activeChannels map[string]chan types.RuleMsg
 	cancelFunc     context.CancelFunc
@@ -71,6 +72,12 @@ type PipelineEndpointNode struct {
 var _ types.ActiveEndpoint = (*PipelineEndpointNode)(nil)
 var _ types.PipelineInputRouter = (*PipelineEndpointNode)(nil)
 var _ types.GatedEndpoint = (*PipelineEndpointNode)(nil)
+var _ types.NodePoolAware = (*PipelineEndpointNode)(nil)
+
+// SetNodePool 在初始化前绑定所属实例的共享资源池。
+func (n *PipelineEndpointNode) SetNodePool(pool types.NodePool) {
+	n.nodePool = pool
+}
 
 // EnableExpression implements types.GatedEndpoint. An empty value keeps the
 // historical behaviour of always starting the pipeline.
@@ -120,8 +127,7 @@ func (n *PipelineEndpointNode) Start(ctx context.Context) error {
 
 	// Resolve Channel Manager
 	if n.config.ChannelManager != "" {
-		pool := registry.Default.GetSharedNodePool()
-		ctx := asset.NewAssetContext(asset.WithNodePool(pool))
+		ctx := asset.NewAssetContext(asset.WithNodePool(n.nodePool))
 		ast := asset.Asset[*ChannelManager]{URI: n.config.ChannelManager}
 		cm, err := ast.Resolve(ctx)
 		if err != nil {
@@ -251,9 +257,9 @@ func (n *PipelineEndpointNode) processData(ctx context.Context, stage PipelineSt
 
 func (n *PipelineEndpointNode) resolveStageRuntime(processorID string) (types.Runtime, bool) {
 	if n.runtimePool != nil {
-		if rt, ok := n.runtimePool.Get(processorID); ok && rt != nil {
-			return rt, true
-		}
+		// 已绑定实例时，缺失的规则链不能从全局池补取。
+		rt, ok := n.runtimePool.Get(processorID)
+		return rt, ok && rt != nil
 	}
 	rt, ok := registry.Default.RuntimePool.Get(processorID)
 	if !ok || rt == nil {

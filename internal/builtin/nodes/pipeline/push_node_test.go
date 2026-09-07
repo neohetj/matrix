@@ -30,6 +30,7 @@ func TestChannelPushNode_Execute(t *testing.T) {
 	// Setup Shared Channel Manager
 	cmDSL := `{"metadata":{"nodes":[{"id":"shared-cm-push","type":"resource/channel_manager","name":"Shared CM Push"}]}}`
 	pool := registry.Default.GetSharedNodePool()
+	node.SetNodePool(pool)
 	pool.Load([]byte(cmDSL), registry.Default.GetNodeManager())
 	inst, _ := pool.GetInstance("shared-cm-push")
 	cm := inst.(*ChannelManager)
@@ -79,6 +80,7 @@ func TestChannelPushNode_ChannelFull_NonBlocking(t *testing.T) {
 	// Setup Shared Channel Manager
 	cmDSL := `{"metadata":{"nodes":[{"id":"shared-cm-full","type":"resource/channel_manager","name":"Shared CM Full"}]}}`
 	pool := registry.Default.GetSharedNodePool()
+	node.SetNodePool(pool)
 	pool.Load([]byte(cmDSL), registry.Default.GetNodeManager())
 	inst, _ := pool.GetInstance("shared-cm-full")
 	cm := inst.(*ChannelManager)
@@ -111,6 +113,7 @@ func TestChannelPushNode_ChannelNotFound(t *testing.T) {
 	// Setup Shared Channel Manager
 	cmDSL := `{"metadata":{"nodes":[{"id":"shared-cm-404","type":"resource/channel_manager","name":"Shared CM 404"}]}}`
 	pool := registry.Default.GetSharedNodePool()
+	node.SetNodePool(pool)
 	pool.Load([]byte(cmDSL), registry.Default.GetNodeManager())
 
 	ctx := utils.NewMockNodeCtx()
@@ -218,6 +221,7 @@ func TestChannelPushNode_ProjectsMessageToDownstreamRequiredInputs(t *testing.T)
 		}
 	}`
 	pool := registry.Default.GetSharedNodePool()
+	node.SetNodePool(pool)
 	_, err := pool.Load([]byte(sharedDSL), registry.Default.GetNodeManager())
 	assert.NoError(t, err)
 

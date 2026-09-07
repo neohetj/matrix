@@ -33,11 +33,11 @@ Matrix 负责读取、pending 重领、处理超时、ACK、有限投递和 DLQ�
 | 字段 | 必填 | 默认值 | 当前语义 |
 | --- | --- | --- | --- |
 | `enabled` | 否 | 空 | 启用开关表达式。留空表示始终启动。取值为 `true` / `false` 字面量，或解析为布尔值的 `${config:///...}` 模板。见第 2.1 节。 |
-| `redisClient` | 是 | 无 | `ref://...` Redis 共享资源。 |
+| `redisClient` | 是 | 无 | `ref://...` Redis 共享资源；从 endpoint 所属 Engine 注入的 NodePool 解析，实例配置启用时不回退全局池。 |
 | `stream` | 是 | 无 | 源 Stream。 |
 | `group` | 是 | 无 | consumer group。 |
 | `consumer` | 否 | 自动生成 | 留空时由节点 ID、主机名、进程 ID 和 worker 序号生成实例唯一名称；固定值只适合单实例或由部署系统注入唯一值。 |
-| `ruleChainId` | 是 | 无 | 每次投递触发的规则链。 |
+| `ruleChainId` | 是 | 无 | 每次投递触发的规则链。已注入 RuntimePool 时仅在该池查找，缺失时返回错误，不回退到全局同名链；仅未注入池的旧调用方式保留全局查找。 |
 | `startNodeId` | 否 | `""` | 规则链起点。 |
 | `count` | 否 | `10` | 单次新消息读取上限。 |
 | `blockMs` | 否 | `5000` | `XREADGROUP` 阻塞时间。 |

@@ -30,6 +30,8 @@ relations:
 
 [本仓 Plan](../designs/plan/0001-2_catalog_reader_runtime_plan.md) 承接跨仓配置运行时 RFC：typed Reader、来源快照、实例隔离与 Init 前注入已在配置分支实现，复用既有 ConfigResolver/Catalog，不传播模块全局状态或业务身份。当前入口见 `pkg/config/catalog/README.md`。专项验证已执行，全模块迁移与版本发布尚未完成；按用户要求不合并 main。
 
+2026-09-06：补齐 Pipeline / Channel Push 资源池注入、Redis Stream / Pipeline 规则链查找边界、forEach 子链实例隔离，并使模块配置模式下的共享资源装载错误直接终止创建。当前事实见 [共享资源管理](15_shared_resource_management.md#43-实例隔离边界) 与 [Redis Stream 契约](40_redis_stream_endpoint_reliability.md#2-配置契约)；回归证据见 `module_config_pipeline_test.go`、`module_config_shared_loading_test.go` 及 endpoint / pipeline / loop 包的实例隔离测试。业务模块和 WhiteRoom 的消费端迁移仍独立跟进。
+
 本文档只记录 Matrix repo-local RFC / ADR / Plan / Reference / Guide 的闭环追踪。它不承载 ADR 的决策理由，也不承载 Plan 的阶段执行细节。
 
 当前文档是 Matrix 正式文档集的 seed 索引。历史 RFC / ADR / Plan 的完整回填需要单独治理任务承接；本次只登记新增 RFC，避免把架构 RFC 编写扩散为全量文档治理重构。

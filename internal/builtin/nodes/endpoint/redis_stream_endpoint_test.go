@@ -10,7 +10,32 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/neohetj/matrix/internal/registry"
+	_ "github.com/neohetj/matrix/pkg/components/external"
+	"github.com/neohetj/matrix/pkg/types"
 )
+
+func TestRedisStreamEndpointResolvesClientFromInjectedNodePool(t *testing.T) {
+	privatePool := registry.NewNodePool(nil)
+	shared, err := privatePool.NewFromNodeDef(types.NodeDef{
+		ID:   "private-event-redis",
+		Type: "external/redisClient",
+		Configuration: types.ConfigMap{
+			"uri": "redis://127.0.0.1:6379/15",
+		},
+	}, registry.Default.GetNodeManager())
+	require.NoError(t, err)
+	t.Cleanup(privatePool.Stop)
+
+	node := &RedisStreamEndpointNode{config: RedisStreamEndpointConfiguration{RedisClient: "ref://private-event-redis"}}
+	node.SetNodePool(privatePool)
+	client, err := node.resolveClient()
+	require.NoError(t, err)
+	want, err := shared.GetInstance()
+	require.NoError(t, err)
+	require.Same(t, want, client)
+}
 
 func TestRedisStreamEndpointRecoveryRequiresSafeTimeoutBoundary(t *testing.T) {
 	node := &RedisStreamEndpointNode{}

@@ -175,9 +175,19 @@ func (n *ForEachNode) Init(configuration types.ConfigMap) error {
 
 // OnMsg executes the loop.
 func (n *ForEachNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
-	// 1. Get the target sub-chain runtime
-	targetRuntime, ok := registry.Default.RuntimePool.Get(n.nodeConfig.ChainId)
-	if !ok {
+	// 1. 子规则链只能从当前执行所属的 Engine 查找。
+	var pool types.RuntimePool
+	if rt := ctx.GetRuntime(); rt != nil {
+		if engine := rt.GetEngine(); engine != nil {
+			pool = engine.RuntimePool()
+		}
+	}
+	if pool == nil {
+		ctx.HandleError(msg, FaultTargetChainNotFound.Wrap(fmt.Errorf("runtime pool unavailable for target chain '%s'", n.nodeConfig.ChainId)))
+		return
+	}
+	targetRuntime, ok := pool.Get(n.nodeConfig.ChainId)
+	if !ok || targetRuntime == nil {
 		ctx.HandleError(msg, FaultTargetChainNotFound.Wrap(fmt.Errorf("target chain with id '%s' not found", n.nodeConfig.ChainId)))
 		return
 	}

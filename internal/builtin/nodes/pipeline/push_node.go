@@ -62,6 +62,14 @@ type ChannelPushNode struct {
 	types.BaseNode
 	types.Instance
 	nodeConfig ChannelPushNodeConfiguration
+	nodePool   types.NodePool
+}
+
+var _ types.NodePoolAware = (*ChannelPushNode)(nil)
+
+// SetNodePool 在规则链装配时接收所属实例的共享资源池。
+func (n *ChannelPushNode) SetNodePool(pool types.NodePool) {
+	n.nodePool = pool
 }
 
 func (n *ChannelPushNode) New() types.Node {
@@ -196,8 +204,7 @@ func (n *ChannelPushNode) OnMsg(ctx types.NodeCtx, msg types.RuleMsg) {
 	}
 
 	ast := asset.Asset[*ChannelManager]{URI: cmURI}
-	pool := registry.Default.GetSharedNodePool()
-	resolveCtx := asset.NewAssetContext(asset.WithNodePool(pool))
+	resolveCtx := asset.NewAssetContext(asset.WithNodePool(n.nodePool))
 
 	cm, err := ast.Resolve(resolveCtx)
 	if err != nil {
