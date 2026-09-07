@@ -51,11 +51,29 @@ type ProfileBindingPolicy struct {
 	Supported     bool     `yaml:"supported" json:"supported"`
 	ResourceKinds []string `yaml:"resource_kinds,omitempty" json:"resource_kinds,omitempty"`
 	Schemes       []string `yaml:"schemes,omitempty" json:"schemes,omitempty"`
+	SourceField   string   `yaml:"source_field,omitempty" json:"source_field,omitempty"`
+	BindingKey    string   `yaml:"binding_key,omitempty" json:"binding_key,omitempty"`
+	AutoGenerate  bool     `yaml:"auto_generate,omitempty" json:"auto_generate,omitempty"`
 }
 
 var schemePattern = regexp.MustCompile(`^[a-z][a-z0-9+.-]*$`)
 
 func (p *ProfileBindingPolicy) IsSupported() bool { return p != nil && p.Supported }
+func (p *ProfileBindingPolicy) BindingField() string {
+	if p != nil && strings.TrimSpace(p.SourceField) != "" {
+		return strings.TrimSpace(p.SourceField)
+	}
+	return "endpoint"
+}
+func (p *ProfileBindingPolicy) CanAutoGenerate() bool {
+	return p != nil && p.IsSupported() && p.AutoGenerate && p.BindingField() == "credential_token"
+}
+func (p *ProfileBindingPolicy) SecretBindingKey(configKey string) string {
+	if p != nil && strings.TrimSpace(p.BindingKey) != "" {
+		return strings.TrimSpace(p.BindingKey)
+	}
+	return strings.TrimSpace(configKey)
+}
 func (p *ProfileBindingPolicy) Validate(valueType string) error {
 	if !p.IsSupported() {
 		return nil
@@ -76,10 +94,22 @@ func (p *ProfileBindingPolicy) Validate(valueType string) error {
 			return fmt.Errorf("profile_binding scheme unsupported")
 		}
 	}
+	if field := p.BindingField(); field != "endpoint" && field != "credential_token" {
+		return fmt.Errorf("profile_binding source_field unsupported")
+	}
+	if p.BindingField() == "credential_token" && valueType != "secret" {
+		return fmt.Errorf("credential_token profile_binding requires a secret value")
+	}
+	if p.BindingField() != "credential_token" && strings.TrimSpace(p.BindingKey) != "" {
+		return fmt.Errorf("binding_key requires credential_token source_field")
+	}
+	if p.AutoGenerate && p.BindingField() != "credential_token" {
+		return fmt.Errorf("auto_generate requires credential_token source_field")
+	}
 	return nil
 }
 func (p *ProfileBindingPolicy) Matches(kind, scheme string) bool {
-	return p.IsSupported() && p.Validate("string") == nil && slices.Contains(p.ResourceKinds, kind) && slices.Contains(p.Schemes, scheme)
+	return p.IsSupported() && slices.Contains(p.ResourceKinds, kind) && slices.Contains(p.Schemes, scheme)
 }
 func (p *ProfileBindingPolicy) Clone() *ProfileBindingPolicy {
 	if p == nil {
