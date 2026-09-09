@@ -23,6 +23,7 @@ type CatalogSource interface {
 }
 type Documents []Document
 
+// Documents 读取本来源的完整文档集，并响应上下文取消。
 func (d Documents) Documents(ctx context.Context) ([]Document, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -34,6 +35,7 @@ func (d Documents) Documents(ctx context.Context) ([]Document, error) {
 // It reads only *_catalog.yaml at the supplied FS root; no directory probing.
 type FSSource struct{ FS fs.FS }
 
+// Documents 读取本来源的完整文档集，并响应上下文取消。
 func (s FSSource) Documents(ctx context.Context) ([]Document, error) {
 	if s.FS == nil {
 		return nil, problem("", "catalog_source", "")
@@ -61,6 +63,7 @@ func (s FSSource) Documents(ctx context.Context) ([]Document, error) {
 	return result, nil
 }
 
+// Decode 严格解码单个 Catalog 文档并归一化 v1 兼容标记。
 // Decode performs strict document checks; cross-document rules compile in Load.
 func Decode(d Document) (Definition, error) {
 	var v Definition
@@ -100,6 +103,8 @@ func Decode(d Document) (Definition, error) {
 	}
 	return v, nil
 }
+
+// Load 加载完整文档集并编译跨文档约束。
 func Load(ctx context.Context, source CatalogSource) (*Catalog, error) {
 	if source == nil {
 		return nil, problem("", "catalog_source", "")
@@ -118,6 +123,8 @@ func Load(ctx context.Context, source CatalogSource) (*Catalog, error) {
 	}
 	return compileDefinitions(definitions)
 }
+
+// checkDefinition 检查文档身份、配置项类型和绑定策略。
 func checkDefinition(d Definition) error {
 	if (d.Version != "1" && d.Version != "2") || strings.TrimSpace(d.Module) == "" || strings.TrimSpace(d.Domain) == "" || d.Items == nil {
 		return problem("", "catalog_identity", "")
@@ -156,6 +163,7 @@ func checkDefinition(d Definition) error {
 	return nil
 }
 
+// checkUISchema 检查展示元数据形状，仅允许 SHOW/HIDE 行为规则。
 // checkUISchema accepts JSON Forms presentation metadata, but deliberately
 // constrains behavioral rules to SHOW/HIDE. UI metadata never changes the
 // resolved, validated, or injected configuration value.
@@ -232,11 +240,13 @@ func checkUISchema(node map[string]any, path string, depth int) error {
 	return nil
 }
 
+// validUIScope 检查 UI 控件是否引用配置属性路径。
 func validUIScope(raw any) bool {
 	scope, ok := raw.(string)
 	return ok && strings.HasPrefix(scope, "#/properties/") && len(scope) > len("#/properties/")
 }
 
+// orderedDefinitions 复制并按文档名排序，以稳定冻结摘要。
 func orderedDefinitions(defs []Definition) []Definition {
 	result := clone(defs)
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })

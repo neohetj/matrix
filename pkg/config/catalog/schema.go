@@ -23,7 +23,10 @@ type Catalog struct {
 	digest    string
 }
 
+// Items 返回配置项的独立副本，保持 Catalog 不可变。
 func (c *Catalog) Items() []Item { return clone(c.items) }
+
+// Item 按主键查找配置项并返回独立副本。
 func (c *Catalog) Item(key string) (Item, bool) {
 	for _, item := range c.items {
 		if item.Key == key {
@@ -32,9 +35,13 @@ func (c *Catalog) Item(key string) (Item, bool) {
 	}
 	return Item{}, false
 }
+
+// Freeze 冻结定义和摘要，不保存解析后的配置值。
 func (c *Catalog) Freeze() *Frozen {
 	return &Frozen{Format: Format, Digest: c.digest, Documents: clone(c.documents)}
 }
+
+// Restore 重新编译冻结定义并核对格式与摘要。
 func Restore(f *Frozen) (*Catalog, error) {
 	if f == nil || f.Format != Format {
 		return nil, problem("", "catalog_format", "")
@@ -51,10 +58,12 @@ func Restore(f *Frozen) (*Catalog, error) {
 
 type noExternalLoader struct{}
 
+// Load 拒绝所有外部 Schema 加载，阻止文件和网络访问。
 func (noExternalLoader) Load(string) (any, error) {
 	return nil, fmt.Errorf("external schema references disabled")
 }
 
+// compileDefinitions 合并定义、编译受限 Schema 并验证默认值。
 func compileDefinitions(defs []Definition) (*Catalog, error) {
 	if len(defs) == 0 {
 		return nil, problem("", "catalog_empty", "")
@@ -174,6 +183,7 @@ func compileDefinitions(defs []Definition) (*Catalog, error) {
 	return c, nil
 }
 
+// checkSchema 递归限制 Schema 关键字，禁止外部引用及运行时语义。
 // Supported dialect: 2020-12 validation subset below. References (including
 // local $ref), custom vocabularies, format/content and default are intentionally
 // rejected, not ignored. No filesystem/network reference resolution is allowed.
@@ -229,6 +239,7 @@ func checkSchema(raw any, key, path string, depth int) error {
 	return nil
 }
 
+// Validate 校验完整的已解析配置，不补默认值、不修改输入。
 // Validate validates a complete, already resolved and typed configuration. It
 // never applies defaults, mutates input, or interprets secret binding tokens.
 func (c *Catalog) Validate(values map[string]any) Issues {
@@ -246,6 +257,7 @@ func (c *Catalog) Validate(values map[string]any) Issues {
 	return validationIssues(err)
 }
 
+// ValidateProvided 仅校验已提供字段，完整执行门禁仍由 Validate 负责。
 // ValidateProvided checks supplied fields only. It is a draft gate, never an
 // execution gate: root required/conditional rules remain intact in Validate.
 func (c *Catalog) ValidateProvided(values map[string]any) Issues {
@@ -279,6 +291,7 @@ func (c *Catalog) ValidateProvided(values map[string]any) Issues {
 	return result
 }
 
+// validationIssues 将 Schema 错误归一化为不含原值的有序问题列表。
 func validationIssues(err error) Issues {
 	if err == nil {
 		return nil

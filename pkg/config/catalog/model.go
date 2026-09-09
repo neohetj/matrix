@@ -23,6 +23,7 @@ type Issue struct {
 }
 type Issues []Issue
 
+// PublicErrorDetails 返回可公开的结构化问题列表，不携带配置原值。
 // PublicErrorDetails is safe for transports that opt in to structured errors.
 func (p Issues) PublicErrorDetails() any {
 	return struct {
@@ -30,6 +31,7 @@ func (p Issues) PublicErrorDetails() any {
 	}{p}
 }
 
+// Error 拼接问题代码与配置键，供错误链记录安全摘要。
 func (p Issues) Error() string {
 	parts := make([]string, len(p))
 	for i, v := range p {
@@ -37,9 +39,13 @@ func (p Issues) Error() string {
 	}
 	return strings.Join(parts, "; ")
 }
+
+// problem 构造带实例路径和 Schema 路径的标准问题。
 func problem(key, code, schemaPath string) Issues {
 	return Issues{{Key: key, Code: code, InstancePath: pointer(key), SchemaPath: schemaPath, Message: "configuration rejected: " + code}}
 }
+
+// pointer 将配置键转义为 JSON Pointer 路径片段。
 func pointer(key string) string {
 	if key == "" {
 		return ""
@@ -58,22 +64,31 @@ type ProfileBindingPolicy struct {
 
 var schemePattern = regexp.MustCompile(`^[a-z][a-z0-9+.-]*$`)
 
+// IsSupported 判断绑定策略是否显式启用，空策略视为关闭。
 func (p *ProfileBindingPolicy) IsSupported() bool { return p != nil && p.Supported }
+
+// BindingField 读取绑定来源字段，未声明时使用 endpoint。
 func (p *ProfileBindingPolicy) BindingField() string {
 	if p != nil && strings.TrimSpace(p.SourceField) != "" {
 		return strings.TrimSpace(p.SourceField)
 	}
 	return "endpoint"
 }
+
+// CanAutoGenerate 仅允许已启用的凭据字段自动生成。
 func (p *ProfileBindingPolicy) CanAutoGenerate() bool {
 	return p != nil && p.IsSupported() && p.AutoGenerate && p.BindingField() == "credential_token"
 }
+
+// SecretBindingKey 返回声明的凭据绑定键，缺省时使用配置键。
 func (p *ProfileBindingPolicy) SecretBindingKey(configKey string) string {
 	if p != nil && strings.TrimSpace(p.BindingKey) != "" {
 		return strings.TrimSpace(p.BindingKey)
 	}
 	return strings.TrimSpace(configKey)
 }
+
+// Validate 校验绑定类型、资源种类和凭据策略之间的约束。
 func (p *ProfileBindingPolicy) Validate(valueType string) error {
 	if !p.IsSupported() {
 		return nil
@@ -108,9 +123,13 @@ func (p *ProfileBindingPolicy) Validate(valueType string) error {
 	}
 	return nil
 }
+
+// Matches 判断资源种类与协议是否同时满足绑定策略。
 func (p *ProfileBindingPolicy) Matches(kind, scheme string) bool {
 	return p.IsSupported() && slices.Contains(p.ResourceKinds, kind) && slices.Contains(p.Schemes, scheme)
 }
+
+// Clone 复制定义及其可变集合，隔离调用方的修改。
 func (p *ProfileBindingPolicy) Clone() *ProfileBindingPolicy {
 	if p == nil {
 		return nil
@@ -167,6 +186,7 @@ func (f *Frozen) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// Clone 复制定义及其可变集合，隔离调用方的修改。
 func (f *Frozen) Clone() *Frozen {
 	if f == nil {
 		return nil
@@ -174,6 +194,8 @@ func (f *Frozen) Clone() *Frozen {
 	v := clone(*f)
 	return &v
 }
+
+// clone 通过保留数值精度的 JSON 往返深拷贝内部定义。
 func clone[T any](v T) T {
 	encoded, err := json.Marshal(v)
 	if err != nil {

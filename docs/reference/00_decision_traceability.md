@@ -69,3 +69,7 @@ relations:
 2. RFC 进入 `Accepted` 或 `Implementing` 后，必须能追踪到当前有效的 Reference 或 Guide。
 3. Plan 标记为 `Stable` 前，必须确认当前事实已回写到 Reference，操作流程已回写到 Guide。
 4. 本文只做索引，不写 rationale；rationale 属于 ADR，阶段实施属于 Plan。
+
+## 配置运行时事实承接（2026-09-08）
+
+Reader API 与实例注入的当前事实见 [Reference](41_module_configuration_reader.md)，操作步骤见 [Guide](../guides/module-configuration-reader-guide.md)。本轮补齐稳定契约及 Catalog 函数职责注释；全部模块迁移和远端版本发布仍未关闭。

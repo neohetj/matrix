@@ -16,6 +16,7 @@ import (
 type ValueSource = matrixconfig.ConfigValueSource
 type Values map[string]any
 
+// Lookup 读取配置值并保留是否存在的语义。
 func (v Values) Lookup(ctx context.Context, key string) (any, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
@@ -31,6 +32,7 @@ type View interface{ Lookup(string) (any, bool) }
 type Check func(View) Issues
 type Resolved struct{ values map[string]any }
 
+// Values 返回有效配置的深拷贝，防止外部修改解析结果。
 func (v Resolved) Values() map[string]any {
 	result := make(map[string]any, len(v.values))
 	for k, value := range v.values {
@@ -38,10 +40,14 @@ func (v Resolved) Values() map[string]any {
 	}
 	return result
 }
+
+// Lookup 读取配置值并保留是否存在的语义。
 func (v Resolved) Lookup(key string) (any, bool) {
 	value, found := v.values[key]
 	return copyValue(value), found
 }
+
+// copyValue 递归复制配置中的列表和映射，标量直接返回。
 func copyValue(v any) any {
 	switch value := v.(type) {
 	case []string:
@@ -62,10 +68,13 @@ func copyValue(v any) any {
 		return v
 	}
 }
+
+// spec 将 Catalog 项映射为统一解析器的来源策略。
 func spec(item Item) matrixconfig.ConfigSpec {
 	return matrixconfig.ConfigSpec{Key: item.Key, Type: cnst.STRING, Resolution: matrixconfig.Resolution(item.Resolution), Required: item.Required, Secret: item.Secret, Default: item.Default, Aliases: item.Aliases}
 }
 
+// ResolveString 复用统一解析器读取节点字符串覆盖，不执行全局规则。
 // ResolveString reuses existing Matrix conversions. It deliberately does not run
 // global rules: other nodes may have distinct explicit values or initialize later.
 func (c *Catalog) ResolveString(r *matrixconfig.ConfigResolver, key, explicit string) (string, error) {
@@ -90,6 +99,7 @@ func (c *Catalog) ResolveString(r *matrixconfig.ConfigResolver, key, explicit st
 	return value, nil
 }
 
+// Resolve 按固定来源优先级解析配置，再校验完整类型化视图。
 // Resolve applies fixed source policy once, then validates the complete typed
 // view once. Provider errors are never converted into "missing" or defaulted.
 func (c *Catalog) Resolve(ctx context.Context, sources Sources, checks ...Check) (Resolved, Issues) {
@@ -97,12 +107,14 @@ func (c *Catalog) Resolve(ctx context.Context, sources Sources, checks ...Check)
 	return c.resolve(ctx, r, sources.Explicit, checks...)
 }
 
+// ResolveWithResolver 复用宿主注入的解析器校验配置，不引入全局节点覆盖。
 // ResolveWithResolver allows a host to validate once using the same resolver
 // installed for its resource nodes. It supplies no module-global node override.
 func (c *Catalog) ResolveWithResolver(r *matrixconfig.ConfigResolver, checks ...Check) (Resolved, Issues) {
 	return c.resolve(context.Background(), r, nil, checks...)
 }
 
+// resolve 汇总来源读取、类型转换和完整约束问题，不将来源错误当作缺省。
 func (c *Catalog) resolve(ctx context.Context, r *matrixconfig.ConfigResolver, explicit ValueSource, checks ...Check) (Resolved, Issues) {
 	result := Resolved{values: map[string]any{}}
 	var issues Issues
@@ -146,6 +158,7 @@ func (c *Catalog) resolve(ctx context.Context, r *matrixconfig.ConfigResolver, e
 	return result, issues
 }
 
+// Convert 复用 Matrix 类型转换并拒绝整数精度丢失及不可序列化值。
 // Convert retains Matrix scalar/list conversion semantics. Wire serializers
 // should keep the source value separately instead of round-tripping via JSON.
 func Convert(item Item, raw any) (any, error) {
