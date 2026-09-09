@@ -75,6 +75,9 @@ func TestServerHandlesInitializeListAndCall(t *testing.T) {
 }
 
 func TestServerToolsListPublishesRiskAnnotations(t *testing.T) {
+	nonDestructive := false
+	idempotent := true
+	closedWorld := false
 	endpoint, err := NewEndpoint(types.McpEndpointNodeConfiguration{
 		ArgumentPolicy: &types.McpArgumentPolicy{},
 		ServerName:     "annotated-tools",
@@ -92,6 +95,17 @@ func TestServerToolsListPublishesRiskAnnotations(t *testing.T) {
 				Target:      types.McpTargetSpec{Kind: TargetKindHTTPAPI, Method: http.MethodPost, URL: "http://127.0.0.1:1/runs"},
 				RiskLevel:   "write",
 				AuthContext: "writer",
+			},
+			{
+				Name:        "register_runtime_resource",
+				Target:      types.McpTargetSpec{Kind: TargetKindHTTPAPI, Method: http.MethodPost, URL: "http://127.0.0.1:1/runtime-resources"},
+				RiskLevel:   "write",
+				AuthContext: "writer",
+				Annotations: &types.McpToolAnnotationOverrides{
+					DestructiveHint: &nonDestructive,
+					IdempotentHint:  &idempotent,
+					OpenWorldHint:   &closedWorld,
+				},
 			},
 		},
 	})
@@ -118,7 +132,7 @@ func TestServerToolsListPublishesRiskAnnotations(t *testing.T) {
 	if err := json.Unmarshal(response, &envelope); err != nil {
 		t.Fatal(err)
 	}
-	if len(envelope.Result.Tools) != 2 {
+	if len(envelope.Result.Tools) != 3 {
 		t.Fatalf("tools/list returned %d tools", len(envelope.Result.Tools))
 	}
 	if got := envelope.Result.Tools[0]; got.Name != "read_run" || !got.Annotations.ReadOnlyHint || got.Annotations.DestructiveHint || !got.Annotations.IdempotentHint {
@@ -126,6 +140,9 @@ func TestServerToolsListPublishesRiskAnnotations(t *testing.T) {
 	}
 	if got := envelope.Result.Tools[1]; got.Name != "create_run" || got.Annotations.ReadOnlyHint || !got.Annotations.DestructiveHint || got.Annotations.IdempotentHint {
 		t.Fatalf("write annotations = %+v", got)
+	}
+	if got := envelope.Result.Tools[2]; got.Name != "register_runtime_resource" || got.Annotations.ReadOnlyHint || got.Annotations.DestructiveHint || !got.Annotations.IdempotentHint || got.Annotations.OpenWorldHint {
+		t.Fatalf("nondestructive write annotations = %+v", got)
 	}
 }
 

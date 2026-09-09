@@ -32,14 +32,24 @@ type McpAuthContext struct {
 
 // McpToolDefinition describes one MCP tool exposed by a module-owned catalog.
 type McpToolDefinition struct {
-	Name        string         `json:"name"`
-	Title       string         `json:"title,omitempty"`
-	Description string         `json:"description,omitempty"`
-	InputSchema map[string]any `json:"inputSchema,omitempty"`
-	Target      McpTargetSpec  `json:"target"`
-	RiskLevel   string         `json:"riskLevel,omitempty"`
-	AuthContext string         `json:"authContext,omitempty"`
-	Output      McpOutputSpec  `json:"output,omitempty"`
+	Name        string                      `json:"name"`
+	Title       string                      `json:"title,omitempty"`
+	Description string                      `json:"description,omitempty"`
+	InputSchema map[string]any              `json:"inputSchema,omitempty"`
+	Target      McpTargetSpec               `json:"target"`
+	RiskLevel   string                      `json:"riskLevel,omitempty"`
+	Annotations *McpToolAnnotationOverrides `json:"annotations,omitempty"`
+	AuthContext string                      `json:"authContext,omitempty"`
+	Output      McpOutputSpec               `json:"output,omitempty"`
+}
+
+// McpToolAnnotationOverrides lets a module describe a non-destructive,
+// idempotent, closed-world mutation more precisely than the conservative write defaults.
+// ReadOnlyHint remains derived from RiskLevel and cannot be overridden.
+type McpToolAnnotationOverrides struct {
+	DestructiveHint *bool `json:"destructiveHint,omitempty"`
+	IdempotentHint  *bool `json:"idempotentHint,omitempty"`
+	OpenWorldHint   *bool `json:"openWorldHint,omitempty"`
 }
 
 // McpTargetSpec declares the existing capability path behind an MCP tool.

@@ -78,12 +78,16 @@ that context is absent. Higher-risk classes such as `admin_write` and
 
 The protocol projection always emits explicit MCP tool annotations. A `read`
 tool is advertised with `readOnlyHint=true`, `destructiveHint=false`, and
-`idempotentHint=true`. A `write` tool is conservatively advertised with
+`idempotentHint=true`. A `write` tool defaults conservatively to
 `readOnlyHint=false`, `destructiveHint=true`, and `idempotentHint=false`.
-`openWorldHint=true` is used for both because a Matrix MCP target may observe or
-change state outside the Agent workspace. This allows non-interactive clients
-to execute declared read tools under a no-prompt approval policy while keeping
-mutation tools on the approval path.
+Module catalogs may override `destructiveHint`, `idempotentHint`, and
+`openWorldHint` under the tool's `annotations` object when an existing write
+contract is explicitly non-destructive, idempotent, or limited to a known
+control-plane boundary, such as a catalog create operation guarded by an
+idempotency key. `readOnlyHint` remains derived from `riskLevel` and cannot be
+overridden. `openWorldHint` defaults to `true` because a generic Matrix MCP
+target may observe or change state outside the Agent workspace; modules must
+opt in explicitly when the target is closed-world.
 
 HTTP targets may explicitly bind tool arguments through
 `target.pathArguments` and `target.queryArguments`. Path values are URL-escaped;
