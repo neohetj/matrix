@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -63,6 +64,25 @@ func (m ResolveMeta) SafeValue(raw any) any {
 type ConfigResolver struct {
 	businessConfig types.ConfigMap
 	envLookup      asset.EnvLookup
+	lookupContext  context.Context
+	namedSources   bool
+	envSource      ConfigValueSource
+	businessSource ConfigValueSource
+	valueTransform func(string, any) (any, error)
+}
+
+// ConfigValueSource separates absence from a provider failure and accepts typed
+// false/zero values. Named sources never fall back to the process environment.
+type ConfigValueSource interface {
+	Lookup(context.Context, string) (any, bool, error)
+}
+
+// WithValueSources preserves the resolver's fixed env -> business -> default
+// order and secret env-only policy. Nil sources mean absent, not os.LookupEnv.
+func WithValueSources(ctx context.Context, env, business ConfigValueSource) ResolverOption {
+	return func(r *ConfigResolver) {
+		r.lookupContext, r.envSource, r.businessSource, r.namedSources = ctx, env, business, true
+	}
 }
 
 type ResolverOption func(*ConfigResolver)
@@ -155,7 +175,7 @@ func (r *ConfigResolver) resolveFromCandidates(spec ConfigSpec, scope string, so
 		raw, ok, err := r.resolveAssetRaw(key, scope)
 		meta := ResolveMeta{Key: spec.Key, Alias: aliasFor(spec.Key, key), Source: source, Secret: spec.Secret}
 		if err != nil {
-			return nil, meta, false, err
+			return nil, meta, false, fmt.Errorf("configuration source_read: %s", spec.Key)
 		}
 		if ok {
 			return raw, meta, true, nil
@@ -165,6 +185,32 @@ func (r *ConfigResolver) resolveFromCandidates(spec ConfigSpec, scope string, so
 }
 
 func (r *ConfigResolver) resolveAssetRaw(key string, scope string) (any, bool, error) {
+	raw, found, err := r.resolveAssetSourceRaw(key, scope)
+	if err != nil || !found || r.valueTransform == nil {
+		return raw, found, err
+	}
+	value, err := r.valueTransform(key, raw)
+	if err != nil {
+		return nil, false, fmt.Errorf("configuration source_transform: %s", key)
+	}
+	return value, !isEmptyConfigValue(value), nil
+}
+
+func (r *ConfigResolver) resolveAssetSourceRaw(key string, scope string) (any, bool, error) {
+	if r.namedSources {
+		provider := r.envSource
+		if scope == "engine" {
+			provider = r.businessSource
+		}
+		if provider == nil {
+			return nil, false, nil
+		}
+		raw, found, err := provider.Lookup(r.lookupContext, key)
+		if err != nil {
+			return nil, false, err
+		}
+		return raw, found && !isEmptyConfigValue(raw), nil
+	}
 	uri := asset.NewConfigAsset().SetKey(key).Scope(scope).Build()
 	ctx := asset.NewAssetContext(
 		asset.WithEngineConfig(r.businessConfig),
@@ -215,12 +261,12 @@ func resolveTyped[T any](raw any, spec ConfigSpec, meta ResolveMeta) (T, Resolve
 
 	converted, err := utils.Convert(raw, targetType)
 	if err != nil {
-		return zero, meta, err
+		return zero, meta, fmt.Errorf("configuration value_type: %s", spec.Key)
 	}
 	if val, ok := converted.(T); ok {
 		return val, meta, nil
 	}
-	return zero, meta, fmt.Errorf("converted config value %v (type %T) cannot be asserted to %T", converted, converted, zero)
+	return zero, meta, fmt.Errorf("configuration target_type: %s", spec.Key)
 }
 
 func candidateKeys(spec ConfigSpec) []string {

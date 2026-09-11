@@ -60,6 +60,7 @@ func TestPipelineEndpointNode_StartAndProcess(t *testing.T) {
 	}
 	`
 	pool := registry.Default.GetSharedNodePool()
+	node.SetNodePool(pool)
 	_, err := pool.Load([]byte(cmDSL), registry.Default.GetNodeManager())
 	assert.NoError(t, err)
 

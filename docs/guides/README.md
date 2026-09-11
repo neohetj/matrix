@@ -45,3 +45,5 @@ relations:
 - [config-uri-usage-guide.md](./config-uri-usage-guide.md): `config://` 协议、scope 回退与 helper 读取方式。
 - [unified-error-handling-guide.md](./unified-error-handling-guide.md): `Fault -> FailureInfo -> ServiceError` 与 HTTP 错误映射。
 - [components/README.md](./components/README.md): 组件级使用指南与编写规范。
+
+- [module-configuration-reader-guide.md](module-configuration-reader-guide.md)：模块配置 Reader 装配和隔离验证。
