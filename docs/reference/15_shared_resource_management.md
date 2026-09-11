@@ -26,7 +26,7 @@ relations:
 共享资源机制由两个核心组件构成：
 
 1. **`SharedNode`**：资源提供方节点。
-2. **`NodePool`**：引擎级全局池，用于保存已实例化的共享节点。
+2. **`NodePool`**：引擎级共享池，用于保存已实例化的共享节点；“共享”不代表跨 Engine 使用进程全局池。
 
 接口定义如下：
 
@@ -47,8 +47,10 @@ type SharedNode interface {
 flowchart TD
     discover["1. Discover shared DSL paths"] --> load["2. builder.LoadSharedNodes(...)"]
     load --> pool["3. NodePool.NewFromNodeDef(...)"]
-    pool --> ready["4. SharedNodePool 持有实例"]
-    ready --> runtime["5. 业务节点或 endpoint 运行时按需引用"]
+    pool --> inject["4. Init 前注入所属 Engine 的 NodePool / ConfigReader"]
+    inject --> ready["5. SharedNodePool 持有实例"]
+    ready --> runtime["6. 节点或 endpoint 从所属实例按需引用"]
+    load -->|已启用模块配置且资源装载失败| abort["终止 Engine 创建并返回资源文件与错误原因"]
 ```
 
 对应代码入口：
@@ -59,6 +61,10 @@ flowchart TD
 - `NodePool.NewFromNodeDef(...)`
 
 shared DSL 文件通常本身是一个 `RuleChainDef` 容器，但主要用途是承载 `metadata.nodes` 中的共享节点定义。
+
+使用 `WithModuleConfig` 的 Engine 为共享资源和规则链建立私有池。其选中加载的 shared 文件若读取、解析或节点初始化失败，创建过程直接返回错误，不能记录 warning 后丢弃资源继续启动。未声明或不存在的可选 shared 目录仍允许跳过。未启用模块配置的旧入口保留原装载策略；配置感知节点的初始化错误仍必须向上传播。
+
+这项检查不替业务模块判断哪些业务配置必填，也不提前调用所有惰性资源的 `GetInstance()`；条件必需项由业务启动检查负责。
 
 ## 3. 如何实现共享节点
 
@@ -127,6 +133,16 @@ func resolveClient(pool types.NodePool, resourceURI string) (any, error) {
 - 你正在实现更底层的 helper / connector。
 - 你需要绕过 `asset.Asset` 做特殊生命周期管理。
 - 你明确知道返回类型，并且不希望引入额外包装。
+
+### 4.3. 实例隔离边界
+
+- 需要长期持有资源池的节点实现 `types.NodePoolAware`，由共享节点或规则链装配路径在 `Init` 前注入。Pipeline 端点、Channel Push、Redis Stream 端点使用此方式；直接手工构造节点的调用者也必须显式注入池。
+- 已注入的资源池查不到 `ref://` 时直接报错，禁止改查全局同名资源。
+- Redis Stream 与 Pipeline 端点已注入 `RuntimePool` 后，只在该池查找目标规则链；缺失时返回未找到。仅未注入运行时池的旧端点调用方式保留全局查找。
+- `action/forEach` 从当前 `NodeCtx → Runtime → Engine → RuntimePool` 查找子链；执行上下文或目标链缺失时返回错误。
+- 节点类型原型的全局注册不属于运行态资源查找，继续由 NodeManager 管理。
+
+回归验证包括同名资源在私有池和全局池同时存在、本地缺失而全局存在，以及 `matrix.New(...WithModuleConfig...)` 的 Pipeline 启动路径。对应测试为 `module_config_pipeline_test.go`、`module_config_shared_loading_test.go` 和 endpoint / pipeline / loop 包内的实例隔离测试。
 
 ## 5. DSL 示例
 

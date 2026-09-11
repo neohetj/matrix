@@ -59,3 +59,5 @@ relations:
 - [38_validation_inspection_schema.md](./38_validation_inspection_schema.md): Matrix validation report 与 inspection snapshot 输出模型。
 - [39_internal_error_code_specification.md](./39_internal_error_code_specification.md): Matrix core `aabbbcccc` 内部错误码编码、分配、传播与兼容规范。
 - [40_redis_stream_endpoint_reliability.md](./40_redis_stream_endpoint_reliability.md): Redis Stream Endpoint 的超时、pending recovery、有限投递、DLQ 与多实例契约。
+
+- [41_module_configuration_reader.md](41_module_configuration_reader.md)：来源快照、Reader API、校验阶段与 Engine 注入契约。

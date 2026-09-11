@@ -39,7 +39,8 @@ type nodePool struct {
 	// parser is used to decode DSLs.
 	parser types.Parser
 	// endpoints holds a dedicated list of nodes that implement the Endpoint interface.
-	endpoints []types.Endpoint
+	endpoints      []types.Endpoint
+	configProvider types.NodeConfigReaderProvider
 }
 
 // NewNodePool creates a new NodePool.
@@ -51,6 +52,36 @@ func NewNodePool(p types.Parser) types.NodePool {
 		parser:    p,
 		endpoints: make([]types.Endpoint, 0),
 	}
+}
+
+// SetConfigReaderProvider 在加载节点之前绑定 Engine 实例配置来源。
+func (p *nodePool) SetConfigReaderProvider(provider types.NodeConfigReaderProvider) {
+	p.configProvider = provider
+}
+
+// BindConfigReader 只为主动声明配置依赖的节点注入 Reader，缺失时不进入 Init。
+func BindConfigReader(node types.Node, provider types.NodeConfigReaderProvider) error {
+	consumer, ok := node.(types.ConfigReaderAware)
+	if !ok {
+		return nil
+	}
+	if provider == nil {
+		return types.ErrConfigReaderUnavailable
+	}
+	reader, ok := provider.ConfigReaderForNode(node.ID())
+	if !ok || reader == nil {
+		return types.ErrConfigReaderUnavailable
+	}
+	consumer.SetConfigReader(reader)
+	return nil
+}
+
+// NodeInitializationError 对配置消费者隔离原始错误，旧节点保持原有错误合同。
+func NodeInitializationError(node types.Node, err error) error {
+	if _, ok := node.(types.ConfigReaderAware); ok {
+		return fmt.Errorf("node %q: %w", node.ID(), types.ErrConfigInitialization)
+	}
+	return fmt.Errorf("failed to initialize node '%s': %w", node.ID(), err)
 }
 
 // Load loads a list of shared nodes from a rule chain DSL definition.
@@ -87,10 +118,19 @@ func (p *nodePool) NewFromNodeDef(def types.NodeDef, nodeMgr types.NodeManager) 
 	// 1. Set instance-specific metadata.
 	node.SetID(def.ID)
 	node.SetName(def.Name)
+	if consumer, ok := node.(types.NodePoolAware); ok {
+		consumer.SetNodePool(p)
+	}
+	if err := BindConfigReader(node, p.configProvider); err != nil {
+		return nil, fmt.Errorf("node %q: %w", def.ID, err)
+	}
 
 	// 2. Initialize with business-specific configuration only.
 	if err := node.Init(def.Configuration); err != nil {
-		return nil, fmt.Errorf("failed to initialize node '%s': %w", def.ID, err)
+		if _, aware := node.(types.ConfigReaderAware); aware {
+			node.Destroy()
+		}
+		return nil, NodeInitializationError(node, err)
 	}
 
 	sharedNode, ok := node.(types.SharedNode)

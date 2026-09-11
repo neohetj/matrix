@@ -76,6 +76,7 @@ type RedisStreamEndpointNode struct {
 	types.BaseNode
 	types.Instance
 	config         RedisStreamEndpointConfiguration
+	nodePool       types.NodePool
 	runtimePool    types.RuntimePool
 	transport      redisStreamTransport
 	processMessage func(context.Context, string, redis.XMessage) error
@@ -157,6 +158,9 @@ var _ types.GatedEndpoint = (*RedisStreamEndpointNode)(nil)
 func (n *RedisStreamEndpointNode) New() types.Node {
 	return &RedisStreamEndpointNode{BaseNode: n.BaseNode}
 }
+
+// SetNodePool 绑定 endpoint 所属 Engine 的共享资源池。
+func (n *RedisStreamEndpointNode) SetNodePool(pool types.NodePool) { n.nodePool = pool }
 
 // EnableExpression implements types.GatedEndpoint. An empty value keeps the
 // historical behaviour of always starting the consumer.
@@ -540,17 +544,16 @@ func (n *RedisStreamEndpointNode) ensureGroup(ctx context.Context) error {
 
 func (n *RedisStreamEndpointNode) resolveRuntime() (types.Runtime, bool) {
 	if n.runtimePool != nil {
-		if rt, ok := n.runtimePool.Get(n.config.RuleChainID); ok && rt != nil {
-			return rt, true
-		}
+		// 已绑定实例时，缺失的规则链不能从全局池补取。
+		rt, ok := n.runtimePool.Get(n.config.RuleChainID)
+		return rt, ok && rt != nil
 	}
 	return registry.Default.RuntimePool.Get(n.config.RuleChainID)
 }
 
 func (n *RedisStreamEndpointNode) resolveClient() (*redis.Client, error) {
-	pool := registry.Default.GetSharedNodePool()
 	ast := asset.Asset[*redis.Client]{URI: n.config.RedisClient}
-	return ast.Resolve(asset.NewAssetContext(asset.WithNodePool(pool)))
+	return ast.Resolve(asset.NewAssetContext(asset.WithNodePool(n.nodePool)))
 }
 
 func (n *RedisStreamEndpointNode) consumerName(workerID int) string {
