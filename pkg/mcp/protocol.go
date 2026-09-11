@@ -304,12 +304,24 @@ type protocolToolAnnotations struct {
 
 func protocolAnnotations(tool types.McpToolDefinition) protocolToolAnnotations {
 	readOnly := normalizedRiskLevel(tool) == "read"
-	return protocolToolAnnotations{
+	annotations := protocolToolAnnotations{
 		ReadOnlyHint:    readOnly,
 		DestructiveHint: !readOnly,
 		IdempotentHint:  readOnly,
 		OpenWorldHint:   true,
 	}
+	if tool.Annotations != nil {
+		if tool.Annotations.DestructiveHint != nil {
+			annotations.DestructiveHint = *tool.Annotations.DestructiveHint
+		}
+		if tool.Annotations.IdempotentHint != nil {
+			annotations.IdempotentHint = *tool.Annotations.IdempotentHint
+		}
+		if tool.Annotations.OpenWorldHint != nil {
+			annotations.OpenWorldHint = *tool.Annotations.OpenWorldHint
+		}
+	}
+	return annotations
 }
 
 func inputSchemaOrEmpty(schema map[string]any) map[string]any {
