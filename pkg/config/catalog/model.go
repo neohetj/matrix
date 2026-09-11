@@ -54,12 +54,18 @@ func pointer(key string) string {
 }
 
 type ProfileBindingPolicy struct {
-	Supported     bool     `yaml:"supported" json:"supported"`
-	ResourceKinds []string `yaml:"resource_kinds,omitempty" json:"resource_kinds,omitempty"`
-	Schemes       []string `yaml:"schemes,omitempty" json:"schemes,omitempty"`
-	SourceField   string   `yaml:"source_field,omitempty" json:"source_field,omitempty"`
-	BindingKey    string   `yaml:"binding_key,omitempty" json:"binding_key,omitempty"`
-	AutoGenerate  bool     `yaml:"auto_generate,omitempty" json:"auto_generate,omitempty"`
+	Supported     bool                    `yaml:"supported" json:"supported"`
+	ResourceKinds []string                `yaml:"resource_kinds,omitempty" json:"resource_kinds,omitempty"`
+	Schemes       []string                `yaml:"schemes,omitempty" json:"schemes,omitempty"`
+	ValueField    string                  `yaml:"value_field,omitempty" json:"value_field,omitempty"`
+	BindingGroup  string                  `yaml:"binding_group,omitempty" json:"binding_group,omitempty"`
+	Generation    *SecretGenerationPolicy `yaml:"generation,omitempty" json:"generation,omitempty"`
+}
+
+type SecretGenerationPolicy struct {
+	Allowed  bool   `yaml:"allowed" json:"allowed"`
+	Encoding string `yaml:"encoding" json:"encoding"`
+	Bytes    int    `yaml:"bytes" json:"bytes"`
 }
 
 var schemePattern = regexp.MustCompile(`^[a-z][a-z0-9+.-]*$`)
@@ -67,26 +73,16 @@ var schemePattern = regexp.MustCompile(`^[a-z][a-z0-9+.-]*$`)
 // IsSupported 判断绑定策略是否显式启用，空策略视为关闭。
 func (p *ProfileBindingPolicy) IsSupported() bool { return p != nil && p.Supported }
 
-// BindingField 读取绑定来源字段，未声明时使用 endpoint。
-func (p *ProfileBindingPolicy) BindingField() string {
-	if p != nil && strings.TrimSpace(p.SourceField) != "" {
-		return strings.TrimSpace(p.SourceField)
+func (p *ProfileBindingPolicy) valueField() string {
+	if p == nil || p.ValueField == "" {
+		return "endpoint"
 	}
-	return "endpoint"
+	return p.ValueField
 }
 
-// CanAutoGenerate 仅允许已启用的凭据字段自动生成。
-func (p *ProfileBindingPolicy) CanAutoGenerate() bool {
-	return p != nil && p.IsSupported() && p.AutoGenerate && p.BindingField() == "credential_token"
-}
-
-// SecretBindingKey 返回声明的凭据绑定键，缺省时使用配置键。
-func (p *ProfileBindingPolicy) SecretBindingKey(configKey string) string {
-	if p != nil && strings.TrimSpace(p.BindingKey) != "" {
-		return strings.TrimSpace(p.BindingKey)
-	}
-	return strings.TrimSpace(configKey)
-}
+// ResolvedValueField returns the runtime resource field copied into the
+// effective configuration. Older endpoint policies omit the field.
+func (p *ProfileBindingPolicy) ResolvedValueField() string { return p.valueField() }
 
 // Validate 校验绑定类型、资源种类和凭据策略之间的约束。
 func (p *ProfileBindingPolicy) Validate(valueType string) error {
@@ -94,39 +90,47 @@ func (p *ProfileBindingPolicy) Validate(valueType string) error {
 		return nil
 	}
 	if valueType != "string" && valueType != "url" && valueType != "secret" {
-		return fmt.Errorf("profile_binding requires a string value")
+		return fmt.Errorf("profile_binding requires a string, url, or secret configuration type")
 	}
-	if len(p.ResourceKinds) == 0 || len(p.Schemes) == 0 {
-		return fmt.Errorf("profile_binding requires resource_kinds and schemes")
+	if len(p.ResourceKinds) == 0 {
+		return fmt.Errorf("profile_binding requires non-empty resource_kinds")
+	}
+	valueField := p.valueField()
+	if valueField != "endpoint" && valueField != "secret" {
+		return fmt.Errorf("profile_binding value_field must be endpoint or secret")
 	}
 	for _, v := range p.ResourceKinds {
-		if v != "database" && v != "service" {
-			return fmt.Errorf("profile_binding resource kind unsupported")
+		if v != "database" && v != "service" && v != "secret" {
+			return fmt.Errorf("profile_binding resource_kinds must contain only database, service, or secret")
 		}
+	}
+	if valueField == "secret" {
+		if valueType != "secret" || len(p.ResourceKinds) != 1 || p.ResourceKinds[0] != "secret" || len(p.Schemes) != 0 {
+			return fmt.Errorf("secret profile_binding requires secret type, secret resource kind, and no schemes")
+		}
+		if p.Generation != nil && (p.Generation.Encoding != "hex" || p.Generation.Bytes < 16 || p.Generation.Bytes > 128) {
+			return fmt.Errorf("secret profile_binding generation requires hex encoding and 16-128 bytes")
+		}
+		return nil
+	}
+	if len(p.Schemes) == 0 || slices.Contains(p.ResourceKinds, "secret") || p.Generation != nil || p.BindingGroup != "" {
+		return fmt.Errorf("endpoint profile_binding requires schemes and cannot use secret options")
 	}
 	for _, v := range p.Schemes {
 		if !schemePattern.MatchString(v) {
-			return fmt.Errorf("profile_binding scheme unsupported")
+			return fmt.Errorf("profile_binding schemes must be lowercase URI schemes")
 		}
-	}
-	if field := p.BindingField(); field != "endpoint" && field != "credential_token" {
-		return fmt.Errorf("profile_binding source_field unsupported")
-	}
-	if p.BindingField() == "credential_token" && valueType != "secret" {
-		return fmt.Errorf("credential_token profile_binding requires a secret value")
-	}
-	if p.BindingField() != "credential_token" && strings.TrimSpace(p.BindingKey) != "" {
-		return fmt.Errorf("binding_key requires credential_token source_field")
-	}
-	if p.AutoGenerate && p.BindingField() != "credential_token" {
-		return fmt.Errorf("auto_generate requires credential_token source_field")
 	}
 	return nil
 }
 
 // Matches 判断资源种类与协议是否同时满足绑定策略。
 func (p *ProfileBindingPolicy) Matches(kind, scheme string) bool {
-	return p.IsSupported() && slices.Contains(p.ResourceKinds, kind) && slices.Contains(p.Schemes, scheme)
+	return p.IsSupported() && p.valueField() == "endpoint" && slices.Contains(p.ResourceKinds, kind) && slices.Contains(p.Schemes, scheme)
+}
+
+func (p *ProfileBindingPolicy) MatchesSecret(kind string) bool {
+	return p.IsSupported() && p.valueField() == "secret" && kind == "secret" && slices.Contains(p.ResourceKinds, kind)
 }
 
 // Clone 复制定义及其可变集合，隔离调用方的修改。
@@ -137,6 +141,10 @@ func (p *ProfileBindingPolicy) Clone() *ProfileBindingPolicy {
 	result := *p
 	result.ResourceKinds = slices.Clone(p.ResourceKinds)
 	result.Schemes = slices.Clone(p.Schemes)
+	if p.Generation != nil {
+		generation := *p.Generation
+		result.Generation = &generation
+	}
 	return &result
 }
 
