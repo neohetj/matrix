@@ -105,6 +105,9 @@ func compileDefinitions(defs []Definition) (*Catalog, error) {
 				aliases[alias] = true
 			}
 			base := map[string]any{"type": schemaTypes[item.Type]}
+			if item.Required && schemaTypes[item.Type] == "string" {
+				base["minLength"] = 1
+			}
 			if item.Type == "string_list" {
 				base["items"] = map[string]any{"type": "string"}
 			}
@@ -149,6 +152,10 @@ func compileDefinitions(defs []Definition) (*Catalog, error) {
 	root := map[string]any{"$schema": Dialect, "allOf": all}
 	// JSON normalization gives the schema library its documented JSON value types.
 	root = clone(root)
+	// 条件必填的空值约束留在所属断言分支，不改变声明、冻结摘要或 if/not 条件。
+	for _, rule := range root["allOf"].([]any)[1:] {
+		requireNonEmptyStrings(rule, props)
+	}
 	compiler := jsonschema.NewCompiler()
 	compiler.DefaultDraft(jsonschema.Draft2020)
 	compiler.UseLoader(noExternalLoader{})
@@ -274,7 +281,7 @@ func (c *Catalog) ValidateProvided(values map[string]any) Issues {
 			continue
 		}
 		if raw, ok := values[key].(string); ok && raw == "" {
-			continue // 与 resolver 一致：空字符串表示未提供，执行门禁检查完整性。
+			continue // 仅草稿允许未完成的空输入；运行来源和 Reader 校验保留并检查空值。
 		}
 		value, err := Convert(item, values[key])
 		if err != nil {

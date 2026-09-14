@@ -4,7 +4,8 @@ type: "Reference"
 title: "参考：Matrix 决策追踪索引"
 status: "Draft"
 owner: "neohetj"
-version: "1.2.0"
+version: "1.2.1"
+updated_at: "2026-09-13"
 tags:
   - "matrix"
   - "decision-traceability"
@@ -73,3 +74,7 @@ relations:
 ## 配置运行时事实承接（2026-09-08）
 
 Reader API 与实例注入的当前事实见 [Reference](41_module_configuration_reader.md)，操作步骤见 [Guide](../guides/module-configuration-reader-guide.md)。本轮补齐稳定契约及 Catalog 函数职责注释；全部模块迁移和远端版本发布仍未关闭。
+
+2026-09-13：修复 ConfigResolver 将显式空字符串当作缺失并回退默认的问题。运行来源、alias、转换结果和 Reader 快照保留空值并交统一字段约束；required 字符串拒绝空值，缺失仍按 Catalog default 处理，Secret 的 env-only 与 false/0 保留不变。完整校验中的条件 required/dependentRequired 同样拒绝空串，但不改变 if/not 谓词、未激活分支、原始声明或冻结摘要。草稿 `Catalog.ValidateProvided` 继续允许未完成输入，公共 `config://` Asset 兼容契约未改。当前事实与操作回写上述 Reference/Guide；回归见 `pkg/config/empty_value_test.go`、`pkg/config/catalog/empty_value_test.go`、`pkg/config/catalog/conditional_empty_test.go` 及既有来源、快照、Secret、草稿门禁测试。
+
+验证：`go test ./pkg/config/... -count=1`、`go test ./pkg/asset ./pkg/types -count=1`、`go test . -run ModuleConfig -count=1` 与 `git diff --check` 均通过。以上是本地源码验证，不代表已发布依赖版本或已完成全部消费方兼容验收。

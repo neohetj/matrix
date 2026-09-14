@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/neohetj/matrix/pkg/asset"
 	"github.com/neohetj/matrix/pkg/cnst"
@@ -184,6 +185,7 @@ func (r *ConfigResolver) resolveFromCandidates(spec ConfigSpec, scope string, so
 	return nil, ResolveMeta{Key: spec.Key, Secret: spec.Secret}, false, nil
 }
 
+// resolveAssetRaw 保留来源及转换结果中显式空字符串的存在性，交由类型与字段约束判定。
 func (r *ConfigResolver) resolveAssetRaw(key string, scope string) (any, bool, error) {
 	raw, found, err := r.resolveAssetSourceRaw(key, scope)
 	if err != nil || !found || r.valueTransform == nil {
@@ -193,9 +195,10 @@ func (r *ConfigResolver) resolveAssetRaw(key string, scope string) (any, bool, e
 	if err != nil {
 		return nil, false, fmt.Errorf("configuration source_transform: %s", key)
 	}
-	return value, !isEmptyConfigValue(value), nil
+	return value, value != nil, nil
 }
 
+// resolveAssetSourceRaw 读取显式来源；环境沿用 ConfigAsset 的名称兼容规则但不丢弃空字符串。
 func (r *ConfigResolver) resolveAssetSourceRaw(key string, scope string) (any, bool, error) {
 	if r.namedSources {
 		provider := r.envSource
@@ -209,7 +212,19 @@ func (r *ConfigResolver) resolveAssetSourceRaw(key string, scope string) (any, b
 		if err != nil {
 			return nil, false, err
 		}
-		return raw, found && !isEmptyConfigValue(raw), nil
+		return raw, found && raw != nil, nil
+	}
+	if scope == "env" {
+		// 公共 config:// 仍保留旧兼容行为，Catalog 来源需要保留已提供的空值。
+		if value, found := r.lookupEnv(key); found {
+			return value, true, nil
+		}
+		envKey := strings.ToUpper(strings.ReplaceAll(key, ".", "_"))
+		if envKey == key {
+			return nil, false, nil
+		}
+		value, found := r.lookupEnv(envKey)
+		return value, found, nil
 	}
 	uri := asset.NewConfigAsset().SetKey(key).Scope(scope).Build()
 	ctx := asset.NewAssetContext(
@@ -224,7 +239,7 @@ func (r *ConfigResolver) resolveAssetSourceRaw(key string, scope string) (any, b
 		}
 		return nil, false, err
 	}
-	if isEmptyConfigValue(raw) {
+	if raw == nil {
 		return nil, false, nil
 	}
 	return raw, true, nil
@@ -237,8 +252,15 @@ func (r *ConfigResolver) lookupEnv(key string) (string, bool) {
 	return os.LookupEnv(key)
 }
 
+// resolveTyped 保持必填项空值错误；可选字符串是否允许为空由调用方的字段约束决定。
 func resolveTyped[T any](raw any, spec ConfigSpec, meta ResolveMeta) (T, ResolveMeta, error) {
 	var zero T
+	if spec.Required && isEmptyConfigValue(raw) {
+		if spec.Secret {
+			return zero, meta, fmt.Errorf("%w: %s", ErrRequiredSecret, spec.Key)
+		}
+		return zero, meta, fmt.Errorf("%w: %s", ErrRequiredConfig, spec.Key)
+	}
 	if raw == nil {
 		return zero, meta, nil
 	}
