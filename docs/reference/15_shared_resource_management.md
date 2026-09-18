@@ -4,7 +4,7 @@ type: "Reference"
 title: "学习Matrix共享资源管理"
 status: "Stable"
 owner: "neohetj"
-version: "2.3.0"
+version: "2.4.0"
 tags:
   - "shared-resource"
   - "dependency-injection"
@@ -46,23 +46,30 @@ type SharedNode interface {
 ```mermaid
 flowchart TD
     discover["1. Discover shared DSL paths"] --> load["2. builder.LoadSharedNodes(...)"]
-    load --> pool["3. NodePool.NewFromNodeDef(...)"]
-    pool --> inject["4. Init 前注入所属 Engine 的 NodePool / ConfigReader"]
-    inject --> ready["5. SharedNodePool 持有实例"]
-    ready --> runtime["6. 节点或 endpoint 从所属实例按需引用"]
-    load -->|已启用模块配置且资源装载失败| abort["终止 Engine 创建并返回资源文件与错误原因"]
+    load --> plan{"3. 是否注入 SharedNodeActivationPlan"}
+    plan -->|否| pool["4. 默认加载全部发现节点"]
+    plan -->|是且启用| pool
+    plan -->|是且禁用| skip["跳过构造、Init 与 NodePool 注册"]
+    plan -->|判定失败| abort["终止 Engine 创建并返回节点与来源文件"]
+    pool --> inject["5. Init 前注入所属 Engine 的 NodePool / ConfigReader"]
+    inject --> ready["6. SharedNodePool 持有实例"]
+    ready --> runtime["7. 节点或 endpoint 从所属实例按需引用"]
+    load -->|已选中资源装载失败| abort
 ```
 
 对应代码入口：
 
 - `matrix.New(...)`
+- `matrix.WithSharedNodeActivationPlan(...)`
 - `builder.LoadSharedNodes(...)`
 - `NodePool.LoadFromRuleChainDef(...)`
 - `NodePool.NewFromNodeDef(...)`
 
 shared DSL 文件通常本身是一个 `RuleChainDef` 容器，但主要用途是承载 `metadata.nodes` 中的共享节点定义。
 
-使用 `WithModuleConfig` 的 Engine 为共享资源和规则链建立私有池。其选中加载的 shared 文件若读取、解析或节点初始化失败，创建过程直接返回错误，不能记录 warning 后丢弃资源继续启动。未声明或不存在的可选 shared 目录仍允许跳过。未启用模块配置的旧入口保留原装载策略；配置感知节点的初始化错误仍必须向上传播。
+Matrix 的兼容默认值仍是“加载并初始化所有发现的共享节点”。只有宿主显式传入 `WithSharedNodeActivationPlan(...)` 时，loader 才会在 `NodePool.NewFromNodeDef(...)` 之前逐个判定节点。返回 `false` 的节点不会被构造、不会执行 `Init`、不会进入 `SharedNodePool`；计划返回错误时启动直接失败，错误包含节点 ID 和 shared DSL 来源文件。显式激活计划会让本次 Engine 持有私有共享节点池，即使没有模块配置，后续判定或初始化失败也会销毁已创建资源，不污染调用方或全局池。激活计划只负责声明本次运行需要哪些资源，不能把已启用资源的初始化失败降级成 warning 或假成功。
+
+使用 `WithModuleConfig` 的 Engine 为共享资源和规则链建立私有池。其激活计划选中的 shared 文件若读取、解析或节点初始化失败，创建过程直接返回错误，不能记录 warning 后丢弃资源继续启动。未声明或不存在的可选 shared 目录仍允许跳过。未启用模块配置的旧入口保留原装载策略；配置感知节点的初始化错误仍必须向上传播。
 
 这项检查不替业务模块判断哪些业务配置必填，也不提前调用所有惰性资源的 `GetInstance()`；条件必需项由业务启动检查负责。
 

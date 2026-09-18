@@ -2,6 +2,7 @@ package builder_test
 
 import (
 	"embed"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -317,6 +318,74 @@ func TestLoadSharedNodes(t *testing.T) {
 				assert.Equal(t, "shared/source_nodes.json", nodes[0].SourcePath)
 			}
 		}
+	})
+
+	// 测试点：选择器只保留本次运行启用的共享节点，未启用节点不进入资源池。
+	t.Run("selector skips disabled nodes", func(t *testing.T) {
+		provider := &utils.MockResourceProvider{
+			Files: map[string]struct {
+				Content string
+				IsDir   bool
+			}{
+				"shared/selected_nodes.json": {Content: `{"metadata":{"nodes":[{"id":"enabled","type":"some_node"},{"id":"disabled","type":"some_node"}]}}`},
+			},
+		}
+		nodeMgr := &utils.MockNodeManager{}
+		pool := &captureNodePool{}
+
+		err := builder.LoadSharedNodes(provider, []string{"shared"}, nodeMgr, pool, builder.SharedNodeLoadOptions{
+			Selector: func(def types.NodeDef) (bool, error) {
+				return def.ID == "enabled", nil
+			},
+		})
+		assert.NoError(t, err)
+		if assert.Len(t, pool.loadFromRuleChainDefs, 1) {
+			nodes := pool.loadFromRuleChainDefs[0].Metadata.Nodes
+			if assert.Len(t, nodes, 1) {
+				assert.Equal(t, "enabled", nodes[0].ID)
+				assert.Equal(t, "shared/selected_nodes.json", nodes[0].SourcePath)
+			}
+		}
+	})
+
+	// 测试点：激活计划无法判定时必须阻止启动，不能退化成全加载或静默跳过。
+	t.Run("selector error fails loading", func(t *testing.T) {
+		provider := &utils.MockResourceProvider{
+			Files: map[string]struct {
+				Content string
+				IsDir   bool
+			}{
+				"shared/selected_nodes.json": {Content: `{"metadata":{"nodes":[{"id":"undecidable","type":"some_node"}]}}`},
+			},
+		}
+		pool := &captureNodePool{}
+
+		err := builder.LoadSharedNodes(provider, []string{"shared"}, &utils.MockNodeManager{}, pool, builder.SharedNodeLoadOptions{
+			Selector: func(def types.NodeDef) (bool, error) {
+				return false, errors.New("activation plan unavailable")
+			},
+		})
+		assert.ErrorContains(t, err, "undecidable")
+		assert.ErrorContains(t, err, "activation plan unavailable")
+		assert.Empty(t, pool.loadFromRuleChainDefs)
+	})
+
+	// 测试点：显式激活计划选中的节点初始化失败时必须阻止启动。
+	t.Run("selected node failure is strict", func(t *testing.T) {
+		provider := &utils.MockResourceProvider{
+			Files: map[string]struct {
+				Content string
+				IsDir   bool
+			}{
+				"shared/selected_nodes.json": {Content: `{"metadata":{"nodes":[{"id":"enabled","type":"not_registered"}]}}`},
+			},
+		}
+		pool := &utils.MockNodePool{Nodes: make(map[string]types.NodeCtx)}
+
+		err := builder.LoadSharedNodes(provider, []string{"shared"}, &utils.MockNodeManager{}, pool, builder.SharedNodeLoadOptions{
+			Selector: func(def types.NodeDef) (bool, error) { return true, nil },
+		})
+		assert.ErrorContains(t, err, "node not found")
 	})
 
 	// 测试点：处理无效的共享节点定义文件，应忽略

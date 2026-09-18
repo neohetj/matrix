@@ -244,9 +244,10 @@ func LoadEndpoints(
 	return nil
 }
 
-// SharedNodeLoadOptions 控制已选中共享资源失败时的启动策略。
+// SharedNodeLoadOptions 控制共享资源的激活与启动失败策略。
 type SharedNodeLoadOptions struct {
 	FailOnError bool
+	Selector    func(types.NodeDef) (bool, error)
 }
 
 // LoadSharedNodes scans for shared node definitions from a list of base paths.
@@ -257,7 +258,11 @@ func LoadSharedNodes(
 	nodePool types.NodePool,
 	options ...SharedNodeLoadOptions,
 ) error {
-	failOnError := len(options) > 0 && options[0].FailOnError
+	var loadOptions SharedNodeLoadOptions
+	if len(options) > 0 {
+		loadOptions = options[0]
+	}
+	failOnError := loadOptions.FailOnError || loadOptions.Selector != nil
 	for _, basePath := range sharedNodePaths {
 		err := dslLoader.WalkDir(basePath, func(filePath string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -289,6 +294,22 @@ func LoadSharedNodes(
 				return nil
 			}
 			setSourcePathForNodeDefs(def.Metadata.Nodes, filePath)
+			if loadOptions.Selector != nil {
+				selectedNodes := make([]types.NodeDef, 0, len(def.Metadata.Nodes))
+				for _, nodeDef := range def.Metadata.Nodes {
+					enabled, err := loadOptions.Selector(nodeDef)
+					if err != nil {
+						return fmt.Errorf("select shared node %q from %s: %w", nodeDef.ID, filePath, err)
+					}
+					if enabled {
+						selectedNodes = append(selectedNodes, nodeDef)
+					}
+				}
+				def.Metadata.Nodes = selectedNodes
+				if len(selectedNodes) == 0 {
+					return nil
+				}
+			}
 
 			// A shared node file is a rulechain def used as a container for nodes.
 			if _, err := nodePool.LoadFromRuleChainDef(def, nodeMgr); err != nil {

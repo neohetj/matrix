@@ -3,6 +3,9 @@ package matrix
 import (
 	"strings"
 	"testing"
+
+	"github.com/neohetj/matrix/internal/registry"
+	"github.com/neohetj/matrix/pkg/types"
 )
 
 // TestModuleConfigRejectsInvalidSharedDefinitions 验证已选择加载的资源不能在初始化失败后被静默丢弃。
@@ -33,4 +36,30 @@ func TestModuleConfigAllowsAbsentSharedDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(e.SharedNodePool().Stop)
+}
+
+// TestSharedNodeActivationPlanSkipsDisabledDefinitions 验证宿主激活计划在节点构造前过滤未启用资源。
+func TestSharedNodeActivationPlanSkipsDisabledDefinitions(t *testing.T) {
+	cfg := lifecycleConfig(t, map[string]string{
+		"shared/resources.json": `{"metadata":{"nodes":[{"id":"disabled-resource","type":"test/not-registered"}]}}`,
+	})
+	reg := registry.NewRegistry()
+	e, err := New(
+		cfg,
+		WithRegistry(reg),
+		WithModuleConfig("sample", fixtureReader("value")),
+		WithSharedNodeActivationPlan(func(def types.NodeDef) (bool, error) {
+			if def.SourcePath != "code/dsl/shared/resources.json" {
+				t.Fatalf("unexpected source path %q", def.SourcePath)
+			}
+			return def.ID != "disabled-resource", nil
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(e.SharedNodePool().Stop)
+	if _, exists := e.SharedNodePool().Get("disabled-resource"); exists {
+		t.Fatal("disabled shared node entered the node pool")
+	}
 }

@@ -91,6 +91,7 @@ type MatrixEngine struct {
 	defaultConfigModule   string
 	moduleConfigErr       error
 	configActiveEndpoints []types.ActiveEndpoint
+	sharedNodeActivation  SharedNodeActivationPlan
 }
 
 // --- Getters for core components ---
@@ -148,6 +149,9 @@ func (e *MatrixEngine) Logger() types.Logger           { return e.logger }
 // Option is a function that configures the MatrixEngine.
 type Option func(*MatrixEngine)
 
+// SharedNodeActivationPlan 根据已冻结的宿主配置判定共享节点是否参与本次 Engine 运行。
+type SharedNodeActivationPlan func(types.NodeDef) (bool, error)
+
 // WithLoader sets a custom resource loader for the engine.
 func WithLoader(l types.ResourceProvider) Option {
 	return func(e *MatrixEngine) {
@@ -176,6 +180,13 @@ func WithEmbedFS(fs embed.FS) Option {
 func WithRegistry(r types.RegistryProvider) Option {
 	return func(e *MatrixEngine) {
 		e.registry = r
+	}
+}
+
+// WithSharedNodeActivationPlan 注入宿主的共享节点激活计划；未注入时保持全量加载语义。
+func WithSharedNodeActivationPlan(plan SharedNodeActivationPlan) Option {
+	return func(e *MatrixEngine) {
+		e.sharedNodeActivation = plan
 	}
 }
 
@@ -224,8 +235,8 @@ func newEngine(e *MatrixEngine) (*MatrixEngine, error) {
 	}
 	built := false
 	defer func() {
-		if !built && len(e.moduleConfigs) > 0 {
-			e.abortModuleConfigStartup()
+		if !built && (len(e.moduleConfigs) > 0 || e.sharedNodeActivation != nil) {
+			e.abortOwnedStartup()
 			sch.Stop()
 		}
 	}()
@@ -274,7 +285,7 @@ func (e *MatrixEngine) StartActiveEndpoints(ctx context.Context) error {
 			}
 			continue
 		}
-		if len(e.moduleConfigs) > 0 {
+		if len(e.moduleConfigs) > 0 || e.sharedNodeActivation != nil {
 			// Start 可能部分建立监听后失败，因此先登记到本实例的撤销清单。
 			e.configActiveEndpoints = append(e.configActiveEndpoints, active)
 		}
@@ -339,7 +350,7 @@ func (e *MatrixEngine) initRegistryAndLoadComponents(sharedNodePaths, endpointPa
 	if e.registry == nil {
 		e.registry = registry.Default
 	}
-	if err := e.prepareModuleConfig(); err != nil {
+	if err := e.prepareOwnedRuntime(); err != nil {
 		return err
 	}
 
@@ -347,7 +358,10 @@ func (e *MatrixEngine) initRegistryAndLoadComponents(sharedNodePaths, endpointPa
 	sharedNodePool := e.registry.GetSharedNodePool()
 	pool := e.registry.GetRuntimePool()
 
-	if err := builder.LoadSharedNodes(e.loader, sharedNodePaths, nodeMgr, sharedNodePool, builder.SharedNodeLoadOptions{FailOnError: len(e.moduleConfigs) > 0}); err != nil {
+	if err := builder.LoadSharedNodes(e.loader, sharedNodePaths, nodeMgr, sharedNodePool, builder.SharedNodeLoadOptions{
+		FailOnError: len(e.moduleConfigs) > 0,
+		Selector:    e.sharedNodeActivation,
+	}); err != nil {
 		return fmt.Errorf("failed to load shared nodes: %w", err)
 	}
 
