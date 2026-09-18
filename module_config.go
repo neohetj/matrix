@@ -151,8 +151,8 @@ func (r *instanceRegistry) GetSharedNodePool() types.NodePool { return r.nodes }
 // GetRuntimePool 返回 Engine 私有规则链运行时池。
 func (r *instanceRegistry) GetRuntimePool() types.RuntimePool { return r.runtimes }
 
-// prepareModuleConfig 在资源加载前验证绑定并隔离 Reader 消费者的运行态。
-func (e *MatrixEngine) prepareModuleConfig() error {
+// prepareOwnedRuntime 在资源加载前验证配置绑定，并为模块配置或激活计划隔离运行态。
+func (e *MatrixEngine) prepareOwnedRuntime() error {
 	if e.moduleConfigErr != nil {
 		return e.moduleConfigErr
 	}
@@ -171,19 +171,21 @@ func (e *MatrixEngine) prepareModuleConfig() error {
 			return types.ErrConfigReaderUnavailable
 		}
 	}
-	if len(e.moduleConfigs) == 0 {
+	if len(e.moduleConfigs) == 0 && e.sharedNodeActivation == nil {
 		return nil
 	}
 	pool := registry.NewNodePool(nil)
-	pool.(interface {
-		SetConfigReaderProvider(types.NodeConfigReaderProvider)
-	}).SetConfigReaderProvider(e)
+	if len(e.moduleConfigs) > 0 {
+		pool.(interface {
+			SetConfigReaderProvider(types.NodeConfigReaderProvider)
+		}).SetConfigReaderProvider(e)
+	}
 	e.registry = &instanceRegistry{RegistryProvider: e.registry, nodes: pool, runtimes: registry.NewRuntimePool()}
 	return nil
 }
 
-// abortModuleConfigStartup 只撤销本轮配置实例拥有的资源，不触碰调用方或旧全局池。
-func (e *MatrixEngine) abortModuleConfigStartup() {
+// abortOwnedStartup 只撤销本轮 Engine 私有的资源，不触碰调用方或旧全局池。
+func (e *MatrixEngine) abortOwnedStartup() {
 	owned, ok := e.registry.(*instanceRegistry)
 	if !ok {
 		return
