@@ -41,25 +41,6 @@ func (r *Reader) LookupConfig(ctx context.Context, key string, override types.Co
 	return r.lookupConfig(ctx, key, override, true)
 }
 
-// WasProvided 只报告配置是否来自显式来源，不返回值或将 Catalog 默认值误认为用户选择。
-func (r *Reader) WasProvided(ctx context.Context, key string) (bool, error) {
-	if r == nil || r.definition == nil || ctx == nil || ctx.Err() != nil {
-		return false, problem(key, "reader_missing", "")
-	}
-	item, found := r.items[key]
-	if !found {
-		return false, problem(key, "unknown_key", "")
-	}
-	s := spec(item)
-	s.Required = false
-	s.Default = nil
-	_, meta, err := config.Resolve[any](r.resolver, s)
-	if err != nil {
-		return false, problem(key, "source_read", "")
-	}
-	return meta.Source != config.SourceNone && meta.Source != config.SourceDefault, nil
-}
-
 // lookupConfig 共用字段转换，仅允许启动预检延后缺失项的完整性检查。
 func (r *Reader) lookupConfig(ctx context.Context, key string, override types.ConfigOverride, requireMissing bool) (any, bool, error) {
 	if r == nil || r.definition == nil || ctx == nil {

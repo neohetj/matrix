@@ -59,28 +59,6 @@ func TestReaderFrozenPriority(t *testing.T) {
 	require.False(t, found)
 }
 
-// TestReaderWasProvided 区分显式 false、旧 alias 与 Catalog 默认值，不返回任何配置值。
-func TestReaderWasProvided(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		env Values
-		key string
-		want bool
-	}{
-		{"default", nil, "ENABLED", false},
-		{"explicit_false", Values{"ENABLED": false}, "ENABLED", true},
-		{"legacy_alias", Values{"OLD_TEXT": "legacy"}, "TEXT", true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			r, err := NewReader(readerFixture(t), config.NewConfigResolver(config.WithValueSources(context.Background(), tc.env, nil)))
-			require.NoError(t, err)
-			provided, err := r.WasProvided(context.Background(), tc.key)
-			require.NoError(t, err)
-			require.Equal(t, tc.want, provided)
-		})
-	}
-}
-
 // TestReaderExplicitPresence 验证节点 false/0 优先且不得注入节点明文 Secret。
 func TestReaderExplicitPresence(t *testing.T) {
 	r, err := NewReader(readerFixture(t), config.NewConfigResolver(config.WithValueSources(context.Background(), nil, nil)))
