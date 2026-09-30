@@ -77,21 +77,27 @@ func SetLogger(logger types.Logger) {
 // MatrixEngine is the facade for the refactored rule engine.
 // It holds an internal reference to the registry and exposes its components via methods.
 type MatrixEngine struct {
-	config                config.MatrixConfig
-	registry              types.RegistryProvider
-	traceManager          *trace.Manager
-	loader                types.ResourceProvider
-	logger                types.Logger
-	embedFSs              []embed.FS
-	activeCancel          context.CancelFunc
-	activeWG              sync.WaitGroup
-	moduleConfigs         map[string]types.ConfigReader
-	nodeConfigOwners      map[string]string
-	ruleChainConfigOwners map[string]string
-	defaultConfigModule   string
-	moduleConfigErr       error
-	configActiveEndpoints []types.ActiveEndpoint
-	sharedNodeActivation  SharedNodeActivationPlan
+	config                  config.MatrixConfig
+	registry                types.RegistryProvider
+	traceManager            *trace.Manager
+	loader                  types.ResourceProvider
+	logger                  types.Logger
+	embedFSs                []embed.FS
+	activeCancel            context.CancelFunc
+	activeWG                sync.WaitGroup
+	moduleConfigs           map[string]types.ConfigReader
+	nodeConfigOwners        map[string]string
+	ruleChainConfigOwners   map[string]string
+	defaultConfigModule     string
+	moduleConfigErr         error
+	configActiveEndpoints   []types.ActiveEndpoint
+	sharedNodeActivation    SharedNodeActivationPlan
+	deferredActiveEndpoints bool
+	scheduler               types.Scheduler
+	activeMu                sync.Mutex
+	closed                  bool
+	closeOnce               sync.Once
+	closeErr                error
 }
 
 // --- Getters for core components ---
@@ -122,6 +128,14 @@ func (e *MatrixEngine) NodeFuncManager() types.NodeFuncManager {
 		return nil
 	}
 	return e.registry.GetNodeFuncManager()
+}
+
+// CoreObjRegistry returns definitions from this engine's registry.
+func (e *MatrixEngine) CoreObjRegistry() types.CoreObjRegistry {
+	if e.registry == nil {
+		return nil
+	}
+	return e.registry.GetCoreObjRegistry()
 }
 
 // GetEngineConfig retrieves a value from the global business configuration.
@@ -190,6 +204,12 @@ func WithSharedNodeActivationPlan(plan SharedNodeActivationPlan) Option {
 	}
 }
 
+// WithDeferredActiveEndpoints creates private runtime resources without starting
+// active listeners. The host calls StartActiveEndpoints after its setup succeeds.
+func WithDeferredActiveEndpoints() Option {
+	return func(e *MatrixEngine) { e.deferredActiveEndpoints = true }
+}
+
 // --- Constructors ---
 
 // New is the simplified entry point for the Matrix engine.
@@ -233,11 +253,11 @@ func newEngine(e *MatrixEngine) (*MatrixEngine, error) {
 	if err != nil {
 		return nil, err
 	}
+	e.scheduler = sch
 	built := false
 	defer func() {
-		if !built && (len(e.moduleConfigs) > 0 || e.sharedNodeActivation != nil) {
-			e.abortOwnedStartup()
-			sch.Stop()
+		if !built {
+			_ = e.Close()
 		}
 	}()
 
@@ -254,8 +274,10 @@ func newEngine(e *MatrixEngine) (*MatrixEngine, error) {
 	if err := e.initRuntimes(sch, defs, runtimeOpts); err != nil {
 		return nil, err
 	}
-	if err := e.StartActiveEndpoints(context.Background()); err != nil {
-		return nil, err
+	if !e.deferredActiveEndpoints {
+		if err := e.StartActiveEndpoints(context.Background()); err != nil {
+			return nil, err
+		}
 	}
 
 	built = true
@@ -264,6 +286,17 @@ func newEngine(e *MatrixEngine) (*MatrixEngine, error) {
 
 // StartActiveEndpoints starts all loaded endpoints that actively listen for external events.
 func (e *MatrixEngine) StartActiveEndpoints(ctx context.Context) error {
+	e.activeMu.Lock()
+	defer e.activeMu.Unlock()
+	if e.closed {
+		return fmt.Errorf("engine is closed")
+	}
+	if ctx == nil {
+		return fmt.Errorf("active endpoint context unavailable")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if e.registry == nil || e.activeCancel != nil {
 		return nil
 	}
@@ -276,7 +309,7 @@ func (e *MatrixEngine) StartActiveEndpoints(ctx context.Context) error {
 		}
 		enabled, err := endpointgate.Enabled(endpoint, e.config.Business)
 		if err != nil {
-			cancel()
+			_ = e.stopActiveEndpointsLocked()
 			return fmt.Errorf("active endpoint %s: %w", endpoint.ID(), err)
 		}
 		if !enabled {
@@ -285,12 +318,10 @@ func (e *MatrixEngine) StartActiveEndpoints(ctx context.Context) error {
 			}
 			continue
 		}
-		if len(e.moduleConfigs) > 0 || e.sharedNodeActivation != nil {
-			// Start 可能部分建立监听后失败，因此先登记到本实例的撤销清单。
-			e.configActiveEndpoints = append(e.configActiveEndpoints, active)
-		}
+		// Start may partially establish a listener before returning an error.
+		e.configActiveEndpoints = append(e.configActiveEndpoints, active)
 		if err := active.Start(endpointCtx); err != nil {
-			cancel()
+			_ = e.stopActiveEndpointsLocked()
 			if _, aware := endpoint.(types.ConfigReaderAware); aware {
 				// 配置消费者的驱动错误可能含连接凭据，不向宿主传播原始 cause。
 				err = types.ErrConfigInitialization
@@ -303,24 +334,43 @@ func (e *MatrixEngine) StartActiveEndpoints(ctx context.Context) error {
 
 // StopActiveEndpoints stops all active endpoints started by the engine.
 func (e *MatrixEngine) StopActiveEndpoints() error {
+	e.activeMu.Lock()
+	defer e.activeMu.Unlock()
+	return e.stopActiveEndpointsLocked()
+}
+
+func (e *MatrixEngine) stopActiveEndpointsLocked() error {
 	if e.activeCancel != nil {
 		e.activeCancel()
 		e.activeCancel = nil
 	}
-	if e.registry == nil {
-		return nil
-	}
 	var stopErr error
-	for _, endpoint := range e.registry.GetSharedNodePool().GetEndpoints() {
-		active, ok := endpoint.(types.ActiveEndpoint)
-		if !ok {
-			continue
-		}
-		if err := active.Stop(); err != nil && stopErr == nil {
+	for i := len(e.configActiveEndpoints) - 1; i >= 0; i-- {
+		if err := e.configActiveEndpoints[i].Stop(); err != nil && stopErr == nil {
 			stopErr = err
 		}
 	}
+	e.configActiveEndpoints = nil
 	return stopErr
+}
+
+// Close stops listeners and releases engine-owned resources once. Hosts must
+// finish in-flight requests before closing. Caller-owned/global pools are kept.
+func (e *MatrixEngine) Close() error {
+	e.closeOnce.Do(func() {
+		e.activeMu.Lock()
+		e.closed = true
+		e.closeErr = e.stopActiveEndpointsLocked()
+		e.activeMu.Unlock()
+		if e.scheduler != nil {
+			e.scheduler.Stop()
+		}
+		e.abortOwnedStartup()
+		if e.traceManager != nil {
+			_ = e.traceManager.Close()
+		}
+	})
+	return e.closeErr
 }
 
 func (e *MatrixEngine) discoverComponents() (rulechainPaths, endpointPaths, sharedNodePaths []string) {

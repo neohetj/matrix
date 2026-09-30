@@ -15,6 +15,9 @@ tags:
 
 # === Node Relations: 定义与其他文档节点的关系 ===
 relations:
+  - type: "is_part_of"
+    target_uuid: "c5d6e7f8-a9b0-c1d2-e3f4-a5b6c7d8e9f0"
+    description: "本文档属于 Matrix 参考文档库。"
   - type: "references"
     target_uuid: "f745eae6-f75c-4849-b7fb-407d6c439182"
     description: "函数的数据契约扩展了通用节点契约。"
@@ -276,3 +279,9 @@ func init() {
 
 <!-- 链接定义区域 -->
 [Ref-NodeSpec]: ./12_node_specification.md
+
+## 实例元数据来源
+
+`FunctionsNode` 在 runtime 构建时通过可选 `SetNodeFuncManager(types.NodeFuncManager)` 接收所属 Engine 的函数管理器。`Errors()`、`DataContract()`、`ConfigSchema()` 与实际函数执行保持相同实例来源；两个 Engine 注册相同函数 ID 时不会串用 metadata。未提供 Engine 的传统独立节点仍兼容全局注册表。
+
+动态业务配置字段的 `notEditable` 映射到 schema `readOnly`，默认值保留显式 `false`/`0`。验证入口为 `go test ./internal/runtime -run TestRuntimeFunctionMetadataUsesOwningEngine`；CoreObj 定义可经 `MatrixEngine.CoreObjRegistry()` 查询当前 Engine 注册表，宿主不需要读取全局 Registry。

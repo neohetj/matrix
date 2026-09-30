@@ -47,6 +47,10 @@ relations:
 
 ## 风险与收口
 
+### 已授权增量：开发宿主延迟激活
+
+Morpheus 宿主契约重构已获实施授权。本仓增量仅增加 `WithDeferredActiveEndpoints()`，使宿主可在模块 setup/迁移完成后调用既有 `StartActiveEndpoints`；默认构造行为不变。该模式复用实例私有池，并提供幂等 `Close()` 释放本实例主动端点、资源和 scheduler。聚焦测试覆盖延迟/默认激活、部分激活失败撤销、关闭幂等和调用方资源隔离，不运行真实业务消费者。实现事实写回 Reference 41，跨仓协调由宿主更新。
+
 ConfigResolver 旧错误包含值、Secret whitespace、旧 bool/时长宽松规则都必须在测试中分离。不得借重构改变全仓 behavior 或强制所有 Node 实现新接口。
 
 实现后更新现有配置 URI Guide，并在本仓 Reference 增补 ConfigResolver/Catalog Reader 当前 API 与生命周期（沿本仓编号分配，不提前创建 Stable 事实）。同步 reference/00_decision_traceability.md。

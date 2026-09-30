@@ -11,9 +11,10 @@ import (
 
 // Decode 将 map[string]any 或 []any 的数据解码到一个强类型的结构体指针或切片指针中。
 // 使用 `mitchellh/mapstructure` 库，它功能强大且性能优于纯反射。
-// targetStructPtr 必须是一个指向结构体/切片的指针。
+// targetStructPtr 必须是一个指向结构体、map 或切片的非空指针。
+// nil（包含接口中的 typed nil）是无效输入；非 nil 的空 map/切片仍可解码。
 func Decode(data any, targetStructPtr any) error {
-	if data == nil {
+	if IsNil(data) {
 		return fmt.Errorf("input data is nil")
 	}
 	v := reflect.ValueOf(targetStructPtr)

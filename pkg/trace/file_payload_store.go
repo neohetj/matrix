@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -22,8 +23,11 @@ type ImageSnapshotter interface {
 }
 
 type FilePayloadStore struct {
-	baseDir string
-	ttl     time.Duration
+	stop      chan struct{}
+	done      chan struct{}
+	closeOnce sync.Once
+	baseDir   string
+	ttl       time.Duration
 }
 
 func NewFilePayloadStore(baseDir string, ttl time.Duration) *FilePayloadStore {
@@ -33,6 +37,8 @@ func NewFilePayloadStore(baseDir string, ttl time.Duration) *FilePayloadStore {
 	}
 
 	store := &FilePayloadStore{
+		stop:    make(chan struct{}),
+		done:    make(chan struct{}),
 		baseDir: resolvedBaseDir,
 		ttl:     ttl,
 	}
@@ -129,10 +135,16 @@ func (s *FilePayloadStore) imageAssetPath(executionID, logID, source, originalPa
 }
 
 func (s *FilePayloadStore) cleanupLoop(interval time.Duration) {
+	defer close(s.done)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	for range ticker.C {
+	for {
+		select {
+		case <-s.stop:
+			return
+		case <-ticker.C:
+		}
 		_ = filepath.Walk(s.baseDir, func(path string, info os.FileInfo, err error) error {
 			if err != nil || info == nil {
 				return nil
@@ -158,4 +170,14 @@ func (s *FilePayloadStore) cleanupLoop(interval time.Duration) {
 			return nil
 		})
 	}
+}
+
+// Close stops background maintenance without deleting stored trace data.
+func (s *FilePayloadStore) Close() error {
+	if s.stop == nil {
+		return nil
+	}
+	s.closeOnce.Do(func() { close(s.stop) })
+	<-s.done
+	return nil
 }

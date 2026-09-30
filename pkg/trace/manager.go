@@ -1,6 +1,8 @@
 package trace
 
 import (
+	"errors"
+	"io"
 	"time"
 
 	"github.com/neohetj/matrix/pkg/types"
@@ -73,4 +75,16 @@ func (m *Manager) FinalizeSnapshot(executionID string) {
 		status.Unlock()
 	}
 	m.store.Set(executionID, status)
+}
+
+// Close stops maintenance workers owned by the supplied stores.
+func (m *Manager) Close() error {
+	var errs []error
+	if store, ok := m.store.(io.Closer); ok {
+		errs = append(errs, store.Close())
+	}
+	if store, ok := m.payloadStore.(io.Closer); ok {
+		errs = append(errs, store.Close())
+	}
+	return errors.Join(errs...)
 }

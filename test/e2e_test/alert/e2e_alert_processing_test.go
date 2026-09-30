@@ -17,6 +17,7 @@ import (
 	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/config"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/neohetj/matrix/pkg/types"
 	"github.com/neohetj/matrix/test/utils"
@@ -55,15 +56,20 @@ func copyJSONFixtures(t *testing.T, srcDir, dstDir string) {
 
 // setup initializes the Matrix engine and mock logger for testing
 func setup(t *testing.T) *TestEnv {
-	cleanup()
+	t.Helper()
 
-	// Register common CoreObj if not present (idempotent registry handles this usually,
-	// but good practice to ensure it's there)
+	// DataT resolves definitions through the shared catalog. Scope this synthetic
+	// definition to the test; runtime and shared-node instances stay engine-local.
 	type Alert struct {
 		Labels      map[string]string `json:"labels"`
 		Annotations map[string]string `json:"annotations"`
 	}
-	registry.Default.CoreObjRegistry.Register(types.NewCoreObjDef(&Alert{}, "parsedAlert", "Parsed Alert"))
+	const sid = "AlertFixture_V1"
+	coreRegistry := registry.Default.CoreObjRegistry.(*registry.DefaultCoreObjRegistry)
+	_, exists := coreRegistry.Get(sid)
+	require.False(t, exists, "fixture definition leaked from another test")
+	coreRegistry.Register(types.NewCoreObjDef(&Alert{}, sid, "Alert test fixture"))
+	t.Cleanup(func() { coreRegistry.Unregister(sid) })
 
 	mockLogger := &utils.MockLogger{}
 	workspace := t.TempDir()
@@ -82,8 +88,9 @@ func setup(t *testing.T) *TestEnv {
 		},
 		EnabledComponents: []string{"alert"},
 	}
-	eng, err := matrix.New(cfg, matrix.WithLogger(mockLogger))
-	assert.NoError(t, err)
+	eng, err := matrix.New(cfg, matrix.WithLogger(mockLogger), matrix.WithDeferredActiveEndpoints())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, eng.Close()) })
 
 	return &TestEnv{
 		Engine:     eng,
@@ -91,15 +98,7 @@ func setup(t *testing.T) *TestEnv {
 	}
 }
 
-func cleanup() {
-	registry.Default.RuntimePool.Unregister("rc-simple-e2e-test")
-	registry.Default.RuntimePool.Unregister("rc-e2e-alert-webhook")
-	registry.Default.RuntimePool.Unregister("rc-e2e-alert-override")
-	registry.Default.SharedNodePool.Stop()
-}
-
 func TestE2EAlertProcessing(t *testing.T) {
-	defer cleanup()
 	env := setup(t)
 
 	// 2. Get the runtime for the rule chain
@@ -119,16 +118,21 @@ func TestE2EAlertProcessing(t *testing.T) {
 		},
 	}
 	alertDataBytes, err := json.Marshal(alertData)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	msg := utils.NewTestRuleMsg()
+	msg := types.NewMsg("ALERT", "", nil, types.NewDataT())
 	msg.SetData(string(alertDataBytes), cnst.JSON)
 
 	// 4. Start the rule chain
-	_, err = rt.ExecuteAndWait(context.Background(), "node-start", msg, nil)
-	assert.NoError(t, err)
+	result, err := rt.ExecuteAndWait(context.Background(), "node-start", msg, nil)
+	require.NoError(t, err)
 
-	// 5. Assert that the correct log message was captured
+	// 5. Assert the mapper produced the typed alert, then verify the routed log.
+	alert, ok := result.DataT().Get("alert")
+	require.True(t, ok)
+	assert.Equal(t, "AlertFixture_V1", alert.Definition().SID())
+
+	// Assert that the correct log message was captured
 	logOutput := env.MockLogger.String()
 	assert.Contains(t, logOutput, "Critical alert received: High CPU usage detected")
 	assert.NotContains(t, logOutput, "Warning alert received")
@@ -136,15 +140,14 @@ func TestE2EAlertProcessing(t *testing.T) {
 }
 
 func TestHttpEndpointTrigger(t *testing.T) {
-	defer cleanup()
 	env := setup(t)
 
 	// 3. Retrieve the loaded endpoint from the SharedNodePool
 	epCtx, ok := env.Engine.SharedNodePool().Get("ep_http_alert_trigger")
-	assert.True(t, ok, "endpoint not found in shared node pool")
+	require.True(t, ok, "endpoint not found in shared node pool")
 
 	epNode, ok := epCtx.GetNode().(types.HttpEndpoint)
-	assert.True(t, ok, "node is not an HttpEndpoint")
+	require.True(t, ok, "node is not an HttpEndpoint")
 
 	// 5. Create HTTP Request
 	reqBody := `{"severity": "critical", "summary": "Http Triggered Alert"}`
@@ -154,7 +157,7 @@ func TestHttpEndpointTrigger(t *testing.T) {
 
 	// 6. Handle Request
 	err := epNode.HandleHttpRequest(w, req)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// 7. Verify Response
 	resp := w.Result()
@@ -162,7 +165,7 @@ func TestHttpEndpointTrigger(t *testing.T) {
 
 	var respBody map[string]any
 	err = json.NewDecoder(resp.Body).Decode(&respBody)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "ok", respBody["status"])
 	assert.Equal(t, "Http Triggered Alert", respBody["summary"])
 
@@ -172,14 +175,13 @@ func TestHttpEndpointTrigger(t *testing.T) {
 }
 
 func TestHttpEndpointTriggerError(t *testing.T) {
-	defer cleanup()
 	env := setup(t)
 
 	// 3. Retrieve Endpoint
 	epCtx, ok := env.Engine.SharedNodePool().Get("ep_http_alert_trigger")
-	assert.True(t, ok)
+	require.True(t, ok)
 	epNode, ok := epCtx.GetNode().(types.HttpEndpoint)
-	assert.True(t, ok)
+	require.True(t, ok)
 
 	// 4. Create Invalid Request (Missing required 'severity')
 	reqBody := `{"summary": "Invalid Alert"}`
@@ -191,7 +193,7 @@ func TestHttpEndpointTriggerError(t *testing.T) {
 	err := epNode.HandleHttpRequest(w, req)
 
 	// 6. Verify the endpoint handled the internal error and returned a safe public response.
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
 	var errorResponse struct {
@@ -207,23 +209,22 @@ func TestHttpEndpointTriggerError(t *testing.T) {
 }
 
 func TestE2EAlertWebhook(t *testing.T) {
-	defer cleanup()
-	// Note: setup is called inside to ensure clean state, but we need mock server URL first?
-	// Actually, we can start server first, then setup engine.
-
 	// 1. Start a mock webhook server
-	webhookReceived := false
-	var receivedBody map[string]any
+	received := make(chan map[string]any, 1)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/webhook" && r.Method == "POST" {
-			webhookReceived = true
-			json.NewDecoder(r.Body).Decode(&receivedBody)
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, "invalid webhook body", http.StatusBadRequest)
+				return
+			}
+			received <- body
 			w.WriteHeader(http.StatusOK)
 		} else {
 			w.WriteHeader(http.StatusBadRequest)
 		}
 	}))
-	defer ts.Close()
+	t.Cleanup(ts.Close)
 
 	// 2. Setup Engine
 	env := setup(t)
@@ -245,30 +246,36 @@ func TestE2EAlertWebhook(t *testing.T) {
 		},
 	}
 	alertDataBytes, err := json.Marshal(alertData)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	msg := utils.NewTestRuleMsg()
+	msg := types.NewMsg("ALERT", "", nil, types.NewDataT())
 	msg.SetData(string(alertDataBytes), cnst.JSON)
 	// Inject the dynamic mock server URL into metadata
 	msg.Metadata()["webhook_url"] = ts.URL
 
 	// 6. Start the rule chain
-	_, err = rt.ExecuteAndWait(context.Background(), "node-start", msg, nil)
-	assert.NoError(t, err)
+	result, err := rt.ExecuteAndWait(context.Background(), "node-start", msg, nil)
+	require.NoError(t, err)
 
 	// 7. Verify that the webhook was received
-	assert.True(t, webhookReceived, "Webhook should have been received")
+	var receivedBody map[string]any
+	select {
+	case receivedBody = <-received:
+	default:
+		t.Fatal("webhook should have been received before the HTTP client completed")
+	}
+	assert.Equal(t, "200", result.Metadata()["webhook_status"])
 
 	// 8. Verify the content of the webhook payload
-	// The rule chain maps dataT.asdflasjgie (parsedAlert) to the body.
-	// parsedAlert struct has "labels" and "annotations".
+	// The rule chain maps dataT.alert (AlertFixture_V1) to the body.
+	// Alert fixture struct has "labels" and "annotations".
 	assert.NotNil(t, receivedBody)
 	labels, ok := receivedBody["labels"].(map[string]any)
-	assert.True(t, ok)
+	require.True(t, ok)
 	assert.Equal(t, "critical", labels["severity"])
 
 	annotations, ok := receivedBody["annotations"].(map[string]any)
-	assert.True(t, ok)
+	require.True(t, ok)
 	assert.Equal(t, "Database connection lost", annotations["summary"])
 
 	// 9. Verify Logs (optional, ensuring critical alert logic was hit)
@@ -279,21 +286,22 @@ func TestE2EAlertWebhook(t *testing.T) {
 }
 
 func TestE2EAlertOverride(t *testing.T) {
-	defer cleanup()
-
 	// 1. Start a mock webhook server
-	webhookReceived := false
-	var receivedBody map[string]any
+	received := make(chan map[string]any, 1)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/webhook" && r.Method == "POST" {
-			webhookReceived = true
-			json.NewDecoder(r.Body).Decode(&receivedBody)
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, "invalid webhook body", http.StatusBadRequest)
+				return
+			}
+			received <- body
 			w.WriteHeader(http.StatusOK)
 		} else {
 			w.WriteHeader(http.StatusBadRequest)
 		}
 	}))
-	defer ts.Close()
+	t.Cleanup(ts.Close)
 
 	// 2. Setup Engine
 	env := setup(t)
@@ -315,38 +323,44 @@ func TestE2EAlertOverride(t *testing.T) {
 		},
 	}
 	alertDataBytes, err := json.Marshal(alertData)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	msg := utils.NewTestRuleMsg()
+	msg := types.NewMsg("ALERT", "", nil, types.NewDataT())
 	msg.SetData(string(alertDataBytes), cnst.JSON)
 	// Inject metadata
 	msg.Metadata()["webhook_url"] = ts.URL
 	msg.Metadata()["ts"] = "1700000000"
 
 	// 5. Start the rule chain
-	_, err = rt.ExecuteAndWait(context.Background(), "node-start", msg, nil)
-	assert.NoError(t, err)
+	result, err := rt.ExecuteAndWait(context.Background(), "node-start", msg, nil)
+	require.NoError(t, err)
 
 	// 6. Verify that the webhook was received
-	assert.True(t, webhookReceived, "Webhook should have been received")
+	var receivedBody map[string]any
+	select {
+	case receivedBody = <-received:
+	default:
+		t.Fatal("webhook should have been received before the HTTP client completed")
+	}
+	assert.Equal(t, "200", result.Metadata()["webhook_status"])
 
 	// 7. Verify the content of the webhook payload
-	// The rule chain maps parsedAlert to body, but overrides severity and adds forwarded_at.
+	// The rule chain maps the alert to body, but overrides severity and adds forwarded_at.
 	assert.NotNil(t, receivedBody)
 
 	// Check overrides: labels.severity should be CRITICAL_URGENT, not critical
 	labels, ok := receivedBody["labels"].(map[string]any)
-	assert.True(t, ok)
+	require.True(t, ok)
 	assert.Equal(t, "CRITICAL_URGENT", labels["severity"])
 
 	// Check supplements: forwarded_at should exist and match metadata.ts
 	// Note: JSON unmarshals numbers as float64
 	forwardedAt, ok := receivedBody["forwarded_at"].(float64)
-	assert.True(t, ok)
+	require.True(t, ok)
 	assert.Equal(t, float64(1700000000), forwardedAt)
 
 	// Check base content: annotations.summary should be preserved
 	annotations, ok := receivedBody["annotations"].(map[string]any)
-	assert.True(t, ok)
+	require.True(t, ok)
 	assert.Equal(t, "Database connection lost", annotations["summary"])
 }

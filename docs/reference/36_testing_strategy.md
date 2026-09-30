@@ -4,13 +4,16 @@ type: "Reference"
 title: "学习Matrix框架测试策略"
 status: "Draft"
 owner: "neohetj"
-version: "1.1.0"
+version: "1.2.0"
 tags:
   - "testing"
   - "strategy"
   - "unit-test"
   - "integration-test"
 relations:
+  - type: "is_part_of"
+    target_uuid: "c5d6e7f8-a9b0-c1d2-e3f4-a5b6c7d8e9f0"
+    description: "本文档属于 Matrix 参考文档库。"
   - type: "supports"
     target_uuid: "60c07c47-df0e-4b76-9ed9-62fabe2e2add"
     description: "参考-08 会引导开发者查阅当前测试策略。"
@@ -59,6 +62,8 @@ Matrix 推荐三层测试：
 
 这些工具已经覆盖了节点执行、日志断言、builder/runtime 注入等高频场景，避免每个测试文件重复手写一套 mock。
 
+`NewTestRuleMsg` 是不包含 `DataT` 的最小消息。测试涉及 object mapper、CoreObj 或 `rulemsg://dataT/...` 时，应显式使用 `types.NewMsg(..., types.NewDataT())`；不要让一个缺少结构化容器的 fixture 代替实际入口消息。
+
 ## 3. 集成测试建议
 
 以下变更应优先补集成测试，而不是只写单测：
@@ -74,6 +79,8 @@ Matrix 推荐三层测试：
 - 显式断言 `DataT`、`Metadata`、relation 路由结果。
 - 若改动的是函数节点，单测函数实现，集成测 `type: "functions"` 的接线。
 
+`internal/runtime/runtime_test.go` 的函数执行、重载、AOP 和分支隔离测试，通过独立 Registry 和 `runtime.WithEngine` 显式装配 `test/runtime-message` 合成函数。它只为测试设置消息与 metadata，不代表框架提供名为 `log` 的生产函数。fixture 用 `t.Cleanup` 销毁 runtime 和私有共享节点池。AOP 计数使用原子操作，并等待 After 回调完成后断言；规则链完成回调不能代替 After 回调的完成信号。
+
 ## 4. 端到端测试建议
 
 只有在入口行为、序列化协议或跨模块链路发生变化时，才需要补 E2E。例如：
@@ -83,6 +90,10 @@ Matrix 推荐三层测试：
 - 真实告警/回调链路
 
 E2E 的目标不是替代单测，而是验证“前面所有拼图拼在一起后仍然成立”。
+
+`test/e2e_test/alert` 使用临时 DSL 目录和 `httptest` localhost Webhook，显式创建 `DataT` 并注册测试专用 `AlertFixture_V1`。fixture 遵守当前 Asset URI、SID 和 `defaultValue` 契约；表达式访问 typed CoreObj 的 Go 字段，URI 字段映射使用 JSON 路径。Engine 使用私有运行时池，`t.Cleanup` 关闭 Engine、HTTP 测试服务器并移除测试定义；Webhook 内容通过 channel 交接给断言线程。
+
+聚焦验证可运行 `go test -race ./internal/runtime ./pkg/mcp ./test/e2e_test/alert -count=1`，其中后两个包需要允许 localhost 监听。仅在明确要求仓库全量回归时运行 `go test -gcflags='all=-N -l' ./... -count=1`；这组编译参数满足仓库现有 Mockey 测试的要求。将沙箱拒绝监听与行为断言失败分开报告，不以跳过断言替代验证。
 
 ## 5. 提交前检查清单
 

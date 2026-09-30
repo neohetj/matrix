@@ -4,7 +4,7 @@ type: "Guide"
 title: "指南：动态数据处理核心技巧"
 status: "Stable"
 owner: "neohetj"
-version: "1.1.0"
+version: "1.2.0"
 tags:
   - "guide"
   - "utils"
@@ -12,6 +12,9 @@ tags:
   - "expression"
   - "advanced"
 relations:
+  - type: "is_part_of"
+    target_uuid: "b4c5d6e7-f8a9-0b1c-2d3e-4f5a6b7c8d9e"
+    description: "属于 Matrix 指南文档库。"
 ---
 
 # 指南：动态数据处理核心技巧 (DynamicDataHandlingGuide)
@@ -25,6 +28,8 @@ relations:
 **核心工具**: `utils.Decode`
 
 这个模式几乎在**所有节点**的 `Init` 方法中都会使用。
+
+输入边界：`utils.Decode` 拒绝 `nil`，也拒绝装入 `any` 后仍为空的 map、切片和指针；错误为 `input data is nil`，不会改写已有目标值。非 nil 的空 map 或切片仍是合法输入。调用方应显式区分“没有配置”与“空配置”：如果能力允许缺省配置，应先按该能力声明构造默认值，再解码，不能依赖 typed nil 静默成功。目标必须是非空的结构体、map 或切片指针。
 
 ### 1.1. DSL 配置 (DSLConfiguration)
 

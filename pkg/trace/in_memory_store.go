@@ -10,14 +10,19 @@ import (
 
 // InMemoryStore implements the Store interface, storing snapshots in memory.
 type InMemoryStore struct {
-	store sync.Map // key: string, value: *types.ExecutionStatus
-	ttl   time.Duration
+	stop      chan struct{}
+	done      chan struct{}
+	closeOnce sync.Once
+	store     sync.Map // key: string, value: *types.ExecutionStatus
+	ttl       time.Duration
 }
 
 // NewInMemoryStore creates a new in-memory store instance.
 func NewInMemoryStore(ttl time.Duration) types.Store {
 	store := &InMemoryStore{
-		ttl: ttl,
+		stop: make(chan struct{}),
+		done: make(chan struct{}),
+		ttl:  ttl,
 	}
 	go store.cleanupLoop(1 * time.Minute)
 	return store
@@ -66,9 +71,15 @@ func (s *InMemoryStore) Delete(executionID string) {
 
 // cleanupLoop is a background routine that periodically cleans up expired completed snapshots.
 func (s *InMemoryStore) cleanupLoop(interval time.Duration) {
+	defer close(s.done)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	for range ticker.C {
+	for {
+		select {
+		case <-s.stop:
+			return
+		case <-ticker.C:
+		}
 		now := time.Now().UnixNano()
 		s.store.Range(func(key, value interface{}) bool {
 			status := value.(*types.ExecutionStatus)
@@ -84,4 +95,14 @@ func (s *InMemoryStore) cleanupLoop(interval time.Duration) {
 			return true
 		})
 	}
+}
+
+// Close stops background maintenance without deleting stored trace data.
+func (s *InMemoryStore) Close() error {
+	if s.stop == nil {
+		return nil
+	}
+	s.closeOnce.Do(func() { close(s.stop) })
+	<-s.done
+	return nil
 }

@@ -17,19 +17,19 @@
 package runtime_test
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"log"
-	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	_ "github.com/neohetj/matrix"
 	_ "github.com/neohetj/matrix/internal/builtin"
+	"github.com/neohetj/matrix/internal/builtin/base"
 	"github.com/neohetj/matrix/internal/parser"
+	"github.com/neohetj/matrix/internal/registry"
 	runtime "github.com/neohetj/matrix/internal/runtime"
 	"github.com/neohetj/matrix/internal/scheduler"
 	"github.com/neohetj/matrix/pkg/cnst"
@@ -86,13 +86,39 @@ func init() {
 	})
 }
 
-func TestRuntime_Execute_LogFunc(t *testing.T) {
+// withRuntimeMessageFixture registers only the synthetic function used by these
+// runtime integration tests. It does not restore the removed production "log"
+// function or mutate the process-wide function registry.
+func withRuntimeMessageFixture(t *testing.T) runtime.Option {
+	t.Helper()
+	reg := registry.NewRegistry()
+	if err := reg.NodeManager.Register(base.FunctionsNodePrototype); err != nil {
+		t.Fatal(err)
+	}
+	reg.NodeFuncManager.Register(&types.NodeFuncObject{
+		FuncObject: types.FuncObject{ID: "test/runtime-message"},
+		Func: func(ctx types.NodeCtx, msg types.RuleMsg) {
+			business, _ := ctx.Config()["business"].(map[string]any)
+			if data, ok := business["data"].(string); ok {
+				msg.SetData(data, cnst.TEXT)
+			}
+			if from, ok := business["from"].(string); ok {
+				metadata := msg.Metadata()
+				if metadata == nil {
+					metadata = types.Metadata{}
+				}
+				metadata["from"] = from
+				msg.SetMetadata(metadata)
+			}
+			ctx.TellSuccess(msg)
+		},
+	})
+	t.Cleanup(reg.SharedNodePool.Stop)
+	return runtime.WithEngine(metadataEngine{registry: reg})
+}
+
+func TestRuntime_Execute_RegisteredFunction(t *testing.T) {
 	// 1. Arrange
-	// Redirect log output to a buffer to capture it
-	var logBuf bytes.Buffer
-	log.SetOutput(&logBuf)
-	// Restore log output at the end of the test
-	defer log.SetOutput(os.Stderr)
 
 	p := parser.NewJsonParser()
 	s, _ := scheduler.NewAntsScheduler(10)
@@ -111,7 +137,7 @@ func TestRuntime_Execute_LogFunc(t *testing.T) {
 					"type": "functions",
 					"name": "First Log Node",
 					"configuration": {
-						"functionName": "log"
+						"functionName": "test/runtime-message"
 					}
 				},
 				{
@@ -119,7 +145,7 @@ func TestRuntime_Execute_LogFunc(t *testing.T) {
 					"type": "functions",
 					"name": "Second Log Node",
 					"configuration": {
-						"functionName": "log"
+						"functionName": "test/runtime-message"
 					}
 				}
 			],
@@ -138,10 +164,12 @@ func TestRuntime_Execute_LogFunc(t *testing.T) {
 		t.Fatalf("Failed to decode rule chain: %v", err)
 	}
 
-	runtime, err := runtime.NewDefaultRuntime(s, chainDef)
+	callback := &testCallback{}
+	runtime, err := runtime.NewDefaultRuntime(s, chainDef, withRuntimeMessageFixture(t), runtime.WithCallback(callback))
 	if err != nil {
 		t.Fatalf("Failed to create runtime: %v", err)
 	}
+	t.Cleanup(runtime.Destroy)
 
 	msg := types.NewMsg("TEST_MSG", `{"key":"value"}`, types.Metadata{"source": "test"}, nil).WithDataFormat(cnst.JSON)
 
@@ -164,22 +192,18 @@ func TestRuntime_Execute_LogFunc(t *testing.T) {
 	// Wait for the async execution to complete
 	wg.Wait()
 
-	// 3. Assert
-	// Give a little time for the log to be written to the buffer
-	time.Sleep(10 * time.Millisecond)
-
-	logOutput := logBuf.String()
-	// Check that the log function was called twice
-	if strings.Count(logOutput, "LOG_FUNC") != 2 {
-		t.Errorf("Expected log function to be called 2 times, but was called %d times. Log: %s", strings.Count(logOutput, "LOG_FUNC"), logOutput)
+	// 3. Assert both registered function nodes ran and preserved the message.
+	callback.mu.Lock()
+	defer callback.mu.Unlock()
+	for _, id := range []string{"log_node_1", "log_node_2"} {
+		if completed := callback.completedNodes[id]; len(completed) != 1 || completed[0].Data() != msg.Data() {
+			t.Errorf("Expected one completion with unchanged data for %s, got %v", id, completed)
+		}
 	}
 }
 
-func TestRuntime_ExecuteAndWait_LogFunc(t *testing.T) {
+func TestRuntime_ExecuteAndWait_RegisteredFunction(t *testing.T) {
 	// 1. Arrange
-	var logBuf bytes.Buffer
-	log.SetOutput(&logBuf)
-	defer log.SetOutput(os.Stderr)
 
 	p := parser.NewJsonParser()
 	s, _ := scheduler.NewAntsScheduler(10)
@@ -195,7 +219,7 @@ func TestRuntime_ExecuteAndWait_LogFunc(t *testing.T) {
 				{
 					"id": "log_node_sync_1",
 					"type": "functions",
-					"configuration": { "functionName": "log" }
+					"configuration": { "functionName": "test/runtime-message" }
 				}
 			],
 			"connections": []
@@ -207,10 +231,11 @@ func TestRuntime_ExecuteAndWait_LogFunc(t *testing.T) {
 		t.Fatalf("Failed to decode rule chain: %v", err)
 	}
 
-	runtime, err := runtime.NewDefaultRuntime(s, chainDef)
+	runtime, err := runtime.NewDefaultRuntime(s, chainDef, withRuntimeMessageFixture(t))
 	if err != nil {
 		t.Fatalf("Failed to create runtime: %v", err)
 	}
+	t.Cleanup(runtime.Destroy)
 
 	msg := types.NewMsg("TEST_MSG_SYNC", `{"key":"sync"}`, types.Metadata{"source": "test_sync"}, nil).WithDataFormat(cnst.JSON)
 
@@ -226,20 +251,13 @@ func TestRuntime_ExecuteAndWait_LogFunc(t *testing.T) {
 		t.Fatal("ExecuteAndWait returned a nil message")
 	}
 
-	logOutput := logBuf.String()
-	if !strings.Contains(logOutput, "LOG_FUNC") {
-		t.Errorf("Expected log function to be called, but it wasn't. Log: %s", logOutput)
-	}
-	if !strings.Contains(logOutput, "sync") {
-		t.Errorf("Expected log message to contain 'sync', but it didn't. Log: %s", logOutput)
+	if finalMsg.Data() != msg.Data() || finalMsg.Metadata()["source"] != "test_sync" {
+		t.Fatalf("Registered function did not preserve the input message: %v", finalMsg)
 	}
 }
 
 func TestRuntime_Reload(t *testing.T) {
 	// 1. Arrange
-	var logBuf bytes.Buffer
-	log.SetOutput(&logBuf)
-	defer log.SetOutput(os.Stderr)
 
 	p := parser.NewJsonParser()
 	s, _ := scheduler.NewAntsScheduler(10)
@@ -249,34 +267,34 @@ func TestRuntime_Reload(t *testing.T) {
 	dslV1 := `
 	{
 		"metadata": {
-			"nodes": [{"id": "log_v1", "type": "functions", "configuration": {"functionName": "log", "business": {"script": "'version 1'"}}}]
+			"nodes": [{"id": "log_v1", "type": "functions", "configuration": {"functionName": "test/runtime-message", "business": {"data": "version 1"}}}]
 		}
 	}`
 	chainDefV1, _ := p.DecodeRuleChain([]byte(dslV1))
 
-	runtime, err := runtime.NewDefaultRuntime(s, chainDefV1)
+	runtime, err := runtime.NewDefaultRuntime(s, chainDefV1, withRuntimeMessageFixture(t))
 	if err != nil {
 		t.Fatalf("Failed to create runtime v1: %v", err)
 	}
+	t.Cleanup(runtime.Destroy)
 
 	msg := types.NewMsg("TEST_RELOAD", "{}", nil, nil).WithDataFormat(cnst.JSON)
 
 	// 2. Act & Assert for V1
-	_, err = runtime.ExecuteAndWait(context.Background(), "log_v1", msg, nil)
+	resultV1, err := runtime.ExecuteAndWait(context.Background(), "log_v1", msg, nil)
 	if err != nil {
 		t.Fatalf("ExecuteAndWait v1 failed: %v", err)
 	}
-	if !strings.Contains(logBuf.String(), "version 1") {
-		t.Fatalf("Expected log for v1, but not found. Log: %s", logBuf.String())
+	if resultV1.Data() != "version 1" {
+		t.Fatalf("Expected v1 business config, got %q", resultV1.Data())
 	}
 
 	// 3. Reload to V2
-	logBuf.Reset() // Clear the buffer for the next check
 
 	dslV2 := `
 	{
 		"metadata": {
-			"nodes": [{"id": "log_v2", "type": "functions", "configuration": {"functionName": "log", "business": {"script": "'version 2'"}}}]
+			"nodes": [{"id": "log_v2", "type": "functions", "configuration": {"functionName": "test/runtime-message", "business": {"data": "version 2"}}}]
 		}
 	}`
 	chainDefV2, _ := p.DecodeRuleChain([]byte(dslV2))
@@ -287,16 +305,15 @@ func TestRuntime_Reload(t *testing.T) {
 	}
 
 	// 4. Act & Assert for V2
-	_, err = runtime.ExecuteAndWait(context.Background(), "log_v2", msg, nil)
+	resultV2, err := runtime.ExecuteAndWait(context.Background(), "log_v2", msg, nil)
 	if err != nil {
 		t.Fatalf("ExecuteAndWait v2 failed: %v", err)
 	}
-	logOutputV2 := logBuf.String()
-	if strings.Contains(logOutputV2, "version 1") {
-		t.Fatalf("Found log for v1 after reload. Log: %s", logOutputV2)
+	if resultV2.Data() != "version 2" {
+		t.Fatalf("Expected reloaded v2 business config, got %q", resultV2.Data())
 	}
-	if !strings.Contains(logOutputV2, "version 2") {
-		t.Fatalf("Expected log for v2, but not found. Log: %s", logOutputV2)
+	if _, exists := runtime.GetChainInstance().GetNode("log_v1"); exists {
+		t.Fatal("Old node remained after reload")
 	}
 
 	// 5. Destroy and Assert
@@ -312,12 +329,13 @@ func TestRuntime_Reload(t *testing.T) {
 
 // testAspect is a mock Aspect for testing.
 type testAspect struct {
-	beforeCount int
-	afterCount  int
+	beforeCount atomic.Int32
+	afterCount  atomic.Int32
+	afterDone   chan struct{}
 }
 
 func (a *testAspect) Before(ctx types.NodeCtx, msg types.RuleMsg) (types.RuleMsg, error) {
-	a.beforeCount++
+	a.beforeCount.Add(1)
 	newMeta := msg.Metadata()
 	newMeta["aspect_before"] = "true"
 	msg.SetMetadata(newMeta)
@@ -325,7 +343,8 @@ func (a *testAspect) Before(ctx types.NodeCtx, msg types.RuleMsg) (types.RuleMsg
 }
 
 func (a *testAspect) After(ctx types.NodeCtx, msg types.RuleMsg, err error) {
-	a.afterCount++
+	a.afterCount.Add(1)
+	a.afterDone <- struct{}{}
 }
 
 // testCallback is a mock CallbackFunc for testing.
@@ -367,21 +386,22 @@ func TestRuntime_AOP(t *testing.T) {
 	{
 		"metadata": {
 			"nodes": [
-				{"id": "node_a", "type": "functions", "configuration": {"functionName": "log"}},
-				{"id": "node_b", "type": "functions", "configuration": {"functionName": "log"}}
+				{"id": "node_a", "type": "functions", "configuration": {"functionName": "test/runtime-message"}},
+				{"id": "node_b", "type": "functions", "configuration": {"functionName": "test/runtime-message"}}
 			],
 			"connections": [{"fromId": "node_a", "toId": "node_b", "type": "Success"}]
 		}
 	}`
 	chainDef, _ := p.DecodeRuleChain([]byte(dsl))
 
-	aspect := &testAspect{}
+	aspect := &testAspect{afterDone: make(chan struct{}, 2)}
 	callback := &testCallback{}
 
-	runtime, err := runtime.NewDefaultRuntime(s, chainDef, runtime.WithAspects(aspect), runtime.WithCallback(callback))
+	runtime, err := runtime.NewDefaultRuntime(s, chainDef, withRuntimeMessageFixture(t), runtime.WithAspects(aspect), runtime.WithCallback(callback))
 	if err != nil {
 		t.Fatalf("Failed to create runtime: %v", err)
 	}
+	t.Cleanup(runtime.Destroy)
 
 	msg := types.NewMsg("TEST_AOP", "{}", types.Metadata{}, nil).WithDataFormat(cnst.JSON)
 
@@ -390,17 +410,26 @@ func TestRuntime_AOP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAndWait failed: %v", err)
 	}
+	// TellSuccess completes the chain before each OnMsg's deferred After hook.
+	// Observe hook completion explicitly instead of racing the worker goroutines.
+	for i := 0; i < 2; i++ {
+		select {
+		case <-aspect.afterDone:
+		case <-time.After(3 * time.Second):
+			t.Fatal("After hook did not complete")
+		}
+	}
 
 	// 3. Assert
 	if finalMsg.Metadata()["aspect_before"] != "true" {
 		t.Error("Aspect Before hook did not modify metadata as expected")
 	}
 
-	if aspect.beforeCount != 2 {
-		t.Errorf("Expected Before to be called 2 times, but got %d", aspect.beforeCount)
+	if count := aspect.beforeCount.Load(); count != 2 {
+		t.Errorf("Expected Before to be called 2 times, but got %d", count)
 	}
-	if aspect.afterCount != 2 {
-		t.Errorf("Expected After to be called 2 times, but got %d", aspect.afterCount)
+	if count := aspect.afterCount.Load(); count != 2 {
+		t.Errorf("Expected After to be called 2 times, but got %d", count)
 	}
 
 	callback.mu.Lock()
@@ -420,16 +449,16 @@ func TestRuntime_ForkJoin(t *testing.T) {
 	defer s.Stop()
 
 	// This DSL defines a fork/join pattern: entry -> [fork_a, fork_b] -> join
-	// fork_a and fork_b will run in parallel. Their scripts will return a JSON string
-	// to modify metadata and set the log message.
+	// fork_a and fork_b run in parallel. Each fixture function writes its declared
+	// business.from value to metadata to verify branch-message isolation.
 	dsl := `
 	{
 		"metadata": {
 			"nodes": [
-				{"id": "entry", "type": "functions", "configuration": {"functionName": "log"}},
-				{"id": "fork_a", "type": "functions", "configuration": {"functionName": "log", "business": {"script": "'{\"log\":\"from a\", \"metadata\":{\"from\":\"a\"}}'"}}},
-				{"id": "fork_b", "type": "functions", "configuration": {"functionName": "log", "business": {"script": "'{\"log\":\"from b\", \"metadata\":{\"from\":\"b\"}}'"}}},
-				{"id": "join", "type": "functions", "configuration": {"functionName": "log"}}
+				{"id": "entry", "type": "functions", "configuration": {"functionName": "test/runtime-message"}},
+				{"id": "fork_a", "type": "functions", "configuration": {"functionName": "test/runtime-message", "business": {"from": "a"}}},
+				{"id": "fork_b", "type": "functions", "configuration": {"functionName": "test/runtime-message", "business": {"from": "b"}}},
+				{"id": "join", "type": "functions", "configuration": {"functionName": "test/runtime-message"}}
 			],
 			"connections": [
 				{"fromId": "entry", "toId": "fork_a", "type": "Success"},
@@ -443,10 +472,11 @@ func TestRuntime_ForkJoin(t *testing.T) {
 
 	// We use a callback to inspect the state of the message at each node's completion.
 	callback := &testCallback{}
-	runtime, err := runtime.NewDefaultRuntime(s, chainDef, runtime.WithCallback(callback))
+	runtime, err := runtime.NewDefaultRuntime(s, chainDef, withRuntimeMessageFixture(t), runtime.WithCallback(callback))
 	if err != nil {
 		t.Fatalf("Failed to create runtime: %v", err)
 	}
+	t.Cleanup(runtime.Destroy)
 
 	msg := types.NewMsg("TEST_FORK_JOIN", "{}", types.Metadata{}, nil).WithDataFormat(cnst.JSON)
 
@@ -619,7 +649,7 @@ func TestRuntime_FunctionRoutingValidation_RejectsUndeclaredDecisionRelation(t *
 					"id": "next_node",
 					"type": "functions",
 					"configuration": {
-						"functionName": "log"
+						"functionName": "` + testStandardFunctionID + `"
 					}
 				}
 			],

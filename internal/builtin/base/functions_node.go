@@ -53,7 +53,17 @@ type FunctionsNodeConfiguration struct {
 type FunctionsNode struct {
 	types.BaseNode
 	types.Instance
-	FuncConfig FunctionsNodeConfiguration
+	FuncConfig  FunctionsNodeConfiguration
+	funcManager types.NodeFuncManager
+}
+
+// SetNodeFuncManager binds metadata lookup to the owning runtime's engine.
+func (n *FunctionsNode) SetNodeFuncManager(manager types.NodeFuncManager) { n.funcManager = manager }
+func (n *FunctionsNode) functionManager() types.NodeFuncManager {
+	if n.funcManager != nil {
+		return n.funcManager
+	}
+	return types.DefaultRegistry.GetNodeFuncManager()
 }
 
 // New creates a new instance of FunctionsNode, referencing the prototype's BaseNode.
@@ -104,7 +114,7 @@ func (n *FunctionsNode) Errors() []*types.Fault {
 	if n.FuncConfig.FunctionName == "" {
 		return nil
 	}
-	f, ok := types.DefaultRegistry.GetNodeFuncManager().Get(n.FuncConfig.FunctionName)
+	f, ok := n.functionManager().Get(n.FuncConfig.FunctionName)
 	if !ok {
 		return nil
 	}
@@ -117,7 +127,7 @@ func (n *FunctionsNode) DataContract() types.DataContract {
 	if n.FuncConfig.FunctionName == "" {
 		return types.DataContract{}
 	}
-	f, ok := types.DefaultRegistry.GetNodeFuncManager().Get(n.FuncConfig.FunctionName)
+	f, ok := n.functionManager().Get(n.FuncConfig.FunctionName)
 	if !ok {
 		// Return an empty contract if the function isn't found,
 		// as this might happen during validation of a not-yet-fully-configured node.
@@ -194,7 +204,7 @@ func (n *FunctionsNode) ConfigSchema() *openapi3.Schema {
 	if n.FuncConfig.FunctionName == "" {
 		return nil
 	}
-	f, ok := types.DefaultRegistry.GetNodeFuncManager().Get(n.FuncConfig.FunctionName)
+	f, ok := n.functionManager().Get(n.FuncConfig.FunctionName)
 	if !ok {
 		return nil
 	}
@@ -218,6 +228,7 @@ func (n *FunctionsNode) ConfigSchema() *openapi3.Schema {
 		schema := openapi.MTypeToOpenAPISchema(field.Type)
 		schema.Description = field.Desc
 		schema.Title = field.Name
+		schema.ReadOnly = field.NotEditable
 
 		if field.Default != nil {
 			schema.Default = field.Default

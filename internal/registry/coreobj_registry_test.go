@@ -36,10 +36,10 @@ func TestMain(m *testing.M) {
 func TestDefaultCoreObjRegistry_Register(t *testing.T) {
 	t.Run("should register valid defs", func(t *testing.T) {
 		registry := NewCoreObjRegistry()
-		def1 := contract.NewDefaultCoreObjDef(&struct{}{}, "TestObjectV1_0", "desc")
+		def1 := contract.NewDefaultCoreObjDef(&struct{}{}, "TestObject_V1_0", "desc")
 		registry.Register(def1)
 
-		retDef, ok := registry.Get("TestObjectV1_0")
+		retDef, ok := registry.Get("TestObject_V1_0")
 		assert.True(t, ok)
 		assert.Equal(t, def1, retDef)
 	})
@@ -72,8 +72,10 @@ func TestDefaultCoreObjRegistry_Register(t *testing.T) {
 		defer matrixlog.SetLogger(originalLogger)
 
 		registry := NewCoreObjRegistry()
-		def1 := contract.NewDefaultCoreObjDef(&struct{}{}, "GoodSidV1_0", "desc")
-		registry.Register(def1)
+		registry.Register(
+			contract.NewDefaultCoreObjDef(&struct{}{}, "GoodSid_V1_0", "desc"),
+			contract.NewDefaultCoreObjDef(&struct{}{}, "GoodSid_V1", "desc"),
+		)
 
 		logOutput := mockLog.String()
 		assert.Empty(t, logOutput, "should not log any warning for compliant SID")

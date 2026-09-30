@@ -1,145 +1,135 @@
 package message
 
 import (
+	"encoding/json"
 	"testing"
 
+	"github.com/neohetj/matrix/internal/contract"
+	_ "github.com/neohetj/matrix/internal/registry"
 	"github.com/neohetj/matrix/pkg/cnst"
 	"github.com/neohetj/matrix/pkg/types"
-	"github.com/neohetj/matrix/test/utils"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
+func newMessageForTest() types.RuleMsg {
+	return contract.NewDefaultRuleMsg("test", "", nil, contract.NewDataT())
+}
+
+func addMapForTest(t *testing.T, msg types.RuleMsg, id, body string) types.CoreObj {
+	t.Helper()
+	obj, err := msg.DataT().NewItem(cnst.SID_MAP_STRING_INTERFACE, id)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal([]byte(body), obj.Body()))
+	return obj
+}
+
 func TestExtractFromMsg(t *testing.T) {
-	// Test Case 1: Extract from Metadata using new ExtractFromMsg
-	t.Run("Extract from Metadata", func(t *testing.T) {
-		mockMsg := new(utils.MockRuleMsg)
-		metadata := types.Metadata{"key1": "value1"}
-		mockMsg.On("Metadata").Return(metadata).Once()
-
-		val, err := ExtractFromMsg[string](mockMsg, "rulemsg://metadata/key1")
-		assert.NoError(t, err)
+	t.Run("Metadata", func(t *testing.T) {
+		msg := newMessageForTest()
+		msg.Metadata()["key1"] = "value1"
+		val, err := ExtractFromMsg[string](msg, "rulemsg://metadata/key1")
+		require.NoError(t, err)
 		assert.Equal(t, "value1", val)
-		mockMsg.AssertExpectations(t)
 	})
 
-	// Test Case 2: Extract from Data (JSON) using new ExtractFromMsg
-	t.Run("Extract from Data JSON", func(t *testing.T) {
-		mockMsg := new(utils.MockRuleMsg)
-		jsonStr := `{"field1": "value1", "nested": {"field2": 123}}`
-		mockMsg.On("Data").Return(types.Data(jsonStr)).Once()
-		mockMsg.On("DataFormat").Return(cnst.JSON).Once()
-
-		val, err := ExtractFromMsg[float64](mockMsg, "rulemsg://data/nested.field2")
-		assert.NoError(t, err)
+	t.Run("Data JSON requires explicit format", func(t *testing.T) {
+		msg := newMessageForTest()
+		msg.SetData(`{"field1":"value1","nested":{"field2":123}}`, cnst.JSON)
+		val, err := ExtractFromMsg[float64](msg, "rulemsg://data/nested.field2?format=JSON")
+		require.NoError(t, err)
 		assert.Equal(t, float64(123), val)
-		mockMsg.AssertExpectations(t)
 	})
 
-	// Test Case 3: Extract from DataT (Whole Object Body) using new ExtractFromMsg
-	t.Run("Extract from DataT Body", func(t *testing.T) {
-		mockMsg := new(utils.MockRuleMsg)
-		mockDataT := new(utils.MockDataT)
-		mockCoreObj := new(utils.MockCoreObj)
-
-		mockMsg.On("DataT").Return(mockDataT).Once()
-		mockDataT.On("Get", "obj1").Return(mockCoreObj, true).Once()
-		body := map[string]any{"foo": "bar"}
-		mockCoreObj.On("Body").Return(body).Once()
-
-		val, err := ExtractFromMsg[map[string]any](mockMsg, "rulemsg://dataT/obj1")
-		assert.NoError(t, err)
-		assert.Equal(t, body, val)
-		mockMsg.AssertExpectations(t)
-		mockDataT.AssertExpectations(t)
-		mockCoreObj.AssertExpectations(t)
+	t.Run("DataT body", func(t *testing.T) {
+		msg := newMessageForTest()
+		addMapForTest(t, msg, "obj1", `{"foo":"bar"}`)
+		val, err := ExtractFromMsg[map[string]any](msg, "rulemsg://dataT/obj1?sid="+cnst.SID_MAP_STRING_INTERFACE)
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{"foo": "bar"}, val)
 	})
 
-	// Test Case 4: Extract from DataT Object Field using new ExtractFromMsg
-	t.Run("Extract from DataT Object Field", func(t *testing.T) {
-		mockMsg := new(utils.MockRuleMsg)
-		mockDataT := new(utils.MockDataT)
-		mockCoreObj := new(utils.MockCoreObj)
-
-		mockMsg.On("DataT").Return(mockDataT).Once()
-		mockDataT.On("Get", "obj1").Return(mockCoreObj, true).Once()
-		body := map[string]any{"foo": "bar", "nested": map[string]any{"val": 42}}
-		mockCoreObj.On("Body").Return(body).Once()
-
-		val, err := ExtractFromMsg[float64](mockMsg, "rulemsg://dataT/obj1.nested.val")
-		assert.NoError(t, err)
+	t.Run("DataT nested field", func(t *testing.T) {
+		msg := newMessageForTest()
+		addMapForTest(t, msg, "obj1", `{"foo":"bar","nested":{"val":42}}`)
+		val, err := ExtractFromMsg[float64](msg, "rulemsg://dataT/obj1.nested.val?sid="+cnst.SID_MAP_STRING_INTERFACE)
+		require.NoError(t, err)
 		assert.Equal(t, float64(42), val)
-		mockMsg.AssertExpectations(t)
-		mockDataT.AssertExpectations(t)
-		mockCoreObj.AssertExpectations(t)
 	})
 
-	// Test Case 5: Literal String (non-URI) using new ExtractFromMsg
-	t.Run("Literal String", func(t *testing.T) {
-		mockMsg := new(utils.MockRuleMsg)
-		val, err := ExtractFromMsg[string](mockMsg, "literal string")
-		assert.NoError(t, err)
-		assert.Equal(t, "literal string", val)
-	})
+	for _, tt := range []struct{ name, uri, errorText string }{
+		{"missing data format", "rulemsg://data/nested.val", "data format is required"},
+		{"mismatched data format", "rulemsg://data?format=TEXT", "mismatch"},
+		{"missing DataT SID", "rulemsg://dataT/obj1", "missing sid"},
+		{"plain text is not an asset URI", "literal string", "no handler registered for scheme"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := newMessageForTest()
+			msg.SetData(`{"nested":{"val":42}}`, cnst.JSON)
+			addMapForTest(t, msg, "obj1", `{"foo":"bar"}`)
+			_, err := ExtractFromMsg[any](msg, tt.uri)
+			require.ErrorContains(t, err, tt.errorText)
+		})
+	}
 }
 
 func TestSetInMsg(t *testing.T) {
-	t.Run("Set Data JSON", func(t *testing.T) {
-		mockMsg := new(utils.MockRuleMsg)
-		val := map[string]any{"foo": "bar"}
-		mockMsg.On("SetData", `{"foo":"bar"}`, cnst.JSON).Return().Once()
-
-		err := SetInMsg(mockMsg, "rulemsg://data?format=JSON", val)
-		assert.NoError(t, err)
-		mockMsg.AssertExpectations(t)
+	t.Run("Data JSON", func(t *testing.T) {
+		msg := newMessageForTest()
+		require.NoError(t, SetInMsg(msg, "rulemsg://data?format=JSON", map[string]any{"foo": "bar"}))
+		assert.JSONEq(t, `{"foo":"bar"}`, string(msg.Data()))
+		assert.Equal(t, cnst.JSON, msg.DataFormat())
 	})
 
-	t.Run("Set Metadata", func(t *testing.T) {
-		mockMsg := new(utils.MockRuleMsg)
-		metadata := types.Metadata{}
-		mockMsg.On("Metadata").Return(metadata).Once()
-
-		err := SetInMsg(mockMsg, "rulemsg://metadata/key1", "value1")
-		assert.NoError(t, err)
-		assert.Equal(t, "value1", metadata["key1"])
-		mockMsg.AssertExpectations(t)
+	t.Run("Metadata", func(t *testing.T) {
+		msg := newMessageForTest()
+		require.NoError(t, SetInMsg(msg, "rulemsg://metadata/key1", "value1"))
+		assert.Equal(t, "value1", msg.Metadata()["key1"])
 	})
 
-	t.Run("Set DataT Field", func(t *testing.T) {
-		mockMsg := new(utils.MockRuleMsg)
-		mockDataT := new(utils.MockDataT)
-		mockCoreObj := new(utils.MockCoreObj)
-
-		mockMsg.On("DataT").Return(mockDataT).Once()
-		mockDataT.On("Get", "obj1").Return(mockCoreObj, true).Once()
-		body := map[string]any{"foo": "old"}
-		mockCoreObj.On("Body").Return(body).Twice() // One for ToMap, one for Decode back
-
-		err := SetInMsg(mockMsg, "rulemsg://dataT/obj1.foo", "new")
-		assert.NoError(t, err)
-		assert.Equal(t, "new", body["foo"])
-		mockMsg.AssertExpectations(t)
-		mockDataT.AssertExpectations(t)
-		mockCoreObj.AssertExpectations(t)
+	t.Run("DataT field preserves other fields", func(t *testing.T) {
+		msg := newMessageForTest()
+		obj := addMapForTest(t, msg, "obj1", `{"foo":"old","other":"keep"}`)
+		require.NoError(t, SetInMsg(msg, "rulemsg://dataT/obj1.foo?sid="+cnst.SID_MAP_STRING_INTERFACE, "new"))
+		assert.Equal(t, map[string]any{"foo": "new", "other": "keep"}, *obj.Body().(*map[string]any))
 	})
 
-	t.Run("Set DataT New Item", func(t *testing.T) {
-		mockMsg := new(utils.MockRuleMsg)
-		mockDataT := new(utils.MockDataT)
-		mockCoreObj := new(utils.MockCoreObj)
-
-		mockMsg.On("DataT").Return(mockDataT).Once()
-		mockDataT.On("Get", "newObj").Return(nil, false).Once()
-		mockDataT.On("NewItem", "someSid", "newObj").Return(mockCoreObj, nil).Once()
-
-		body := map[string]any{}
-		mockCoreObj.On("Body").Return(body).Twice()
-
-		err := SetInMsg(mockMsg, "rulemsg://dataT/newObj?sid=someSid", map[string]any{"key": "val"})
-		assert.NoError(t, err)
-		assert.Equal(t, "val", body["key"])
-
-		mockMsg.AssertExpectations(t)
-		mockDataT.AssertExpectations(t)
-		mockCoreObj.AssertExpectations(t)
+	t.Run("DataT new item uses registered definition", func(t *testing.T) {
+		msg := newMessageForTest()
+		body := map[string]any{"foo": "bar"}
+		require.NoError(t, SetInMsg(msg, "rulemsg://dataT/newObj?sid="+cnst.SID_MAP_STRING_INTERFACE, body))
+		obj, ok := msg.DataT().Get("newObj")
+		require.True(t, ok)
+		assert.Equal(t, cnst.SID_MAP_STRING_INTERFACE, obj.Definition().SID())
+		assert.Equal(t, body, *obj.Body().(*map[string]any))
 	})
+
+	t.Run("missing SID rejects write without mutation", func(t *testing.T) {
+		msg := newMessageForTest()
+		obj := addMapForTest(t, msg, "obj1", `{"foo":"old"}`)
+		require.ErrorContains(t, SetInMsg(msg, "rulemsg://dataT/obj1.foo", "new"), "missing sid")
+		assert.Equal(t, "old", (*obj.Body().(*map[string]any))["foo"])
+	})
+}
+
+func TestReplaceRuleMsg(t *testing.T) {
+	msg := newMessageForTest()
+	msg.Metadata()["id"] = "123"
+	for _, tt := range []struct{ template, want string }{
+		{"literal string", "literal string"},
+		{"http://example.com/items/${rulemsg://metadata/id}", "http://example.com/items/123"},
+	} {
+		value, err := ReplaceRuleMsg(tt.template, msg)
+		require.NoError(t, err)
+		assert.Equal(t, tt.want, value)
+	}
+}
+
+func TestNilMessage(t *testing.T) {
+	_, err := ExtractFromMsg[string](nil, "rulemsg://metadata/key")
+	require.ErrorContains(t, err, "rule message is nil")
+	require.ErrorContains(t, SetInMsg(nil, "rulemsg://metadata/key", "value"), "rule message is nil")
+	value, err := ReplaceRuleMsg("unchanged", nil)
+	require.NoError(t, err)
+	assert.Equal(t, "unchanged", value)
 }

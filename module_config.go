@@ -171,7 +171,7 @@ func (e *MatrixEngine) prepareOwnedRuntime() error {
 			return types.ErrConfigReaderUnavailable
 		}
 	}
-	if len(e.moduleConfigs) == 0 && e.sharedNodeActivation == nil {
+	if len(e.moduleConfigs) == 0 && e.sharedNodeActivation == nil && !e.deferredActiveEndpoints {
 		return nil
 	}
 	pool := registry.NewNodePool(nil)
@@ -190,15 +190,6 @@ func (e *MatrixEngine) abortOwnedStartup() {
 	if !ok {
 		return
 	}
-	if e.activeCancel != nil {
-		e.activeCancel()
-		e.activeCancel = nil
-	}
-	for _, endpoint := range e.configActiveEndpoints {
-		// 保留主启动错误，不输出可能携带连接信息的 Stop 错误。
-		_ = endpoint.Stop()
-	}
-	e.configActiveEndpoints = nil
 	e.activeWG.Wait()
 	for _, id := range owned.runtimes.ListIDs() {
 		rt, exists := owned.runtimes.Get(id)

@@ -274,3 +274,77 @@ func TestActivationPlanEndpointFailureStopsStartedEndpoints(t *testing.T) {
 		}
 	}
 }
+
+func TestDeferredActiveEndpointsLifecycle(t *testing.T) {
+	for _, deferred := range []bool{false, true} {
+		t.Run(map[bool]string{false: "default", true: "deferred"}[deferred], func(t *testing.T) {
+			counts, stopped := map[string]int{}, map[string]int{}
+			reg := registry.NewRegistry()
+			_ = reg.NodeManager.Register(&activationLifetimeEndpoint{
+				activationLifetimeResource: activationLifetimeResource{BaseNode: types.NewBaseNode("test/deferred", types.NodeMetadata{}), destroyed: counts},
+				stopped:                    stopped,
+			})
+			opts := []Option{WithRegistry(reg)}
+			if deferred {
+				opts = append(opts, WithDeferredActiveEndpoints())
+			} else {
+				opts = append(opts, WithSharedNodeActivationPlan(func(types.NodeDef) (bool, error) { return true, nil }))
+			}
+			eng, err := New(lifecycleConfig(t, map[string]string{"endpoints/entry.json": `{"id":"entry","type":"test/deferred"}`}), opts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = eng.Close() })
+			entry := eng.SharedNodePool().GetEndpoints()[0].(*activationLifetimeEndpoint)
+			if (entry.done == nil) != deferred {
+				t.Fatal("constructor activation policy ignored")
+			}
+			if _, found := reg.SharedNodePool.Get("entry"); found {
+				t.Fatal("engine used caller-owned pool")
+			}
+			if err := eng.StartActiveEndpoints(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			done := entry.done
+			if err := eng.StartActiveEndpoints(context.Background()); err != nil || entry.done != done {
+				t.Fatal("listener started twice")
+			}
+			if err := eng.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := eng.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if stopped["entry"] != 1 || counts["entry"] != 1 {
+				t.Fatalf("stop/destroy counts: %v / %v", stopped, counts)
+			}
+			if err := eng.StartActiveEndpoints(context.Background()); err == nil {
+				t.Fatal("closed engine restarted")
+			}
+		})
+	}
+}
+
+func TestDeferredEndpointFailureRollsBackBeforeClose(t *testing.T) {
+	counts, stopped := map[string]int{}, map[string]int{}
+	reg := registry.NewRegistry()
+	_ = reg.NodeManager.Register(&activationLifetimeEndpoint{
+		activationLifetimeResource: activationLifetimeResource{BaseNode: types.NewBaseNode("test/deferred-failure", types.NodeMetadata{}), destroyed: counts},
+		stopped:                    stopped,
+	})
+	eng, err := New(lifecycleConfig(t, map[string]string{"endpoints/entry.json": `{"id":"entry","type":"test/deferred-failure","configuration":{"fail":true}}`}), WithRegistry(reg), WithDeferredActiveEndpoints())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = eng.Close() })
+	if err := eng.StartActiveEndpoints(context.Background()); err == nil {
+		t.Fatal("start failure missing")
+	}
+	if stopped["entry"] != 1 {
+		t.Fatal("partial listener survived failed start")
+	}
+	_ = eng.Close()
+	if stopped["entry"] != 1 || counts["entry"] != 1 {
+		t.Fatal("close did not release exactly once")
+	}
+}

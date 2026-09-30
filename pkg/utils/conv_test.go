@@ -159,7 +159,7 @@ func TestDecode_ErrorCases(t *testing.T) {
 			name:          "nil data map",
 			data:          nil,
 			target:        &User{},
-			wantErrString: "input data map is nil",
+			wantErrString: "input data is nil",
 		},
 		{
 			name:          "nil target",
@@ -174,10 +174,10 @@ func TestDecode_ErrorCases(t *testing.T) {
 			wantErrString: "target must be a pointer",
 		},
 		{
-			name:          "target is not a struct or map pointer",
+			name:          "target is not a struct, map or slice pointer",
 			data:          map[string]any{"ID": 1},
 			target:        new(int),
-			wantErrString: "target must be a pointer to a struct or a map",
+			wantErrString: "target must be a pointer to a struct, map or slice",
 		},
 		{
 			name:          "mismatched type",

@@ -16,13 +16,13 @@
               "name": "severity",
               "type": "string",
               "required": true,
-              "bindPath": "rulemsg://dataT/asdflasjgie.labels.severity?sid=parsedAlert"
+              "bindPath": "rulemsg://dataT/alert.labels.severity?sid=AlertFixture_V1"
             },
             {
               "name": "summary",
               "type": "string",
               "required": true,
-              "bindPath": "rulemsg://dataT/asdflasjgie.annotations.summary?sid=parsedAlert"
+              "bindPath": "rulemsg://dataT/alert.annotations.summary?sid=AlertFixture_V1"
             }
           ]
         }
@@ -33,11 +33,11 @@
           "fields": [
             {
               "name": "status",
-              "bindPath": "'ok'"
+              "defaultValue": "ok"
             },
             {
               "name": "summary",
-              "bindPath": "rulemsg://dataT/asdflasjgie.annotations.summary"
+              "bindPath": "rulemsg://dataT/alert.annotations.summary?sid=AlertFixture_V1"
             }
           ]
         }

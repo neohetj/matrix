@@ -43,6 +43,12 @@ func WithAspects(aspects ...types.Aspect) Option {
 	}
 }
 
+// GetAspects exposes a copy of the runtime execution hooks for isolated host diagnostics.
+// Callers cannot change the runtime's hook ordering by mutating the returned slice.
+func (r *DefaultRuntime) GetAspects() []types.Aspect {
+	return append([]types.Aspect(nil), r.aspects...)
+}
+
 // WithCallback adds a CallbackFunc to the runtime.
 func WithCallback(callback types.CallbackFunc) Option {
 	return func(r *DefaultRuntime) {
@@ -354,6 +360,9 @@ func (r *DefaultRuntime) buildChainInstance(chainDef *types.RuleChainDef) (types
 			// 1. Set instance-specific metadata.
 			node.SetID(def.ID)
 			node.SetName(def.Name)
+			if consumer, ok := node.(interface{ SetNodeFuncManager(types.NodeFuncManager) }); ok && r.engine != nil {
+				consumer.SetNodeFuncManager(r.engine.NodeFuncManager())
+			}
 			if consumer, ok := node.(types.NodePoolAware); ok {
 				consumer.SetNodePool(r.nodePool)
 			}

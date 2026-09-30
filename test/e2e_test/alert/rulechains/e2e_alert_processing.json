@@ -16,10 +16,7 @@
         "description": "记录测试开始的日志",
         "configuration": {
           "level": "INFO",
-          "message": "E2E test started.\n Input data %+v",
-          "args": [
-            "data.labels"
-          ]
+          "message": "E2E test started. Input data ${rulemsg://data?format=JSON}"
         }
       },
       {
@@ -29,7 +26,7 @@
         "description": "将原始告警JSON解析到结构化的DataT对象中",
         "configuration": {
           "mappingDefinition": {
-            "mapAll": "rulemsg://dataT/asdflasjgie?sid=parsedAlert"
+            "mapAll": "rulemsg://dataT/alert?sid=AlertFixture_V1"
           }
         }
       },
@@ -37,11 +34,11 @@
         "id": "node-route-by-severity",
         "type": "action/exprSwitch",
         "name": "按严重等级路由",
-        "description": "根据parsedAlert.labels.severity的值进行路由",
+        "description": "根据 Alert fixture 的 Labels.severity 进行路由",
         "configuration": {
           "cases": {
-            "Critical": "dataT.asdflasjgie.labels.severity == 'critical'",
-            "Warning": "dataT.asdflasjgie.labels.severity == 'warning'"
+            "Critical": "dataT.alert.Labels.severity == 'critical'",
+            "Warning": "dataT.alert.Labels.severity == 'warning'"
           },
           "defaultRelation": "Info"
         }
@@ -53,10 +50,7 @@
         "description": "记录Critical级别的告警日志",
         "configuration": {
           "level": "ERROR",
-          "message": "Critical alert received: %v",
-          "args": [
-            "dataT.asdflasjgie.annotations.summary"
-          ]
+          "message": "Critical alert received: ${rulemsg://dataT/alert.annotations.summary?sid=AlertFixture_V1}"
         }
       },
       {
@@ -66,10 +60,7 @@
         "description": "记录Warning级别的告警日志",
         "configuration": {
           "level": "WARN",
-          "message": "Warning alert received: %v",
-          "args": [
-            "dataT.asdflasjgie.annotations.summary"
-          ]
+          "message": "Warning alert received: ${rulemsg://dataT/alert.annotations.summary?sid=AlertFixture_V1}"
         }
       },
       {
@@ -79,7 +70,7 @@
         "description": "记录信息级别的告警日志",
         "configuration": {
           "level": "INFO",
-          "message": "INFO alert received: %v"
+          "message": "Info alert received: ${rulemsg://dataT/alert.annotations.summary?sid=AlertFixture_V1}"
         }
       }
     ],

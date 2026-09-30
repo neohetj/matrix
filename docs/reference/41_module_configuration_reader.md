@@ -4,8 +4,8 @@ type: "Reference"
 title: "参考：模块配置 Reader 与实例注入契约"
 status: "Stable"
 owner: "neohetj"
-version: "1.0.2"
-updated_at: "2026-09-14"
+version: "1.1.0"
+updated_at: "2026-09-28"
 tags: ["matrix", "configuration", "runtime"]
 relations:
   - type: "is_part_of"
@@ -60,6 +60,29 @@ flowchart LR
 实现 `types.ConfigReaderAware` 的节点在 Init 前收到对应 Reader；实现 NodePoolAware 的节点使用 Engine 自有资源池。启用模块配置的 Engine 中，共享资源加载与注入失败会阻止创建，避免启动半初始化实例。没有启用模块配置的旧 Engine 保留兼容路径。
 
 `FromAssetContext` 依据显式模块选择 Reader；`RenderString` 复用配置占位语法，但 env/engine 拼写不改变 Reader 的来源顺序，其他资产 scheme 和节点局部上下文不由此入口处理。
+
+## 可选的宿主激活边界
+
+`WithDeferredActiveEndpoints()` 使 `New` 完成定义、共享资源 Init 和 Runtime 创建后返回，不启动主动端点。该模式即使没有模块 Reader 也使用 Engine 私有共享资源/Runtime 池。默认 `New` 仍自动激活，既有模块独立服务器无需迁移。
+
+```mermaid
+flowchart LR
+  P[宿主公开配置与业务预检] --> N[New + DeferredActiveEndpoints]
+  N --> S[宿主完成模块 setup 与迁移]
+  S --> A[StartActiveEndpoints]
+  A --> R[接受业务流量]
+  A -->|失败| X[取消上下文并 Stop 本轮尝试的端点]
+  S -->|失败| C[Close]
+  X --> C
+  R --> D[宿主排空请求]
+  D --> C
+```
+
+`StartActiveEndpoints(ctx)` 和 `StopActiveEndpoints()` 串行保护生命周期；重复 Start 不重复激活，部分启动失败立即取消并逆序 Stop 本轮已尝试的端点，未启用的端点不被 Stop。`Close()` 幂等停止端点和 scheduler、释放 Engine 私有资源与 Runtime，并停止 trace maintenance goroutine；不删除历史 trace 文件，不清空调用方/全局资源池。Close 后禁止再次 Start。宿主须在 Close 前完成请求排空；模块私有 setup Runtime 的停止仍由宿主负责。
+
+`CoreObjRegistry()` 与 NodeFuncManager 等 getter 一样返回本 Engine 关联的定义 registry；私有运行池不会复制或修改注册定义。
+
+实现：`matrix.go`、`module_config.go`、`pkg/trace`。回归包括 `TestDeferredActiveEndpointsLifecycle`、`TestDeferredEndpointFailureRollsBackBeforeClose` 和 `TestManagerCloseStopsMaintenanceWithoutDeletingPayload`，仅使用合成节点及临时 trace 数据。
 
 ## 权责与证据
 

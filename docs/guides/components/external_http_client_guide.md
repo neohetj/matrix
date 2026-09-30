@@ -1,11 +1,11 @@
 ---
 # === Node Properties: 定义文档节点自身 ===
 uuid: "d2c1b0a9-6e7a-4b8c-9d0e-1f2a3b4c5d6e"
-type: "ComponentGuide"
+type: "Guide"
 title: "组件指南：HTTP客户端 (external/httpClient)"
 status: "Draft"
 owner: "neohetj"
-version: "1.0.0"
+version: "1.1.0"
 tags:
   - "matrix"
   - "component"
@@ -16,280 +16,159 @@ tags:
 
 # === Node Relations: 定义与其他文档节点的关系 ===
 relations:
-  - type: "is_part_of"
+  - type: "references"
     target_uuid: "a0b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d"
     description: "本节点是Matrix核心能力层的功能组件之一。"
-  - type: "references"
+  - type: "is_part_of"
     target_uuid: "a2b1c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
     description: "本文档遵循 guides/components 目录的组件指南规范。"
+  - type: "references"
+    target_uuid: "d1e2f3a4-b5c6-d7e8-f9a0-b1c2d3e4f5a6"
+    description: "消息 URI 与复制边界遵循 RuleMsg 当前契约。"
 ---
 
-# 1. 功能概述 (FunctionalOverview)
+# HTTP 客户端使用指南
 
-> **⚠️ 注意：此组件的设计尚未完全稳定，其配置结构未来可能会有变更，暂不建议在生产环境中使用。**
+`external/httpClient` 从 `RuleMsg` 构建 HTTP 请求，再把响应写入输出消息。本文保留 Draft 状态，配置示例已按当前 `EndpointIOPacket` 实现校正；旧版 `from`、`params`、`mapping`、`defineSid` 不是当前配置字段。
 
-`external/httpClient` 是一个功能强大的外部交互节点，用于在规则链中发起高度可配置的HTTP/HTTPS请求。
+## 1. 配置字段
 
-它的核心是一个**声明式映射引擎**。开发者通过在节点配置中定义 `request` 和 `response` 的映射规则，可以精确地控制 `RuleMsg` (包含 `Data`, `DataT`, `Metadata`) 与 `http.Request` / `http.Response` 之间的双向数据转换，实现了业务数据与HTTP协议细节的完全解耦。
+| 字段 | 当前用途 |
+| --- | --- |
+| `defaultTimeout` | Go duration，例如 `10s`；缺省、不可解析或非正数时，当前请求 helper 使用 `60s`。 |
+| `proxyUrl` | 可选 HTTP 代理地址。 |
+| `request.url` / `request.method` | URL 与方法；支持 `${rulemsg://...}` 模板。固定 URL 和方法直接写字符串。 |
+| `request.headers` / `request.queryParams` / `request.body` | 从消息读取数据的 `EndpointIOPacket`。 |
+| `request.propagateMeta` / `request.propagateKeys` | 开启 trace metadata 传播，并可指定附加 metadata 键。 |
+| `response.headers` / `response.body` | 将 HTTP 数据写回消息的 `EndpointIOPacket`。 |
+| `response.statusCodeTarget` | 可选 metadata 键，存放 HTTP 状态码字符串。 |
+| `response.latencyMsTarget` | 请求耗时毫秒；缺省键为 `httpLatencyMs`。 |
+| `response.errorTarget` | 传输错误信息；缺省键为 `httpError`。 |
+| `response.startTimeMsTarget` / `response.endTimeMsTarget` | 可选 metadata 键，存放 Unix 毫秒时间戳。 |
 
-# 2. 如何配置 (Configuration)
+### EndpointIOPacket 的方向
 
-| 配置键 (ID) | 名称 | 描述 | 类型 | 是否必须 | 默认值 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `defaultTimeout` | 默认超时 | 请求的默认超时时间，例如 `"10s"`, `"500ms"`。 | `duration` | 否 | `"30s"` |
-| `proxyUrl` | 代理URL | 如果需要通过HTTP代理发送请求，在此处配置代理服务器的URL。 | `string` | 否 | `""` |
-| `request` | 请求映射 | 定义了如何从输入的 `RuleMsg` 构建 `http.Request`。 | `HttpRequestMap` | 是 | N/A |
-| `response` | 响应映射 | 定义了如何将 `http.Response` 解析并写回到输出的 `RuleMsg` 中。 | `HttpResponseMap` | 是 | N/A |
+- 请求 `mapAll` 是消息来源 URI，`fields[].bindPath` 是单字段来源 URI，`fields[].name` 是 HTTP 字段名。
+- 响应 `mapAll` 是消息目标 URI，`fields[].name` 是 HTTP 字段名或 JSON 内部路径，`fields[].bindPath` 是消息目标 URI。
+- `fields[].type` 可声明类型转换；`required` 和 `defaultValue` 处理字段缺失。请求常量使用空 `bindPath` 加 `defaultValue`，不能把带引号的字面量放进 `bindPath`。
+- 同时配置 `mapAll` 与 `fields` 时，先执行整体映射，再补充或覆盖字段。
 
-## 2.1. 请求映射 (`HttpRequestMap`) (RequestMap)
+URI 读取需遵循[消息契约](../../reference/06_message_design_philosophy.md#5-消息-uri-访问契约)：`rulemsg://data/...` 显式指定 `format`，`rulemsg://dataT/...` 显式指定 `sid`。本页使用 Matrix 内置 `MapStringInterface`；业务对象应声明并注册自己的 SID。
 
-| 字段 | 描述 |
-| :--- | :--- |
-| `url` | 请求的目标URL。支持使用 `${...}` 占位符动态替换来自 `metadata` 或 `dataT` 的值。 |
-| `method` | HTTP方法 (e.g., `GET`, `POST`)。同样支持 `${...}` 占位符。 |
-| `headers` | 定义请求头的映射规则。 |
-| `queryParams` | 定义URL查询参数的映射规则。 |
-| `body` | 定义请求体的映射规则。 |
-| `propagateMeta` | **(✓ 已实现)** 是否自动将 `RuleMsg` 中符合W3C Trace Context规范的元数据（如 `traceparent`）作为请求头传播，以实现分布式链路追踪。 |
-| `propagateKeys` | **(✓ 已实现)** 当 `propagateMeta` 为 `true` 时，可以额外指定需要强制传播的元数据键列表。 |
+## 2. POST JSON 并接收 JSON
 
-## 2.2. 响应映射 (`HttpResponseMap`) (ResponseMap)
-
-| 字段 | 描述 |
-| :--- | :--- |
-| `statusCodeTarget` | (可选) 一个 `metadata` 键，用于存储响应的HTTP状态码。 |
-| `latencyMsTarget` | (可选) 一个 `metadata` 键，用于存储请求的端到端延迟（毫秒）。 |
-| `errorTarget` | (可选) 一个 `metadata` 键，用于存储网络或连接错误信息。 |
-| `startTimeMsTarget` | (可选) 一个 `metadata` 键，用于存储请求开始时间的Unix毫秒时间戳。 |
-| `endTimeMsTarget` | (可选) 一个 `metadata` 键，用于存储请求结束时间的Unix毫秒时间戳。 |
-| `headers` | 定义响应头的映射规则。 |
-| `body` | 定义响应体的映射规则。 |
-
-# 3. 核心概念：映射源 (`HttpMappingSource`) (MappingSource)
-
-`HttpMappingSource` 是 `httpClient` 节点配置的灵魂，它被用于 `headers`, `queryParams`, 和 `body` 的映射中，定义了数据“从哪里来，到哪里去”。它包含两种模式，可以独立或组合使用。
-
-### 3.1. 动态映射 (`from`) (DynamicMapping)
-
-动态映射用于将一个完整的 `map` 或 `struct` 对象整体映射为HTTP的一部分。
-
-*   **配置**: `{"from": {"path": "dataT.myObj"}}`
-*   **工作原理**:
-    *   当用于 `headers` 或 `queryParams` 时，`dataT.myObj` 必须是一个 `map[string]interface{}` 结构，它的每个键值对会被转换为一个Header或Query Parameter。
-    *   当用于 `body` 时，`dataT.myObj` 会被整个序列化为JSON作为请求体。
-    *   **特殊路径 `data`**: 如果 `path` 设置为 `"data"`，节点会直接将 `msg.Data()` 的内容作为请求体，并根据 `msg.DataFormat()` 自动设置 `Content-Type`。
-
-### 3.2. 静态映射 (`params`) (StaticMapping)
-
-静态映射用于逐个字段地进行精确映射，提供了更细粒度的控制。
-
-*   **配置**:
-    ```json
-    "params": [
-      {
-        "name": "X-Auth-Token",
-        "mapping": { "from": "metadata.authToken" }
-      },
-      {
-        "name": "userId",
-        "mapping": { "from": "dataT.userInfo.id" }
-      }
-    ]
-    ```
-*   **工作原理**:
-    *   `name`: 定义了目标HTTP元素的名称（Header名, Query Parameter名, 或JSON Body的字段名）。
-    *   `mapping.from`: 定义了数据来源的路径。
-
-### 3.3. 组合使用 (CombinedUsage)
-
-当 `from` 和 `params` 同时存在时，节点会先处理 `from` 的动态映射，然后用 `params` 的静态映射进行补充或覆盖。这在“发送一个通用对象，但动态修改其中一两个字段”的场景中非常有用。
-
-### 3.4. 数据来源路径 (`from` 路径) 语法 (SourcePathSyntax)
-
-| 路径示例 | 描述 |
-| :--- | :--- |
-| `metadata.myKey` | 从消息元数据中读取 `myKey` 的值。 |
-| `dataT.myObj.field` | 从 `dataT` 中 `id` 为 `myObj` 的对象的 `field` 字段读取值。 |
-| `'a literal string'` | 使用单引号包裹的字符串字面量。 |
-| `data` | **(仅用于请求体)** 直接使用 `msg.Data()` 的原始字符串内容。 |
-
-# 4. 配置示例 (Examples)
-
-## 4.1. 示例1：POST JSON对象并接收JSON响应 (ExamplePostJson)
-
-假设输入消息 `dataT` 中有一个 `id` 为 `userInfo` 的对象，内容为 `{"userId": 123, "userName": "Alice"}`。
+输入 DataT 的 `userInfo` 对象使用 `MapStringInterface` 定义，内容为 `{"userId":123,"userName":"Alice"}`。
 
 ```json
 {
-  "id": "node-call-user-api",
+  "id": "call-user-api",
   "type": "external/httpClient",
-  "name": "调用用户服务API",
   "configuration": {
+    "defaultTimeout": "10s",
     "request": {
-      "url": "http://api.example.com/users/${dataT.userInfo.userId}",
+      "url": "http://api.example.com/users/${rulemsg://dataT/userInfo.userId?sid=MapStringInterface}",
       "method": "POST",
-      "headers": {
-        "params": [
-          { "name": "Content-Type", "mapping": { "from": "'application/json'" } }
-        ]
-      },
       "body": {
-        "from": { "path": "dataT.userInfo" }
+        "mapAll": "rulemsg://dataT/userInfo?sid=MapStringInterface"
       }
     },
     "response": {
       "statusCodeTarget": "httpStatusCode",
       "body": {
-        "from": { "path": "dataT.apiResult", "defineSid": "map_string_interface" }
+        "mapAll": "rulemsg://dataT/apiResult?sid=MapStringInterface"
       }
     }
   }
 }
 ```
-**流程解析**:
-1.  **构建请求**:
-    *   URL中的 `${dataT.userInfo.userId}` 被替换为 `123`，最终URL为 `http://api.example.com/users/123`。
-    *   `Content-Type` 请求头被设置为 `application/json`。
-    *   `dataT.userInfo` 对象被序列化为 `{"userId": 123, "userName": "Alice"}` 作为请求体。
-2.  **处理响应**:
-    *   HTTP状态码被写入 `metadata.httpStatusCode`。
-    *   完整的JSON响应体被解析并存入 `dataT` 中一个 `id` 为 `apiResult` 的新对象中。`defineSid` 确保了即使 `apiResult` 对象不存在，也会被自动创建。
 
-## 4.2. 示例2：GET 请求与查询参数映射 (ExampleGetWithQuery)
+请求路径变为 `/users/123`，对象序列化为 JSON，自动设置 `Content-Type: application/json`。响应声明 JSON Content-Type 时，JSON body 可映射到 `apiResult`；目标不存在时按已注册 SID 创建。响应原文也写入输出消息的 `Data`。
 
-假设输入消息 `dataT` 中有一个 `id` 为 `queryParams` 的对象，内容为 `{"page": 1, "pageSize": 10}`。
+## 3. 查询参数与请求字段组合
+
+GET 查询参数的配置片段：
 
 ```json
 {
-  "id": "node-get-list",
-  "type": "external/httpClient",
-  "configuration": {
-    "request": {
-      "url": "http://api.example.com/items",
-      "method": "GET",
-      "queryParams": {
-        "from": { "path": "dataT.queryParams" }
-      }
-    },
-    "response": {
-      "body": {
-        "from": { "path": "dataT.itemsList", "defineSid": "map_string_interface" }
-      }
+  "request": {
+    "url": "http://api.example.com/items",
+    "method": "GET",
+    "queryParams": {
+      "mapAll": "rulemsg://dataT/queryParams?sid=MapStringInterface"
     }
   }
 }
 ```
-**流程解析**:
-*   `dataT.queryParams` 对象被展开为URL查询参数，最终请求URL为 `http://api.example.com/items?page=1&pageSize=10`。
 
-## 4.3. 示例3：提取响应中的特定字段 (ExampleExtractFields)
+当 `queryParams` 为 `{"page":1,"pageSize":10}`，请求查询参数为 `page=1&pageSize=10`。
 
-假设API返回的JSON为 `{"data": {"user": {"id": 456}}, "error_code": 0}`。
+请求体整体映射与单字段组合：
 
 ```json
 {
-  "id": "node-extract-fields",
-  "type": "external/httpClient",
-  "configuration": {
-    "request": { "...": "..." },
-    "response": {
-      "body": {
-        "params": [
-          { "name": "data.user.id", "mapping": { "to": "metadata.extractedUserId" } },
-          { "name": "error_code", "mapping": { "to": "dataT.apiResult.errorCode", "defineSid": "MapStringInterfaceV1_0" } }
-        ]
-      }
+  "body": {
+    "mapAll": "rulemsg://dataT/baseInfo?sid=MapStringInterface",
+    "fields": [
+      {"name":"dynamic_field","bindPath":"rulemsg://metadata/dynamicId","type":"string"},
+      {"name":"static_field","defaultValue":"static_value","type":"string"}
+    ]
+  }
+}
+```
+
+输入 `baseInfo={"common":"value"}`、`metadata.dynamicId=xyz` 时，发送 `{"common":"value","dynamic_field":"xyz","static_field":"static_value"}`。当 body 没有映射且消息 Data 非空时，当前实现直接发送 Data，并按 DataFormat 设置 Content-Type。
+
+## 4. 响应字段提取
+
+响应为 `{"data":{"user":{"id":456}},"error_code":0}` 时：
+
+```json
+{
+  "response": {
+    "body": {
+      "fields": [
+        {"name":"data.user.id","bindPath":"rulemsg://metadata/extractedUserId","type":"string"},
+        {"name":"error_code","bindPath":"rulemsg://dataT/apiResult.errorCode?sid=MapStringInterface","type":"int"}
+      ]
     }
   }
 }
 ```
-**流程解析**:
-*   从响应体中提取 `data.user.id` 的值 (`456`)，并写入 `metadata.extractedUserId`。
-*   从响应体中提取 `error_code` 的值 (`0`)，并写入 `dataT` 中 `apiResult` 对象的 `errorCode` 字段。如果 `apiResult` 对象不存在，将使用 `MapStringInterfaceV1_0` 的定义来创建它。
 
-## 4.4. 示例4：组合映射请求体 (ExampleCombineRequestBody)
+## 5. 输出与失败边界
 
-假设 `dataT.baseInfo` 为 `{"common": "value"}`，同时 `metadata.dynamicId` 为 `"xyz"`。
+节点调用 `msg.Copy()` 创建输出消息：`Data` 和 Metadata 的后续写入不覆盖输入消息对应字段，但 **DataT 仍共享同一个容器**。响应写入 DataT 会对持有该容器的其他消息可见，不能把此节点当作隔离并行分支的深拷贝边界。
 
-```json
-{
-  "id": "node-combine-body",
-  "type": "external/httpClient",
-  "configuration": {
-    "request": {
-      "url": "http://api.example.com/complex",
-      "method": "POST",
-      "body": {
-        "from": { "path": "dataT.baseInfo" },
-        "params": [
-          { "name": "dynamic_field", "mapping": { "from": "metadata.dynamicId" } },
-          { "name": "static_field", "mapping": { "from": "'static_value'" } }
-        ]
-      }
-    },
-    "response": { "...": "..." }
-  }
-}
+```mermaid
+sequenceDiagram
+    participant Msg as 输入 RuleMsg
+    participant Client as HTTP Client
+    participant Server as HTTP 服务
+    participant Out as 输出 RuleMsg
+    Msg->>Client: request 的 URI 与模板映射
+    Client->>Server: HTTP 请求
+    Server-->>Client: 状态、Headers、Body
+    Client->>Out: msg.Copy，Metadata 独立、DataT 共享
+    Client->>Out: 响应原文、格式和 response 映射
+    Client-->>Out: Success 或 Failure
 ```
-**流程解析**:
-*   节点首先将 `dataT.baseInfo` 的内容 (`{"common": "value"}`) 作为基础请求体。
-*   然后，它会添加或覆盖 `params` 中定义的字段。
-*   最终发送的请求体为: `{"common":"value", "dynamic_field":"xyz", "static_field":"static_value"}`。
 
-## 4.5. 示例5：映射所有响应元信息 (ExampleMapAllMetadata)
+| Fault | 错误码 | 触发点 |
+| --- | --- | --- |
+| `FaultHttpClientBuildRequestFailed` | `202504001` | 构造请求失败，例如模板解析或整体请求体映射失败。 |
+| `FaultHttpSendFailed` | `202504002` | HTTP 传输失败；先写入配置的错误 metadata，再进入 Failure。 |
+| `FaultHttpClientInvalidProxy` | `202504003` | 代理 URL 解析失败。 |
+| `FaultHttpClientMapResponseFailed` | `202504004` | 响应 helper 返回错误，例如读取响应体失败。 |
 
-```json
-{
-  "id": "node-map-all-meta",
-  "type": "external/httpClient",
-  "configuration": {
-    "request": {
-      "url": "http://api.example.com/status/200",
-      "method": "GET"
-    },
-    "response": {
-      "statusCodeTarget": "http.status_code",
-      "latencyMsTarget": "http.latency_ms",
-      "errorTarget": "http.error",
-      "startTimeMsTarget": "http.start_time_ms",
-      "endTimeMsTarget": "http.end_time_ms"
-    }
-  }
-}
+当前实现不会自动把 HTTP 4xx/5xx 转成 Failure，应由后续规则判断 `statusCodeTarget`。当前 response 字段映射失败记录 warning，非法 JSON 不执行结构化映射；这两类情况不等同于 `FaultHttpClientMapResponseFailed`。排查时应同时看原始 Data、状态码、日志和预期 DataT 字段是否存在。
+
+## 6. 本地验证
+
+```sh
+go test -count=1 ./pkg/message ./pkg/components/external
+go test -race -count=1 ./pkg/message ./pkg/components/external
 ```
-**流程解析**:
-*   请求成功后，`metadata` 中会包含类似如下的键值对:
-    *   `http.status_code`: `"200"`
-    *   `http.latency_ms`: `"53"` (示例值)
-    *   `http.start_time_ms`: `"1678886400000"` (示例值)
-    *   `http.end_time_ms`: `"1678886400053"` (示例值)
-*   如果请求发生网络错误，`metadata.http.error` 字段将被填充，例如 `connect: connection refused`。
 
-# 5. 数据契约 (DataContract)
+消息测试使用真实 RuleMsg、DataT 与内置 CoreObj，验证 URI 必填参数及实际读写。HTTP POST 测试使用 `httptest` 本机服务与默认 HTTP 客户端，验证模板路径、JSON 请求体、Content-Type、响应 DataT 和 Metadata；传输故障使用可控 `httpDoer` fixture。测试不需要外部业务服务，不证明任何外部服务的在线兼容性。
 
-*   **输入**: 节点通过 `request` 配置从 `RuleMsg` 的 `Data`, `DataT`, `Metadata` 中读取数据。
-*   **输出**: 节点**总是创建一个新的 `RuleMsg` 副本**作为输出，以避免对原始消息的副作用，这对于并行处理分支至关重要。它通过 `response` 配置将HTTP响应的各个部分写回到这个新消息的 `Data`, `DataT`, `Metadata` 中。
-
-# 6. 错误处理 (ErrorHandling)
-
-节点会将操作结果通过 `Success` 或 `Failure` 链路传递下去。
-
-| 错误对象名 | 错误码 | 描述 |
-| :--- | :--- | :--- |
-| `DefInvalidParams` | (N/A) | 构建请求时发生错误（如URL占位符无法替换、代理URL格式错误）。 |
-| `ErrHttpSendFailed` | `202503002` | 发生网络层错误（如DNS解析失败、连接被拒）。错误详情会被记录在 `response.errorTarget` 指定的 `metadata` 字段中。 |
-| `DefInternalError` | (N/A) | 映射响应回 `RuleMsg` 时发生严重错误。 |
-
-**注意**: 即使HTTP响应状态码是 `4xx` 或 `5xx`，只要请求成功发出并收到响应，节点也会走向 `Success` 链路。状态码会记录在 `response.statusCodeTarget` 指定的 `metadata` 字段中，由后续节点判断和处理。
-
-# 7. 问答环节 (FrequentlyAskedQuestions)
-<!-- qa_section_start -->
-> **问：为什么需要 `defineSid` 字段？**
-> **答：** 当你希望将HTTP响应的一部分（如整个Body或所有Headers）映射到 `dataT` 中一个**可能尚不存在**的对象时，`defineSid` 告诉Matrix引擎：“如果目标对象（如 `dataT.apiResult`）不存在，请使用这个SID（Schema ID）来创建一个新的空对象，然后再填入数据。” 这避免了因对象不存在而导致的映射失败。
->
-> **重要提示**: `defineSid` 必须引用一个已在系统中通过 `CoreObjRegistry` 注册的 `CoreObj` 定义。对于通用的JSON数据，通常需要一个代表 `map[string]interface{}` 的 `CoreObj` 被注册，例如使用 `MapStringInterfaceV1_0` 作为其 `SID`。
-<!-- qa_section_end -->
-
-<!-- 链接定义区域 -->
-[Guide-MatrixOverview-2b3c4d]: ../matrix-guide.md
-[Ref-SemanticDoc-d45bce]: ./README.md
+实现入口：[`http_client_node.go`](../../../pkg/components/external/http_client_node.go)、[`http_mapper.go`](../../../pkg/helper/http_mapper.go)、[`io_packet.go`](../../../pkg/helper/io_packet.go)。

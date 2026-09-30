@@ -5,7 +5,7 @@ type: "Reference"
 title: "参考：Matrix消息设计哲学 (RuleMsg)"
 status: "Stable"
 owner: "neohetj"
-version: "2.0.0"
+version: "2.1.0"
 tags:
   - "matrix"
   - "reference"
@@ -15,6 +15,9 @@ tags:
 
 # === Node Relations: 定义与其他文档节点的关系 ===
 relations:
+  - type: "is_part_of"
+    target_uuid: "c5d6e7f8-a9b0-c1d2-e3f4-a5b6c7d8e9f0"
+    description: "本消息契约属于 Matrix 参考文档库。"
   - type: "supports"
     target_uuid: "a0b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d"
     description: "本设计哲学是理解Matrix架构核心概念的基础。"
@@ -110,6 +113,25 @@ sequenceDiagram
 -   **内部工作台**: `DataT` 的角色没有改变，它依然是规则链内部进行高性能、类型安全处理的**唯一工作台**。
 
 因此，`HttpEndpoint` 可以被看作是一个集成了“入口”和“解析”功能的高效复合节点，它遵循了 `RuleMsg` 的设计精髓，并为其提供了一个更强大、更声明式的实现。
+
+# 5. 消息 URI 访问契约
+
+`pkg/message` 的 `ExtractFromMsg[T]` 与 `SetInMsg[T]` 委托 Asset 系统读取和写入，参数是已注册 scheme 的 URI。纯文本和旧式 `dataT.obj.field` 路径不会隐式转换为消息表达式。
+
+| 目标 | 当前 URI 与约束 |
+| --- | --- |
+| Metadata | `rulemsg://metadata/key`；值为字符串。 |
+| Data 读取 | `rulemsg://data/nested.field?format=JSON`；format 必填且须匹配消息的 DataFormat；仅 JSON 支持内部字段提取。省略内部路径则读取原始 Data 字符串。 |
+| Data 写入 | `rulemsg://data?format=JSON` 或其他有效格式；只支持整体写入，不支持局部 Data 更新。 |
+| DataT | `rulemsg://dataT/objectId.field?sid=MapStringInterface`；读写都要求显式 sid。不存在的目标写入对象通过已注册 CoreObj 定义创建。sid 的存在不等同于对所有既有对象 body 执行 schema 校验。 |
+
+`ReplaceRuleMsg` 用于文本模板：普通文本保持原样，`${rulemsg://metadata/id}` 等占位符通过 Asset 解析。这与把字面量交给 `ExtractFromMsg` 是不同接口。
+
+测试或内部调用直接使用 `contract.NewDefaultRuleMsg` 时，应显式传入 DataT 容器；该内部构造器保留传入值，不会替调用方补齐 nil。公开消息工厂 `facotry.NewMsg` 在 DataT 参数为 nil 时创建容器。测试应验证真实对象读写结果，避免把 `DataT()` 的内部调用次数作为 API 契约。
+
+`RuleMsg.Copy()` 复制 Metadata，但共享 DataT 容器；`DeepCopy()` 才复制 CoreObj 内容。需要并行分支隔离时应显式选择合适的复制边界。
+
+实现依据：[`pkg/message/rulemsg.go`](../../pkg/message/rulemsg.go)、[`pkg/asset/rulemsg_asset.go`](../../pkg/asset/rulemsg_asset.go)、[`default_rulemsg.go`](../../internal/contract/default_rulemsg.go)。HTTP 映射用法见[HTTP 客户端指南](../guides/components/external_http_client_guide.md)。
 
 <!-- qa_section_start -->
 > **问：总结一下 `Data`, `DataT`, `Metadata` 的区别？**
