@@ -57,24 +57,23 @@ func (m *Manager) FinalizeSnapshot(executionID string) {
 	status, found := m.store.Get(executionID)
 	if !found {
 		now := time.Now().UnixNano()
-		status = &types.ExecutionStatus{
+		status = loadOrStoreStatus(m.store, executionID, &types.ExecutionStatus{
 			Snapshot: types.RuleChainRunSnapshot{
 				Id:      executionID,
 				StartTs: now, // Best effort start time
-				EndTs:   now,
 			},
-			LastUpdated: now,
-		}
-	} else {
-		status.Lock()
-		if status.Snapshot.EndTs == 0 {
-			now := time.Now().UnixNano()
-			status.Snapshot.EndTs = now
-			status.LastUpdated = now
-		}
-		status.Unlock()
+		})
 	}
-	m.store.Set(executionID, status)
+	status.Lock()
+	if status.Snapshot.EndTs == 0 {
+		now := time.Now().UnixNano()
+		status.Snapshot.EndTs = now
+		status.LastUpdated = now
+	}
+	status.Unlock()
+	if _, ok := m.store.(atomicStatusStore); !ok {
+		m.store.Set(executionID, status)
+	}
 }
 
 // Close stops maintenance workers owned by the supplied stores.

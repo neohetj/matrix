@@ -41,6 +41,25 @@ func (s *InMemoryStore) Get(executionID string) (*types.ExecutionStatus, bool) {
 	return nil, false
 }
 
+// loadOrStore keeps all node writers and the finalizer on the same status.
+func (s *InMemoryStore) loadOrStore(executionID string, status *types.ExecutionStatus) *types.ExecutionStatus {
+	actual, _ := s.store.LoadOrStore(executionID, status)
+	return actual.(*types.ExecutionStatus)
+}
+
+type atomicStatusStore interface {
+	loadOrStore(string, *types.ExecutionStatus) *types.ExecutionStatus
+}
+
+func loadOrStoreStatus(store types.Store, executionID string, status *types.ExecutionStatus) *types.ExecutionStatus {
+	if atomicStore, ok := store.(atomicStatusStore); ok {
+		return atomicStore.loadOrStore(executionID, status)
+	}
+	// Custom stores retain the existing Store contract.
+	store.Set(executionID, status)
+	return status
+}
+
 // List returns a list of execution statuses, ordered by StartTs descending.
 // Implements types.StoreListable interface.
 func (s *InMemoryStore) List(limit int) []*types.ExecutionStatus {

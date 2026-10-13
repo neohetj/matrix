@@ -4,8 +4,8 @@ type: "Reference"
 title: "参考：模块配置 Reader 与实例注入契约"
 status: "Stable"
 owner: "neohetj"
-version: "1.1.0"
-updated_at: "2026-09-28"
+version: "1.1.2"
+updated_at: "2026-10-12"
 tags: ["matrix", "configuration", "runtime"]
 relations:
   - type: "is_part_of"
@@ -83,6 +83,28 @@ flowchart LR
 `CoreObjRegistry()` 与 NodeFuncManager 等 getter 一样返回本 Engine 关联的定义 registry；私有运行池不会复制或修改注册定义。
 
 实现：`matrix.go`、`module_config.go`、`pkg/trace`。回归包括 `TestDeferredActiveEndpointsLifecycle`、`TestDeferredEndpointFailureRollsBackBeforeClose` 和 `TestManagerCloseStopsMaintenanceWithoutDeletingPayload`，仅使用合成节点及临时 trace 数据。
+
+### Engine Trace 快照的完成与保留
+
+Engine 在 `trace.enableAop` 开启时创建实例自己的内存 Trace store，默认保留期为 24 小时。HTTP 入口保留自身请求完成逻辑；宿主通过 `runtimebridge.ExecuteRootRuleChain` 明确声明独立根执行，由该入口统一 defer 完成快照。`ExecuteRuleChain` 保留原语义，不自动结束继承的外层 Trace，不能根据 ID 存在或链名相同推断根所有权。
+
+根入口要求非空独立 Execution ID，根链身份必须等于目标 rulechain；后续 option 不得覆盖已声明 ID/根链，`fill` 不得更换或删除身份。runtime 查找、option 校验或 fill 失败时不制造快照；准备成功即将调用 runtime 时才获取当前 Engine 可选 `TraceManager()` 并注册一次完成动作。业务 `WithEndFunc` 与返回消息/错误原样保留，Trace 关闭或 Engine 没有该可选 API 时正常执行。公开必需接口不变。
+
+```mermaid
+flowchart LR
+  L[节点 After 日志] --> A[原子创建或取得同一 ExecutionStatus]
+  F[ExecuteRootRuleChain 返回时 defer FinalizeSnapshot] --> A
+  A --> U[状态锁：追加日志 / 设置 EndTs]
+  U --> C[每分钟扫描]
+  C -->|EndTs 非零且 LastUpdated 超过 24 小时| D[删除快照]
+  C -->|未结束或尚未过期| K[保留]
+```
+
+原生 `InMemoryStore` 的首次创建使用 `sync.Map.LoadOrStore`，避免节点日志和完成动作并发时覆盖彼此的状态。迟到日志保留已有 `EndTs` 并刷新 `LastUpdated`；重复完成不重置结束时间。公共 `types.Store` 的接口不变，自定义 store 保留原有 `Get/Set` 合同，不继承原生 store 的原子创建保证。关闭 Engine 只停止维护任务；已经运行的旧二进制不会自动采用修复。
+
+回归：`pkg/trace/lifecycle_test.go` 中的并发日志/完成测试与已完成过期快照回收测试。保留期限制历史时间，不是记录数或内存字节上限；不对长时间未结束的执行实施强制清除。
+
+根调用超时或取消是停止等待，不证明异步任务已经物理停止。保留期内迟到的 After 日志可以追加并刷新 `LastUpdated`，不能清空已有 `EndTs`；已被 TTL 真正删除的 ID 与从未建立的 ID 在现有 Store 中不可区分，本轮不新增 tombstone 或第二套保留策略。根入口、执行前错误、普通子链、options/fill 身份保护及迟到日志回归见 `pkg/runtimebridge/root_rulechain_test.go`；使用说明见 `pkg/runtimebridge/README.md`。
 
 ## 权责与证据
 

@@ -20,7 +20,7 @@ type executeOptions struct {
 	onEnd       EndFunc
 }
 
-// Option configures ExecuteRuleChain.
+// Option configures either rulechain execution entry.
 type Option func(*executeOptions)
 
 // WithStartNodeID starts execution from a specific rule node.
@@ -80,6 +80,18 @@ func ExecuteRuleChain(
 	fill FillFunc,
 	options ...Option,
 ) (types.RuleMsg, error) {
+	return executeRuleChain(ctx, engine, ruleChainID, fill, false, options...)
+}
+
+// ExecuteRootRuleChain explicitly owns a new root trace. The caller must supply
+// an independent, non-empty execution ID. Preparing the message never creates a
+// snapshot; once execution starts, every return completes the root trace.
+// A timeout ends the wait, not necessarily the underlying asynchronous work.
+func ExecuteRootRuleChain(ctx context.Context, engine types.MatrixEngine, ruleChainID string, fill FillFunc, options ...Option) (types.RuleMsg, error) {
+	return executeRuleChain(ctx, engine, ruleChainID, fill, true, options...)
+}
+
+func executeRuleChain(ctx context.Context, engine types.MatrixEngine, ruleChainID string, fill FillFunc, ownsRoot bool, options ...Option) (types.RuleMsg, error) {
 	ruleChainID = strings.TrimSpace(ruleChainID)
 	if ruleChainID == "" {
 		return nil, fmt.Errorf("rulechain id is required")
@@ -99,7 +111,21 @@ func ExecuteRuleChain(
 	opts := executeOptions{metadata: types.Metadata{}}
 	for _, option := range options {
 		if option != nil {
+			previousID, hadID := opts.metadata[types.ExecutionIDKey]
+			previousRoot, hadRoot := opts.metadata[types.ExecutionStartRuleChainIDKey]
 			option(&opts)
+			if ownsRoot && ((hadID && previousID != opts.metadata[types.ExecutionIDKey]) || (hadRoot && previousRoot != opts.metadata[types.ExecutionStartRuleChainIDKey])) {
+				return nil, fmt.Errorf("option changed previously declared root execution identity")
+			}
+		}
+	}
+	executionID := opts.metadata[types.ExecutionIDKey]
+	if ownsRoot {
+		if executionID == "" || executionID != strings.TrimSpace(executionID) {
+			return nil, fmt.Errorf("root execution requires a non-empty execution id without surrounding whitespace")
+		}
+		if root, present := opts.metadata[types.ExecutionStartRuleChainIDKey]; present && root != ruleChainID {
+			return nil, fmt.Errorf("root rulechain identity conflicts with target rulechain")
 		}
 	}
 	if _, ok := opts.metadata[types.ExecutionStartRuleChainIDKey]; !ok {
@@ -112,6 +138,19 @@ func ExecuteRuleChain(
 	if fill != nil {
 		if err := fill(msg); err != nil {
 			return nil, err
+		}
+	}
+	if ownsRoot {
+		metadata := msg.Metadata()
+		if metadata[types.ExecutionIDKey] != executionID || metadata[types.ExecutionStartRuleChainIDKey] != ruleChainID {
+			return nil, fmt.Errorf("fill changed root execution identity")
+		}
+		if owner, ok := engine.(interface {
+			TraceManager() types.SnapshotFinalizer
+		}); ok {
+			if finalizer := owner.TraceManager(); finalizer != nil {
+				defer finalizer.FinalizeSnapshot(executionID)
+			}
 		}
 	}
 	return runtime.ExecuteAndWait(ctx, opts.startNodeID, msg, opts.onEnd)

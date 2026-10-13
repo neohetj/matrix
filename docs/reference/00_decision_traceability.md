@@ -4,8 +4,8 @@ type: "Reference"
 title: "参考：Matrix 决策追踪索引"
 status: "Draft"
 owner: "neohetj"
-version: "1.2.1"
-updated_at: "2026-09-13"
+version: "1.2.3"
+updated_at: "2026-10-12"
 tags:
   - "matrix"
   - "decision-traceability"
@@ -74,6 +74,10 @@ relations:
 4. 本文只做索引，不写 rationale；rationale 属于 ADR，阶段实施属于 Plan。
 
 ## 配置运行时事实承接（2026-09-08）
+
+2026-10-12：统一根入口 `ExecuteRootRuleChain` 显式拥有根执行并统一完成 Trace，普通 `ExecuteRuleChain` 保留子链/继承 ID 合同。入口防止 options/fill 更换根身份，准备错误无假快照，业务回调不变；超时仅停止等待，保留期内晚到日志不清除完成标记。当前事实见 [Engine Trace 生命周期](41_module_configuration_reader.md#engine-trace-快照的完成与保留)，操作入口见 `pkg/runtimebridge/README.md`；回归见 `root_rulechain_test.go` 及 `pkg/trace/lifecycle_test.go`。原生 Store 并发修复、默认 TTL 与公共必需接口保持；实际进程须更新二进制并重启才生效。
+
+2026-10-12：原生 Trace store 的首次创建改为原子取得或插入，修复节点日志与 `FinalizeSnapshot` 并发创建状态时丢失日志或完成标记的问题。公共 Store 与 runtime bridge 接口保持原合同。当前事实见 [Engine Trace 快照完成与保留](41_module_configuration_reader.md#engine-trace-快照的完成与保留)；`TestConcurrentRecordAndFinalizePreserveCompletedSnapshot` 在修复前复现失败，`TestCompletedSnapshotsExpireWhileActiveSnapshotsRemain` 验证已完成过期快照删除且未完成快照保留。验证使用 `go test -race ./pkg/trace ./pkg/runtimebridge -count=1`，不代表远端版本已发布或所有消费模块已重启。
 
 Reader API 与实例注入的当前事实见 [Reference](41_module_configuration_reader.md)，操作步骤见 [Guide](../guides/module-configuration-reader-guide.md)。本轮补齐稳定契约及 Catalog 函数职责注释；全部模块迁移和远端版本发布仍未关闭。
 

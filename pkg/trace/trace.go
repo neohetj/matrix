@@ -54,15 +54,14 @@ func (t *Tracer) RecordNodeLog(executionID string, nodeLog types.RuleNodeRunLog)
 
 	status, ok := t.store.Get(executionID)
 	if !ok {
-		status = &types.ExecutionStatus{
+		status = loadOrStoreStatus(t.store, executionID, &types.ExecutionStatus{
 			Snapshot: types.RuleChainRunSnapshot{
 				Id:               executionID,
 				StartRuleChainID: resolveStartRuleChainID(nodeLog),
 				StartTs:          nodeLog.StartTs,
 				Logs:             make([]types.RuleNodeRunLog, 0),
 			},
-		}
-		t.store.Set(executionID, status)
+		})
 	}
 
 	status.Lock()
