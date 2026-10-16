@@ -72,8 +72,10 @@ type McpOutputSpec struct {
 
 // McpToolContent is a single MCP tool result content item.
 type McpToolContent struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	Data     string `json:"data,omitempty"`
+	MimeType string `json:"mimeType,omitempty"`
 }
 
 // McpToolResult is the Matrix adapter-neutral representation of a tool call

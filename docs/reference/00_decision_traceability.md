@@ -84,3 +84,9 @@ Reader API 与实例注入的当前事实见 [Reference](41_module_configuration
 2026-09-13：修复 ConfigResolver 将显式空字符串当作缺失并回退默认的问题。运行来源、alias、转换结果和 Reader 快照保留空值并交统一字段约束；required 字符串拒绝空值，缺失仍按 Catalog default 处理，Secret 的 env-only 与 false/0 保留不变。完整校验中的条件 required/dependentRequired 同样拒绝空串，但不改变 if/not 谓词、未激活分支、原始声明或冻结摘要。草稿 `Catalog.ValidateProvided` 继续允许未完成输入，公共 `config://` Asset 兼容契约未改。当前事实与操作回写上述 Reference/Guide；回归见 `pkg/config/empty_value_test.go`、`pkg/config/catalog/empty_value_test.go`、`pkg/config/catalog/conditional_empty_test.go` 及既有来源、快照、Secret、草稿门禁测试。
 
 验证：`go test ./pkg/config/... -count=1`、`go test ./pkg/asset ./pkg/types -count=1`、`go test . -run ModuleConfig -count=1` 与 `git diff --check` 均通过。以上是本地源码验证，不代表已发布依赖版本或已完成全部消费方兼容验收。
+
+## 2026-10-15 门禁证据与状态更新
+
+| 标识 | 决策 | 状态 | 来源 / 当前事实 | 验证 |
+| --- | --- | --- | --- | --- |
+| MCP-IMAGE-20261015 | Standard typed MCP image result fields and JSON-aware line-preserving text redaction | Implemented | [MCP Adapter Reference](37_mcp_endpoint_adapter.md) | `pkg/mcp/results_integrity_test.go` and existing MCP/type tests |

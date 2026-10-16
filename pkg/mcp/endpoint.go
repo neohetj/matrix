@@ -563,9 +563,5 @@ func errorToolResult(text string) types.McpToolResult {
 }
 
 func sanitizeToolText(text string) string {
-	if text == "" {
-		return text
-	}
-	text = bearerTokenPattern.ReplaceAllString(text, "Bearer [redacted]")
-	return secretPairPattern.ReplaceAllString(text, "${1}${2}[redacted]")
+	return sanitizeJSONOrText(text)
 }

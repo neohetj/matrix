@@ -4,8 +4,8 @@ type: "Reference"
 title: "Reference: MCP Endpoint Adapter"
 status: "Draft"
 owner: "neohetj"
-version: "0.4.0"
-updated_at: "2026-09-03"
+version: "0.5.0"
+updated_at: "2026-10-15"
 tags:
   - "matrix"
   - "mcp"
@@ -173,3 +173,11 @@ go test ./pkg/mcp ./internal/builtin/nodes/endpoint
 ```
 
 `pkg/mcp/protocol_test.go` also verifies that handler-produced `structuredContent` survives HTTP JSON-RPC serialization without dropping the ordinary content blocks.
+
+## Typed image content and JSON text redaction
+
+`McpToolContent` supports standard image items through `type: image`, `data` (base64 bytes), and `mimeType`, alongside existing text items. Module-owned providers remain responsible for authorization, media validation, size bounds and conversion; the generic HTTP target continues returning bounded text and does not turn arbitrary response bodies or URLs into images.
+
+For valid JSON output, secret redaction parses numbers with their original precision and visits string values. Secret-valued keys are masked as a whole. Text masking runs line by line so it cannot consume escaped log newlines or shift source line references. Sanitized text is a display projection and cannot be used to recompute the original object's byte count or digest. The owner of immutable objects must validate originals before providing projections. Non-JSON errors still receive the same line-preserving text masking.
+
+Regression: `go test ./pkg/mcp ./pkg/types`; `TestHTTPRedactionPreservesJSONAndLogLines` checks JSON validity, newline preservation and credential masking.
