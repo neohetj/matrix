@@ -85,13 +85,17 @@ flowchart TD
 1. `MapAll`
 2. `Fields`
 
-对每个 field 来说，核心动作是：
+对每个 field 来说，先判断字段是否存在，再决定是否转换和写入：
 
-```go
-rawVal, found, err := provider.GetValue(field.Name)
-convertedVal, err := convertValue(rawVal, field.Type)
-err = message.SetInMsg(msg, field.BindPath, convertedVal)
-```
+| 输入 | `ProcessInbound` 行为 |
+|---|---|
+| 未提供可选字段，且没有 `defaultValue` | 跳过写入；保留目标原值，包括 `MapAll` 已映射的值 |
+| 未提供字段，但声明了 `defaultValue` | 使用显式默认值；`0`、`false`、空字符串都是有效默认值 |
+| 未提供必填字段，且没有默认值 | 返回 `RequiredFieldMissing` |
+| 显式提供 `0`、`false`、空字符串 | 按声明类型转换并写入，不能当作缺失 |
+| 显式提供 JSON `null` | 保留 `nil` 写入可空目标，不执行标量零值转换，也不替换成默认值 |
+
+可选字段缺失不能经过 `Convert(nil, type)` 隐式补成 `0`、`false` 或空字符串；否则可空指针会从 `nil` 变成非空指针，错误触发版本校验或覆盖已有值。通用 `utils.Convert` 的零值转换契约不变，存在性判断由入站映射负责。依赖缺省零值的接口应在 DSL 中显式声明 `defaultValue`。
 
 当 provider 返回合法的 `null` 时，`Asset[T]` 只允许把它解析为可空目标类型（interface、pointer、map、slice、channel 或 function）的零值。这样，首屏请求中尚未生成的游标等可选字段可以继续映射为 `nil`；若目标是 string、number、bool 等非空类型，仍返回类型不匹配错误，不会把 `null` 隐式转换成业务值。
 

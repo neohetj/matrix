@@ -33,22 +33,29 @@ func ProcessInbound(ctx types.NodeCtx, msg types.RuleMsg, packet types.EndpointI
 			return FieldConversionFailed.Wrap(fmt.Errorf("from provider field '%s': %w", field.Name, err))
 		}
 		if !found {
-			if field.Required && field.DefaultValue == nil {
-				return RequiredFieldMissing.Wrap(fmt.Errorf("'%s'", field.Name))
-			} else {
-				found = true
+			switch {
+			case field.DefaultValue != nil:
 				rawVal = field.DefaultValue
+			case field.Required:
+				return RequiredFieldMissing.Wrap(fmt.Errorf("'%s'", field.Name))
+			default:
+				// Absence is not a supplied zero value. In particular, do not
+				// allocate optional scalar pointers or overwrite MapAll values.
+				continue
 			}
 		}
 
-		if found {
-			convertedVal, err := convertValue(rawVal, field.Type)
+		// Preserve explicit null for nullable targets. Scalar conversion would
+		// otherwise turn it into 0, false or an empty string.
+		convertedVal := rawVal
+		if rawVal != nil {
+			convertedVal, err = convertValue(rawVal, field.Type)
 			if err != nil {
 				return FieldConversionFailed.Wrap(fmt.Errorf("field '%s': %w", field.Name, err))
 			}
-			if err := message.SetInMsg(msg, field.BindPath, convertedVal); err != nil {
-				return SetFieldFailed.Wrap(fmt.Errorf("field '%s' to %s: %w", field.Name, field.BindPath, err))
-			}
+		}
+		if err := message.SetInMsg(msg, field.BindPath, convertedVal); err != nil {
+			return SetFieldFailed.Wrap(fmt.Errorf("field '%s' to %s: %w", field.Name, field.BindPath, err))
 		}
 	}
 
